@@ -1,0 +1,11 @@
+# Site statique (tache-enfant/) + fonction serverless (netlify/functions/api.mjs)
+# La fonction utilise Netlify Blobs — activé par défaut, aucune config requise.
+[build]
+  publish = "tache-enfant"
+  functions = "netlify/functions"
+
+# Route /api → la fonction (double sécurité avec le config.path de la fonction)
+[[redirects]]
+  from = "/api"
+  to = "/.netlify/functions/api"
+  status = 200

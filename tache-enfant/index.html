@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tâche Enfant</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+  body { background: var(--color-neutral-200); }
+  .phone {
+    max-width: 420px; min-height: 100dvh; margin: 0 auto;
+    background: var(--color-bg); display: flex; flex-direction: column;
+    box-shadow: var(--shadow-md);
+  }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 20px; border-bottom: 1px solid var(--color-divider);
+    font-size: 12px; color: var(--color-neutral-600);
+  }
+  main { flex: 1; display: flex; flex-direction: column; }
+  .bottom-nav {
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 10px 16px; border-top: 1px solid var(--color-divider);
+    position: sticky; bottom: 0; background: var(--color-bg);
+  }
+  .bottom-nav button {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: none; border: 0; cursor: pointer; color: var(--color-neutral-600);
+    font-family: var(--font-heading); font-size: 11px; padding: 2px 10px;
+  }
+  .bottom-nav button.active { color: var(--color-accent-700); }
+  .bottom-nav button .ico { font-size: 19px; }
+  .check {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
+    border: 2px solid var(--color-divider); background: transparent; padding: 0;
+  }
+  .check.done { background: var(--color-accent-2-500); border-color: var(--color-accent-2-500);
+    color: #fff; font-size: 14px; }
+  .task-icon {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--color-accent-2-100);
+    display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0;
+  }
+  .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-neutral-600); }
+  .lvlup-overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 50; }
+  .lvlup-badge {
+    font-family: var(--font-heading); font-size: 32px; color: var(--color-accent-800);
+    background: var(--color-accent-100); padding: 18px 34px; border-radius: 999px;
+    box-shadow: var(--shadow-lg); animation: lvlpop 1.8s ease forwards;
+  }
+  @keyframes lvlpop {
+    0% { transform: scale(0) rotate(-8deg); opacity: 0 }
+    12% { transform: scale(1.15) rotate(2deg); opacity: 1 }
+    22% { transform: scale(1) rotate(0) }
+    80% { transform: scale(1); opacity: 1 }
+    100% { transform: scale(0.85); opacity: 0 }
+  }
+  .lvlup-star { position: absolute; font-size: 26px; animation: starfly 1.6s ease-out forwards; }
+  @keyframes starfly {
+    0% { transform: translate(0, 0) scale(0.4); opacity: 1 }
+    100% { transform: translate(var(--dx), var(--dy)) scale(1.4); opacity: 0 }
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: var(--color-accent-800); color: #fff; padding: 10px 16px;
+    border-radius: 999px; font-size: 13px; display: none; z-index: 60;
+  }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="topbar">
+    <span>Tâche Enfant</span>
+    <select class="input" id="child-select" style="width:auto;min-height:30px;padding:2px 28px 2px 12px;font-size:13px"></select>
+    <div class="seg" id="role-seg">
+      <label class="seg-opt"><input type="radio" name="role" value="enfant"><span>Enfant</span></label>
+      <label class="seg-opt"><input type="radio" name="role" value="parent"><span>Parent</span></label>
+    </div>
+  </div>
+  <main id="main"></main>
+  <nav class="bottom-nav" id="nav"></nav>
+</div>
+<div id="toast">⚠️ Synchronisation échouée — vérifie ta connexion</div>
+
+<script>
+'use strict';
+const TOKEN_KEY = 'te-token';
+
+// ── état client (la source de vérité est le serveur) ──
+let token = null;           // jeton de session (persisté)
+let me = null;              // { email, name } de l'adulte connecté
+let families = [];          // familles dont je suis membre (renvoyées par le serveur)
+let activeFamily = 0;
+let state = null;           // famille active — pointeur dans families[]
+let parentUnlocked = false; // accès espace parent — en mémoire, retombe au rechargement
+let authMode = 'login', authMsg = '';
+const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
+
+const today = () => new Date().toLocaleDateString('fr-CA');
+const LVL_XP = 100;
+const level = xp => Math.floor(xp / LVL_XP) + 1;
+// ponytail: barème fixe 16+/20 → 50 XP + 10 or, 12+ → 30 XP + 5 or, sinon 10 XP de participation ; rendre configurable si demandé
+function gradeReward(note) {
+  const n = parseFloat(String(note).replace(',', '.'));
+  if (!(n >= 0 && n <= 20)) return null;
+  return n >= 16 ? { xp: 50, gold: 10 } : n >= 12 ? { xp: 30, gold: 5 } : { xp: 10, gold: 0 };
+}
+function nextReward(gold, rewards) {
+  return rewards.filter(r => r.cost > gold).sort((a, b) => a.cost - b.cost)[0] || null;
+}
+const loot = (xp, gold) => `<span class="tag tag-accent-2" style="margin-top:4px">+${xp} XP</span> <span class="tag tag-accent" style="margin-top:4px">+${gold} 🪙</span>`;
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const child = () => state.children[state.activeChild];
+const frDate = () => {
+  const d = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return d[0].toUpperCase() + d.slice(1);
+};
+
+// ── réseau ──
+async function api(action, body = {}) {
+  const res = await fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: JSON.stringify({ action, ...body }),
+  });
+  let json = {};
+  try { json = await res.json(); } catch {}
+  if (!res.ok) throw (json.error || `Erreur ${res.status}`);
+  return json;
+}
+function toast(on) { document.getElementById('toast').style.display = on ? 'block' : 'none'; }
+
+function setActiveFamily(i) {
+  activeFamily = Math.max(0, Math.min(i, families.length - 1));
+  state = families[activeFamily] || null;
+  if (state) {
+    state.role ??= 'enfant'; state.tab ??= 'accueil'; state.activeChild ??= 0;
+    if (rolloverDay(state, today())) save();
+  }
+}
+// reset des quêtes quotidiennes au chargement d'un nouveau jour (persisté)
+function rolloverDay(f, day) {
+  if (f.day === day) return false;
+  f.day = day;
+  f.children.forEach(c => c.tasks.forEach(t => { if (t.daily) t.done = false; }));
+  return true;
+}
+
+// persistance de la famille active vers le serveur — coalescée (dernier gagne)
+// ponytail: dernier-écrit-gagne, pas de verrou/etag — suffisant à l'échelle d'une famille ; passer à un merge/etag si conflits multi-appareils
+let saving = false, dirty = false;
+async function persistFamily() {
+  if (!token || !state) return;
+  dirty = true;
+  if (saving) return;
+  saving = true;
+  while (dirty) {
+    dirty = false;
+    try { await api('saveFamily', { family: stripUi(state) }); toast(false); }
+    catch { toast(true); break; }
+  }
+  saving = false;
+}
+function stripUi(f) { const { role, tab, activeChild, memberInfo, ...rest } = f; return rest; }
+function save() { persistFamily(); }
+
+/* ── écrans enfant & parent ── */
+
+function taskRow(t, i, small) {
+  const sz = small ? 22 : 26;
+  return `
+  <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px${t.done ? ';opacity:0.6' : ''}">
+    ${small ? '' : `<div class="task-icon">${t.icon || '⭐'}</div>`}
+    <button class="check${t.done ? ' done' : ''}" style="width:${sz}px;height:${sz}px" data-action="toggle-task" data-i="${i}" aria-label="${t.done ? 'Fait' : 'À faire'}">${t.done ? '✓' : ''}</button>
+    <div style="flex:1">
+      <div class="card-title" style="font-size:${small ? 14 : 15}px${t.done ? ';text-decoration:line-through' : ''}">${esc(t.name)}</div>
+      ${loot(t.xp, t.gold)}${t.daily ? ' <span class="tag tag-neutral" style="margin-top:4px">🎯</span>' : ''}
+    </div>
+    ${small ? `<button class="btn btn-icon btn-ghost" data-action="del-task" data-i="${i}" aria-label="Supprimer">✕</button>` : ''}
+  </div>`;
+}
+
+function screenAccueil() {
+  const c = child();
+  return `
+  <div style="padding:22px 20px 4px;display:flex;align-items:flex-start;justify-content:space-between">
+    <div>
+      <div style="font-size:13px;color:var(--color-neutral-600)">Salut 👋</div>
+      <h2 style="margin:2px 0 0;font-size:26px">${esc(c.name)}</h2>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;background:var(--color-accent-100);color:var(--color-accent-800);padding:8px 14px;border-radius:999px;font-family:var(--font-heading);font-size:16px">🪙 ${c.gold}</div>
+  </div>
+  <div style="margin:12px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-accent-2-100);display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <span style="font-family:var(--font-heading);font-size:16px;color:var(--color-accent-2-800)">⚔️ Niveau ${level(c.xp)}</span>
+      <span style="font-size:12px;color:var(--color-accent-2-700)">${c.xp % LVL_XP}/${LVL_XP} XP</span>
+    </div>
+    <div style="height:8px;border-radius:999px;background:var(--color-accent-2-300);overflow:hidden">
+      <div style="height:100%;width:${(c.xp % LVL_XP) / LVL_XP * 100}%;background:var(--color-accent-2-600);border-radius:999px"></div>
+    </div>
+  </div>
+  ${(() => {
+    const daily = c.tasks.filter(t => t.daily);
+    if (!daily.length) return '';
+    const doneN = daily.filter(t => t.done).length;
+    const got = c.dailyBonusDay === state.day;
+    return `
+    <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-family:var(--font-heading);font-size:15px">🎯 Mission du jour · ${doneN}/${daily.length}</span>
+        ${got ? '<span class="tag tag-accent-2">Bonus reçu 🎁</span>' : loot(state.dailyBonus.xp, state.dailyBonus.gold).replaceAll('margin-top:4px', '')}
+      </div>
+      <div style="height:6px;border-radius:999px;background:var(--color-neutral-300);overflow:hidden">
+        <div style="height:100%;width:${doneN / daily.length * 100}%;background:var(--color-accent-500);border-radius:999px"></div>
+      </div>
+    </div>`;
+  })()}
+  <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
+  <div style="padding:4px 20px 16px;display:flex;flex-direction:column;gap:10px;flex:1">
+    ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || '<p class="text-muted" style="padding-top:8px">Aucune quête pour aujourd’hui 🎉</p>'}
+  </div>`;
+}
+
+function screenNotes() {
+  const c = child();
+  return `
+  <div style="padding:22px 20px 4px">
+    <h2 style="margin:0;font-size:24px">Mes notes 📘</h2>
+    <p style="margin:6px 0 0;font-size:13px;color:var(--color-neutral-600)">Une bonne note, c'est de l'XP et de l'or en plus !</p>
+  </div>
+  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1">
+    ${c.grades.map((g, i) => `
+    <div class="card elev-sm" style="gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="card-title" style="font-size:15px">${esc(g.subject)}</span>
+        ${g.grade ? loot(g.xp, g.gold) : '<span class="tag tag-neutral">à saisir</span>'}
+      </div>
+      <div class="field" style="margin:0"><label>Note obtenue</label>
+        ${g.grade
+          ? `<input class="input" value="${esc(g.grade)}" readonly>`
+          : `<input class="input" placeholder="Ex : 14/20" data-grade="${i}">`}
+      </div>
+    </div>`).join('')}
+  </div>
+  <div style="padding:0 20px 24px"><button class="btn btn-primary btn-block" data-action="save-grades">Enregistrer mes notes</button></div>`;
+}
+
+function screenRecompenses() {
+  const c = child();
+  const lv = level(c.xp);
+  const next = nextReward(c.gold, state.rewards.filter(r => r.lvl <= lv));
+  const pct = next ? Math.min(100, Math.round(c.gold / next.cost * 100)) : 100;
+  const hist = state.requests.filter(r => r.child === c.name);
+  const statusTag = { approved: '<span class="tag tag-accent-2">Achetée ✅</span>', pending: '<span class="tag tag-neutral">En attente</span>', refused: '<span class="tag tag-accent">Refusée</span>' };
+  return `
+  <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:24px">Boutique 🛒</h2></div>
+  <div style="margin:14px 20px 18px;padding:16px;border-radius:var(--radius-lg);background:var(--color-accent-100);display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <span style="font-family:var(--font-heading);font-size:22px;color:var(--color-accent-800)">🪙 ${c.gold}</span>
+      <span style="font-size:12px;color:var(--color-accent-700)">${next ? `prochain article à ${next.cost} 🪙` : 'Tout est à portée de bourse !'}</span>
+    </div>
+    <div style="height:8px;border-radius:999px;background:var(--color-accent-300);overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:var(--color-accent-600);border-radius:999px"></div>
+    </div>
+  </div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:10px">
+    ${state.rewards.map((r, i) => {
+      const locked = r.lvl > lv;
+      const manque = r.cost - c.gold;
+      const pending = state.requests.some(q => q.child === c.name && q.name === r.name && q.status === 'pending');
+      return `
+      <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px${locked || manque > 0 ? ';opacity:0.55' : ''}">
+        <div style="font-size:24px">${locked ? '🔒' : r.icon}</div>
+        <div style="flex:1"><div class="card-title" style="font-size:15px">${esc(r.name)}</div>
+          <span class="tag tag-outline">${r.cost} 🪙</span>${r.lvl > 1 ? ` <span class="tag ${locked ? 'tag-accent' : 'tag-accent-2'}">Niv. ${r.lvl}</span>` : ''}</div>
+        ${locked
+          ? `<button class="btn btn-secondary" disabled>🔒 Niv. ${r.lvl}</button>`
+          : manque > 0
+            ? `<button class="btn btn-secondary" disabled>manque ${manque} 🪙</button>`
+            : pending
+              ? `<button class="btn btn-secondary" disabled>Commandé</button>`
+              : `<button class="btn btn-primary" data-action="request-reward" data-i="${i}">Acheter</button>`}
+      </div>`;
+    }).join('')}
+  </div>
+  <div style="padding:20px 20px 8px" class="kicker">Mes achats</div>
+  <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
+    ${hist.map(r => `
+    <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+      <span>${r.icon} ${esc(r.name)}</span>${statusTag[r.status]}
+    </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucune demande pour l’instant.</p>'}
+  </div>
+  <div style="padding:0 20px 8px" class="kicker">Mes idées d'articles</div>
+  <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
+    ${state.proposals.map((p, i) => p.child !== c.name ? '' : `
+    <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+      <span>💡 ${esc(p.name)} (${p.cost} 🪙)</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        ${p.status === 'refused' ? '<span class="tag tag-accent">Refusée</span>' : '<span class="tag tag-neutral">En attente</span>'}
+        <button class="btn btn-icon btn-ghost" data-action="del-proposal" data-i="${i}" aria-label="Retirer">✕</button>
+      </div>
+    </div>`).join('')}
+    <div class="card elev-sm" style="gap:8px;margin-top:6px">
+      <div class="card-title" style="font-size:14px">💡 Proposer un article</div>
+      <div class="field" style="margin:0"><label>Mon idée</label><input class="input" id="proposal-name" placeholder="Ex : Aller à la piscine"></div>
+      <div class="field" style="margin:0"><label>Prix proposé (🪙)</label><input class="input" id="proposal-cost" type="number" min="1" placeholder="Ex : 60"></div>
+      <button class="btn btn-secondary btn-block" data-action="propose-reward">Envoyer aux parents</button>
+    </div>
+  </div>`;
+}
+
+function childSeg() {
+  return `<div class="seg" style="margin-top:12px">${state.children.map((c, i) =>
+    `<label class="seg-opt"><input type="radio" name="child" value="${i}"${i === state.activeChild ? ' checked' : ''}><span>${esc(c.name)}</span></label>`).join('')}</div>`;
+}
+
+function screenTaches() {
+  const c = child();
+  return `
+  <div style="padding:22px 20px 4px">
+    <h2 style="margin:0;font-size:22px">Quêtes</h2>
+    ${childSeg()}
+  </div>
+  <div style="padding:14px 20px 4px" class="kicker">Quêtes de ${esc(c.name)}</div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+    ${c.tasks.map((t, i) => taskRow(t, i, true)).join('') || '<p class="text-muted" style="font-size:13px">Aucune quête assignée.</p>'}
+  </div>
+  <div style="padding:10px 20px 24px;display:flex;flex-direction:column;gap:8px;margin-top:auto">
+    <div class="card elev-md" style="gap:10px">
+      <div class="card-title" style="font-size:14px">+ Ajouter une quête à ${esc(c.name)}</div>
+      <div class="field" style="margin:0"><label>Nom de la quête</label><input class="input" id="new-task-name" placeholder="Ex : Passer l'aspirateur"></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="new-task-xp" type="number" min="1" placeholder="Ex : 20"></div>
+        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="new-task-gold" type="number" min="0" placeholder="Ex : 10"></div>
+      </div>
+      <label class="radio" style="font-size:13px"><input type="checkbox" id="new-task-daily"><span class="dot"></span>Quête quotidienne 🎯</label>
+      <button class="btn btn-primary btn-block" data-action="add-task">Ajouter la quête</button>
+    </div>
+
+    <div style="padding:8px 0 0" class="kicker">Modèles réutilisables</div>
+    ${state.questList.map((t, i) => `
+    <div class="card elev-sm" style="gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px">${t.icon || '⭐'}</span>
+        <div style="flex:1"><div class="card-title" style="font-size:14px">${esc(t.name)}</div>${loot(t.xp, t.gold)}${t.daily ? ' <span class="tag tag-neutral">🎯</span>' : ''}</div>
+        <button class="btn btn-icon btn-ghost" data-action="del-quest-def" data-i="${i}" aria-label="Supprimer le modèle">✕</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" data-action="assign-quest" data-i="${i}">Assigner à ${esc(c.name)}</button>
+        <button class="btn btn-secondary" style="flex:1" data-action="assign-quest-all" data-i="${i}">À tous</button>
+      </div>
+    </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucun modèle. Crée-en un ci-dessous.</p>'}
+    <div class="card elev-sm" style="gap:8px">
+      <div class="card-title" style="font-size:14px">+ Nouveau modèle</div>
+      <div class="field" style="margin:0"><label>Nom</label><input class="input" id="qd-name" placeholder="Ex : Sortir la poubelle"></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="qd-xp" type="number" min="1" placeholder="Ex : 15"></div>
+        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="qd-gold" type="number" min="0" placeholder="Ex : 7"></div>
+      </div>
+      <label class="radio" style="font-size:13px"><input type="checkbox" id="qd-daily"><span class="dot"></span>Quotidienne 🎯</label>
+      <button class="btn btn-secondary btn-block" data-action="add-quest-def">Enregistrer le modèle</button>
+    </div>
+  </div>`;
+}
+
+function screenSanctions() {
+  const pending = state.requests.filter(r => r.status === 'pending');
+  return `
+  <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Boutique &amp; sanctions</h2></div>
+  ${pending.map(r => {
+    const qi = state.requests.indexOf(r);
+    return `
+    <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-accent-100);display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">🛒</span>
+      <div style="flex:1;font-size:13px;color:var(--color-accent-800)"><strong>${esc(r.child)}</strong> veut acheter : ${esc(r.name)} (${r.cost} 🪙)</div>
+    </div>
+    <div style="display:flex;gap:8px;padding:8px 20px 4px">
+      <button class="btn btn-primary" style="flex:1" data-action="approve" data-i="${qi}">Approuver</button>
+      <button class="btn btn-secondary" style="flex:1" data-action="refuse" data-i="${qi}">Refuser</button>
+    </div>`;
+  }).join('')}
+  <div style="padding:20px 20px 8px" class="kicker">Sanctions</div>
+  <div style="padding:0 20px 8px">
+    ${childSeg()}
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+      ${state.sanctionsList.map((s, i) => `
+      <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:10px;padding:10px 14px">
+        <div style="flex:1;font-size:14px">${esc(s.name)} <span class="tag tag-accent">-${s.gold} 🪙</span></div>
+        <button class="btn btn-primary" data-action="apply-sanction" data-i="${i}">Appliquer à ${esc(child().name)}</button>
+        <button class="btn btn-icon btn-ghost" data-action="del-sanction-def" data-i="${i}" aria-label="Supprimer">✕</button>
+      </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucune sanction dans la liste.</p>'}
+    </div>
+    <div class="card elev-sm" style="gap:8px;margin-top:10px">
+      <div class="card-title" style="font-size:14px">+ Ajouter à la liste</div>
+      <div class="field" style="margin:0"><label>Motif</label><input class="input" id="sanction-motif" placeholder="Ex : Croix de conduite à l'école"></div>
+      <div class="field" style="margin:0"><label>Or retiré 🪙</label><input class="input" id="sanction-pts" type="number" min="1" placeholder="Ex : 10"></div>
+      <button class="btn btn-secondary btn-block" data-action="add-sanction-def">Ajouter la sanction</button>
+    </div>
+    ${child().sanctions.map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:10px;color:var(--color-neutral-700)">
+      <span>${esc(s.motif)} · ${esc(child().name)}</span><span class="tag tag-accent">-${s.gold} 🪙</span>
+    </div>`).join('')}
+  </div>
+  ${state.proposals.some(p => p.status === 'pending') ? `
+  <div style="padding:16px 20px 8px" class="kicker">Propositions à valider</div>
+  <div style="padding:0 20px 8px;display:flex;flex-direction:column;gap:8px">
+    ${state.proposals.map((p, i) => p.status !== 'pending' ? '' : `
+    <div class="card elev-sm" style="gap:8px">
+      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">${p.cost} 🪙</span></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" data-action="approve-proposal" data-i="${i}">Accepter</button>
+        <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
+      </div>
+    </div>`).join('')}
+  </div>` : ''}
+  <div style="padding:16px 20px 8px" class="kicker">Articles de la boutique</div>
+  <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
+    ${state.rewards.map((r, i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:14px">${r.icon} ${esc(r.name)}</span>
+      <div style="display:flex;align-items:center;gap:6px"><span class="tag tag-outline">${r.cost} 🪙</span><span class="tag tag-neutral">Niv. ${r.lvl}</span><button class="btn btn-icon btn-ghost" data-action="del-reward" data-i="${i}" aria-label="Supprimer">✕</button></div>
+    </div>`).join('')}
+    <div class="card elev-sm" style="gap:8px;margin-top:6px">
+      <div class="field" style="margin:0"><label>Nouvel article</label><input class="input" id="new-reward-name" placeholder="Ex : 🚲 Sortie vélo"></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>Prix en or 🪙</label><input class="input" id="new-reward-cost" type="number" min="1" placeholder="Ex : 60"></div>
+        <div class="field" style="margin:0;flex:1"><label>Niveau requis</label><input class="input" id="new-reward-lvl" type="number" min="1" placeholder="Ex : 2"></div>
+      </div>
+      <button class="btn btn-secondary btn-block" data-action="add-reward">+ Ajouter un article</button>
+    </div>
+  </div>`;
+}
+
+function screenEnfants() {
+  return `
+  <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Enfants</h2></div>
+  <div style="padding:14px 20px;display:flex;flex-direction:column;gap:8px">
+    ${state.children.map((c, i) => `
+    <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:12px">
+      <div class="task-icon">🧒</div>
+      <div style="flex:1">
+        <div class="card-title" style="font-size:15px">${esc(c.name)}</div>
+        <span class="tag tag-accent-2" style="margin-top:4px">⚔️ Niv. ${level(c.xp)} · ${c.xp} XP</span>
+        <span class="tag tag-accent" style="margin-top:4px;margin-left:6px">🪙 ${c.gold}</span>
+        <span class="tag ${c.pin ? 'tag-neutral' : 'tag-accent'}" style="margin-top:4px;margin-left:6px">${c.pin ? 'PIN défini' : 'PIN à créer'}</span>
+      </div>
+      <button class="btn btn-secondary" data-action="reset-child-pin" data-i="${i}" title="Réinitialiser le PIN">🔑</button>
+      <button class="btn btn-icon btn-ghost" data-action="del-child" data-i="${i}" aria-label="Supprimer">✕</button>
+    </div>`).join('') || '<p class="text-muted">Aucun enfant.</p>'}
+  </div>
+  <div style="padding:8px 20px 24px;margin-top:auto">
+    <div class="card elev-md" style="gap:10px">
+      <div class="card-title" style="font-size:14px">+ Ajouter un enfant</div>
+      <div class="field" style="margin:0"><label>Prénom</label><input class="input" id="new-child-name" placeholder="Ex : Léa"></div>
+      <button class="btn btn-primary btn-block" data-action="add-child">Ajouter l'enfant</button>
+    </div>
+  </div>`;
+}
+
+function screenFamille() {
+  const owner = state.owner === me.email;
+  return `
+  <div style="padding:22px 20px 4px">
+    <h2 style="margin:0;font-size:22px">Famille</h2>
+    <p class="text-muted" style="font-size:13px;margin:4px 0 0">Connecté : ${esc(me.name)} · ${esc(me.email)}</p>
+  </div>
+  <div style="padding:14px 20px 4px" class="kicker">Familles que je gère</div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+    ${families.map(f => `
+    <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:10px;padding:12px${f.id === state.id ? ';outline:2px solid var(--color-accent)' : ''}">
+      <div style="flex:1">
+        <div class="card-title" style="font-size:15px">${esc(f.name)}</div>
+        <span class="tag tag-neutral" style="margin-top:4px">${f.children.length} enfant${f.children.length > 1 ? 's' : ''}</span>
+        <span class="tag ${f.owner === me.email ? 'tag-accent-2' : 'tag-neutral'}" style="margin-top:4px;margin-left:6px">${f.owner === me.email ? 'Propriétaire' : 'Invité'}</span>
+      </div>
+      ${f.id === state.id ? '<span class="tag tag-accent">Active</span>' : `<button class="btn btn-secondary" data-action="switch-family" data-id="${f.id}">Gérer</button>`}
+    </div>`).join('')}
+    <div class="card elev-sm" style="gap:8px;margin-top:6px">
+      <div class="field" style="margin:0"><label>Créer une nouvelle famille</label><input class="input" id="new-fam-name" placeholder="Ex : Famille Durand"></div>
+      <button class="btn btn-secondary btn-block" data-action="add-family">+ Créer la famille</button>
+    </div>
+  </div>
+  <div style="padding:18px 20px 4px" class="kicker">Adultes de « ${esc(state.name)} »</div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+    ${state.members.map(m => `
+    <div style="display:flex;align-items:center;justify-content:space-between;font-size:14px">
+      <span>${(state.memberInfo && state.memberInfo[m]) ? '👤 ' + esc(state.memberInfo[m]) : '✉️ ' + esc(m) + ' (invité)'}${m === state.owner ? ' <span class="tag tag-accent-2">Propriétaire</span>' : ''}</span>
+      ${owner && m !== state.owner ? `<button class="btn btn-icon btn-ghost" data-action="remove-adult" data-email="${esc(m)}" aria-label="Retirer">✕</button>` : ''}
+    </div>`).join('')}
+    ${owner ? `
+    <div class="card elev-sm" style="gap:8px;margin-top:6px">
+      <div class="card-title" style="font-size:14px">Donner l'accès à un autre adulte</div>
+      <div class="field" style="margin:0"><label>Email de l'adulte</label><input class="input" id="invite-email" type="email" placeholder="conjoint@email.fr"></div>
+      <button class="btn btn-primary btn-block" data-action="invite-adult">Inviter</button>
+      <p class="text-muted" style="font-size:11px;margin:0">S'il n'a pas encore de compte, il en crée un avec cet email et rejoint automatiquement la famille.</p>
+    </div>` : '<p class="text-muted" style="font-size:12px">Seul le propriétaire peut inviter ou retirer des adultes.</p>'}
+  </div>
+  <div style="padding:20px 20px 28px"><button class="btn btn-secondary btn-block" data-action="logout">Se déconnecter</button></div>`;
+}
+
+/* ── écrans d'authentification ── */
+
+function renderAuth() {
+  const signup = authMode === 'signup';
+  document.getElementById('main').innerHTML = `
+  <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px">
+    <div style="text-align:center">
+      <div style="font-size:40px">🛡️</div>
+      <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
+      <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
+    </div>
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
+    <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>
+    <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
+    ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
+    <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
+    <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? 'J’ai déjà un compte' : 'Créer un nouveau compte'}</button>
+    ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
+  </div>`;
+  document.getElementById('nav').innerHTML = '';
+}
+
+function renderUnlock() {
+  document.getElementById('main').innerHTML = `
+  <div style="padding:40px 24px;display:flex;flex-direction:column;gap:14px">
+    <div style="text-align:center"><div style="font-size:40px">🔐</div>
+      <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
+      <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton mot de passe pour déverrouiller la gestion.</p></div>
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    <div class="field" style="margin:0"><label>Mot de passe de ${esc(me.email)}</label><input class="input" id="pu-pass" type="password" placeholder="••••••"></div>
+    <button class="btn btn-primary btn-block" data-action="unlockParent">Déverrouiller</button>
+    <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
+  </div>`;
+  document.getElementById('nav').innerHTML = '';
+}
+
+function renderNoFamily() {
+  document.getElementById('main').innerHTML = `
+  <div style="padding:40px 24px;text-align:center;display:flex;flex-direction:column;gap:12px">
+    <div style="font-size:40px">🏠</div>
+    <h3 style="margin:0">Aucune famille</h3>
+    <p class="text-muted" style="font-size:13px;margin:0">Crée ta famille pour commencer à gérer des enfants.</p>
+    <div class="field" style="text-align:left;margin:0"><label>Nom de la famille</label><input class="input" id="new-fam-name" placeholder="Ex : Famille Martin"></div>
+    <button class="btn btn-primary btn-block" data-action="add-family">Créer la famille</button>
+    <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
+  </div>`;
+  document.getElementById('nav').innerHTML = '';
+}
+
+/* ── render ── */
+
+const TABS = {
+  enfant: [['accueil', '⚔️', 'Quêtes'], ['notes', '📘', 'Notes'], ['recompenses', '🛒', 'Boutique']],
+  parent: [['taches', '⚔️', 'Quêtes'], ['sanctions', '🛒', 'Boutique'], ['enfants', '🧒', 'Enfants'], ['famille', '👪', 'Famille']],
+};
+const SCREENS = { accueil: screenAccueil, notes: screenNotes, recompenses: screenRecompenses, taches: screenTaches, sanctions: screenSanctions, enfants: screenEnfants, famille: screenFamille };
+
+function hideSelect() { document.getElementById('child-select').style.display = 'none'; }
+
+function render() {
+  const role = state ? state.role : 'enfant';
+  document.querySelector('.topbar > span').textContent =
+    (state && role === 'parent' && me && parentUnlocked) ? '👪 ' + state.name : 'Tâche Enfant';
+  document.getElementById('role-seg').style.display = me ? '' : 'none';
+  const roleInput = document.querySelector(`#role-seg input[value=${role}]`); if (roleInput) roleInput.checked = true;
+
+  if (!me) { hideSelect(); return renderAuth(); }
+  if (!families.length) { hideSelect(); state = null; return renderNoFamily(); }
+  if (!state) setActiveFamily(0);
+
+  if (state.role === 'parent' && !parentUnlocked) { hideSelect(); return renderUnlock(); }
+
+  state.activeChild = Math.max(0, Math.min(state.activeChild, state.children.length - 1));
+  if (!TABS[state.role].some(t => t[0] === state.tab)) state.tab = TABS[state.role][0][0];
+  if (state.role === 'parent' && !state.children.length && !['enfants', 'famille'].includes(state.tab)) state.tab = 'enfants';
+  const sel = document.getElementById('child-select');
+  sel.style.display = state.role === 'enfant' && state.children.length ? '' : 'none';
+  sel.innerHTML = state.children.map((c, i) => `<option value="${i}"${i === state.activeChild ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+
+  if (state.role === 'enfant' && !state.children.length) {
+    document.getElementById('main').innerHTML = '<p class="text-muted" style="padding:24px 20px">Aucun enfant configuré. Un parent doit en ajouter un.</p>';
+    document.getElementById('nav').innerHTML = '';
+    return;
+  }
+  if (state.role === 'enfant' && !unlocked.has(child().name)) {
+    document.getElementById('main').innerHTML = `
+      <div style="padding:60px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+        <div style="font-size:44px">🔒</div>
+        <h3 style="margin:0">Salut ${esc(child().name)} !</h3>
+        <p class="text-muted" style="margin:0">${child().pin ? 'Entre ton code PIN pour ouvrir tes pages.' : 'Crée ton code PIN pour commencer.'}</p>
+        <button class="btn btn-primary" style="margin-top:8px" data-action="unlock-child">${child().pin ? 'Entrer mon code' : 'Créer mon code'}</button>
+      </div>`;
+    document.getElementById('nav').innerHTML = '';
+    return;
+  }
+  document.getElementById('main').innerHTML = SCREENS[state.tab]();
+  document.getElementById('nav').innerHTML = TABS[state.role].map(([id, ico, label]) =>
+    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join('');
+}
+
+/* ── PIN enfant (côté client, stocké dans la donnée famille) ── */
+// ponytail: PIN en clair dans la donnée famille — barrière anti-fratrie sur un appareil, pas de la vraie sécurité
+function createPin(label) {
+  const p1 = prompt(`Créer un code PIN ${label} (4 chiffres) :`);
+  if (!p1 || !/^\d{4}$/.test(p1)) { if (p1 !== null) alert('PIN invalide : 4 chiffres attendus.'); return null; }
+  if (prompt('Confirmer le code PIN :') !== p1) { alert('Les codes ne correspondent pas.'); return null; }
+  return p1;
+}
+function checkPin(pin, label) {
+  const p = prompt(`Code PIN ${label} :`);
+  if (p === pin) return true;
+  if (p !== null) alert('Code incorrect.');
+  return false;
+}
+function childAuth(c) {
+  if (unlocked.has(c.name)) return true;
+  if (!c.pin) { const p = createPin(`pour ${c.name}`); if (!p) return false; c.pin = p; save(); }
+  else if (!checkPin(c.pin, `de ${c.name}`)) return false;
+  unlocked.add(c.name);
+  return true;
+}
+
+/* ── actions ── */
+
+const val = id => document.getElementById(id).value.trim();
+function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, daily: !!t.daily }); }
+function replaceFamily(f) {
+  const i = families.findIndex(x => x.id === f.id);
+  if (i < 0) return;
+  const prev = families[i];
+  f.role = prev.role; f.tab = prev.tab; f.activeChild = prev.activeChild; // conserver l'état d'UI local
+  families[i] = f;
+  if (state && state.id === f.id) { activeFamily = i; state = f; }
+}
+function onAuthed(r) {
+  token = r.token; localStorage.setItem(TOKEN_KEY, token);
+  me = r.me; families = r.families || []; parentUnlocked = true; authMsg = '';
+  if (families.length) { setActiveFamily(0); state.role = 'parent'; }
+}
+
+const ACTIONS = {
+  nav: el => { state.tab = el.dataset.tab; },
+  'toggle-task': el => {
+    const t = child().tasks[+el.dataset.i];
+    t.done = !t.done;
+    const m = t.done ? 1 : -1;
+    child().xp = Math.max(0, child().xp + m * t.xp);
+    child().gold = Math.max(0, child().gold + m * t.gold);
+  },
+  'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
+  'add-task': () => {
+    const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
+    const daily = document.getElementById('new-task-daily').checked;
+    if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
+    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, daily });
+  },
+  'assign-quest': el => addQuestTo(child(), state.questList[+el.dataset.i]),
+  'assign-quest-all': el => { const t = state.questList[+el.dataset.i]; state.children.forEach(c => addQuestTo(c, t)); },
+  'del-quest-def': el => { state.questList.splice(+el.dataset.i, 1); },
+  'add-quest-def': () => {
+    const name = val('qd-name'), xp = parseInt(val('qd-xp'), 10), gold = parseInt(val('qd-gold') || '0', 10);
+    const daily = document.getElementById('qd-daily').checked;
+    if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
+    state.questList.push({ icon: '⭐', name, xp, gold, daily });
+  },
+  'save-grades': () => {
+    document.querySelectorAll('[data-grade]').forEach(inp => {
+      const raw = inp.value.trim();
+      if (!raw) return;
+      const r = gradeReward(raw.split('/')[0]);
+      if (r === null) return alert(`Note invalide : « ${raw} » (attendu : 0 à 20)`);
+      const g = child().grades[+inp.dataset.grade];
+      g.grade = raw.includes('/') ? raw : `${raw}/20`;
+      g.xp = r.xp; g.gold = r.gold;
+      child().xp += r.xp;
+      child().gold += r.gold;
+    });
+  },
+  'request-reward': el => {
+    const r = state.rewards[+el.dataset.i];
+    state.requests.push({ child: child().name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
+  },
+  approve: el => {
+    const q = state.requests[+el.dataset.i];
+    const c = state.children.find(c => c.name === q.child);
+    if (c) c.gold = Math.max(0, c.gold - q.cost);
+    q.status = 'approved';
+  },
+  refuse: el => { state.requests[+el.dataset.i].status = 'refused'; },
+  'apply-sanction': el => {
+    const s = state.sanctionsList[+el.dataset.i];
+    child().sanctions.unshift({ motif: s.name, gold: s.gold });
+    child().gold = Math.max(0, child().gold - s.gold);
+  },
+  'add-sanction-def': () => {
+    const name = val('sanction-motif'), gold = parseInt(val('sanction-pts'), 10);
+    if (!name || !(gold > 0)) return alert('Motif et or (> 0) requis.');
+    state.sanctionsList.push({ name, gold });
+  },
+  'del-sanction-def': el => { state.sanctionsList.splice(+el.dataset.i, 1); },
+  'unlock-child': () => { childAuth(child()); },
+  'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
+  'propose-reward': () => {
+    const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
+    if (!name || !(cost > 0)) return alert('Idée et points (> 0) requis.');
+    state.proposals.push({ child: child().name, name, cost, status: 'pending' });
+  },
+  'del-proposal': el => { state.proposals.splice(+el.dataset.i, 1); },
+  'approve-proposal': el => {
+    const [p] = state.proposals.splice(+el.dataset.i, 1);
+    state.rewards.push({ icon: '💡', name: p.name, cost: p.cost, lvl: 1 });
+  },
+  'refuse-proposal': el => { state.proposals[+el.dataset.i].status = 'refused'; },
+  'add-child': () => {
+    const name = val('new-child-name');
+    if (!name) return alert('Prénom requis.');
+    if (state.children.some(c => c.name.toLowerCase() === name.toLowerCase())) return alert('Ce prénom existe déjà.');
+    state.children.push({ name, xp: 0, gold: 0, tasks: [], grades: [], sanctions: [] });
+  },
+  'del-child': el => {
+    const c = state.children[+el.dataset.i];
+    if (!confirm(`Supprimer ${c.name} et toutes ses données ?`)) return;
+    state.children.splice(+el.dataset.i, 1);
+    state.requests = state.requests.filter(r => r.child !== c.name);
+    state.proposals = state.proposals.filter(p => p.child !== c.name);
+    unlocked.delete(c.name);
+  },
+  'reset-child-pin': el => {
+    const c = state.children[+el.dataset.i];
+    if (!confirm(`Réinitialiser le PIN de ${c.name} ? Il devra en créer un nouveau.`)) return;
+    c.pin = null;
+    unlocked.delete(c.name);
+  },
+  'add-reward': () => {
+    const name = val('new-reward-name'), cost = parseInt(val('new-reward-cost'), 10), lvl = parseInt(val('new-reward-lvl') || '1', 10);
+    if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
+    state.rewards.push({ icon: '🎁', name, cost, lvl });
+  },
+
+  // ── actions serveur (async, gèrent leur propre persistance) ──
+  login: async () => {
+    const email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value;
+    if (!email || !password) { authMsg = 'Email et mot de passe requis.'; return; }
+    onAuthed(await api('login', { email, password }));
+  },
+  signup: async () => {
+    const name = val('au-name'), email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value, familyName = val('au-fam');
+    if (!name || !email || !password || !familyName) { authMsg = 'Tous les champs sont requis.'; return; }
+    onAuthed(await api('signup', { name, email, password, familyName }));
+  },
+  unlockParent: async () => {
+    const password = document.getElementById('pu-pass').value;
+    const r = await api('verifyPassword', { password });
+    if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
+  },
+  'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
+  logout: () => {
+    token = null; localStorage.removeItem(TOKEN_KEY);
+    me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';
+  },
+  'switch-family': el => { const i = families.findIndex(f => f.id === el.dataset.id); if (i >= 0) { setActiveFamily(i); state.role = 'parent'; } },
+  'add-family': async () => {
+    const name = val('new-fam-name'); if (!name) { alert('Nom de la famille requis.'); return; }
+    const r = await api('createFamily', { name });
+    families.push(r.family); setActiveFamily(families.length - 1); state.role = 'parent';
+  },
+  'invite-adult': async () => {
+    const email = val('invite-email').toLowerCase();
+    const r = await api('invite', { familyId: state.id, email });
+    replaceFamily(r.family);
+    alert(`${email} peut désormais gérer « ${state.name} » en se connectant avec cet email.`);
+  },
+  'remove-adult': async el => {
+    const email = el.dataset.email;
+    if (!confirm(`Retirer l'accès de ${email} à « ${state.name} » ?`)) return;
+    const r = await api('removeAdult', { familyId: state.id, email });
+    replaceFamily(r.family);
+  },
+};
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult']);
+
+function celebrate(text) {
+  const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
+  const o = document.createElement('div');
+  o.className = 'lvlup-overlay';
+  o.innerHTML = `<div class="lvlup-badge">${text}</div>` +
+    stars.concat(stars).map((s, i) => {
+      const a = i / 10 * 2 * Math.PI;
+      return `<span class="lvlup-star" style="--dx:${Math.round(Math.cos(a) * 130)}px;--dy:${Math.round(Math.sin(a) * 130)}px">${s}</span>`;
+    }).join('');
+  document.body.appendChild(o);
+  setTimeout(() => o.remove(), 1900);
+}
+
+// bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant actif sont faites
+function maybeAwardDailyBonus() {
+  const c = state && state.children[state.activeChild];
+  if (!c) return;
+  const daily = c.tasks.filter(t => t.daily);
+  if (daily.length && daily.every(t => t.done) && c.dailyBonusDay !== state.day) {
+    c.dailyBonusDay = state.day;
+    c.xp += state.dailyBonus.xp;
+    c.gold += state.dailyBonus.gold;
+  }
+}
+
+document.body.addEventListener('click', async e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const act = el.dataset.action, fn = ACTIONS[act];
+  if (!fn) return;
+  if (SERVER_ACTIONS.has(act)) {
+    try { await fn(el); } catch (err) { authMsg = String(err); }
+    render();
+    return;
+  }
+  if (!state) return;
+  const c0 = state.children[state.activeChild];
+  const lvl0 = c0 ? level(c0.xp) : 1;
+  const bonus0 = c0 ? c0.dailyBonusDay : null;
+  fn(el);
+  state.activeChild = Math.max(0, Math.min(state.activeChild, state.children.length - 1));
+  maybeAwardDailyBonus();
+  const c = state.children[state.activeChild];
+  if (state.role === 'enfant' && c) {
+    if (c.dailyBonusDay === state.day && bonus0 !== state.day) celebrate(`🎯 Mission accomplie ! +${state.dailyBonus.xp} XP`);
+    else if (level(c.xp) > lvl0) celebrate(`⚔️ Niveau ${level(c.xp)} !`);
+  }
+  save(); render();
+});
+document.getElementById('role-seg').addEventListener('change', e => {
+  if (state) state.role = e.target.value;
+  if (e.target.value === 'enfant') parentUnlocked = false; // re-verrouille l'espace parent
+  render();
+});
+document.body.addEventListener('change', e => {
+  if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
+});
+
+/* self-check (fonctions pures) */
+console.assert(gradeReward('16').xp === 50 && gradeReward('13,5').gold === 5 && gradeReward('8').gold === 0, 'gradeReward barème');
+console.assert(gradeReward('25') === null && gradeReward('abc') === null, 'gradeReward validation');
+console.assert(level(0) === 1 && level(99) === 1 && level(230) === 3, 'level');
+console.assert(nextReward(128, [{ cost: 50 }, { cost: 80 }, { cost: 150 }]).cost === 150, 'nextReward');
+console.assert(esc('<b>&"') === '&lt;b&gt;&amp;&quot;', 'esc');
+console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true }, { daily: true, done: true }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
+
+/* boot : restaure la session depuis le jeton persisté, sinon écran de connexion */
+async function boot() {
+  token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    try {
+      const r = await api('me');
+      if (!r.me) throw 'session invalide';
+      me = r.me; families = r.families || []; parentUnlocked = false;
+      if (families.length) setActiveFamily(0);
+      render();
+      return;
+    } catch { token = null; localStorage.removeItem(TOKEN_KEY); }
+  }
+  me = null; families = []; state = null;
+  render();
+}
+boot();
+</script>
+</body>
+</html>
