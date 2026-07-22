@@ -8,28 +8,61 @@
 <style>
   body { background: var(--color-neutral-200); }
   .phone {
-    max-width: 420px; min-height: 100dvh; margin: 0 auto;
+    max-width: 440px; min-height: 100dvh; margin: 0 auto;
     background: var(--color-bg); display: flex; flex-direction: column;
     box-shadow: var(--shadow-md);
   }
   .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 20px; border-bottom: 1px solid var(--color-divider);
-    font-size: 12px; color: var(--color-neutral-600);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 16px; border-bottom: 1px solid var(--color-divider);
+    font-size: 12px; color: var(--color-neutral-600); grid-area: top;
   }
-  main { flex: 1; display: flex; flex-direction: column; }
+  .topbar > span { font-family: var(--font-heading); font-size: 14px; color: var(--color-text); white-space: nowrap; }
+  .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .logout-label { display: none; }
+  main { flex: 1; display: flex; flex-direction: column; grid-area: main; }
   .bottom-nav {
     display: flex; justify-content: space-around; align-items: center;
     padding: 10px 16px; border-top: 1px solid var(--color-divider);
-    position: sticky; bottom: 0; background: var(--color-bg);
+    position: sticky; bottom: 0; background: var(--color-bg); grid-area: nav;
   }
+  .no-nav .bottom-nav { display: none; }
   .bottom-nav button {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     background: none; border: 0; cursor: pointer; color: var(--color-neutral-600);
-    font-family: var(--font-heading); font-size: 11px; padding: 2px 10px;
+    font-family: var(--font-heading); font-size: 11px; padding: 4px 10px; border-radius: 12px;
   }
   .bottom-nav button.active { color: var(--color-accent-700); }
   .bottom-nav button .ico { font-size: 19px; }
+  .deck { display: grid; grid-template-columns: 1fr; gap: 10px; }
+
+  /* ── Tablette : cadre plus large, listes de cartes sur 2 colonnes ── */
+  @media (min-width: 760px) {
+    .phone { max-width: 760px; }
+    .logout-label { display: inline; }
+    .deck-2 { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ── Ordinateur : navigation en barre latérale, contenu scrollable ── */
+  @media (min-width: 1100px) {
+    body { padding: 24px; }
+    .phone {
+      max-width: 1080px; height: calc(100dvh - 48px); min-height: 560px;
+      border-radius: 24px; overflow: hidden;
+      display: grid; grid-template-columns: 236px 1fr; grid-template-rows: auto 1fr;
+      grid-template-areas: "top top" "nav main";
+    }
+    .phone.no-nav { grid-template-columns: 1fr; grid-template-areas: "top" "main"; }
+    main { overflow: auto; }
+    .bottom-nav {
+      position: static; flex-direction: column; justify-content: flex-start; align-items: stretch;
+      gap: 4px; padding: 16px 14px; border-top: 0; border-right: 1px solid var(--color-divider); overflow: auto;
+    }
+    .bottom-nav button {
+      flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; font-size: 13px;
+    }
+    .bottom-nav button.active { background: var(--color-accent-100); color: var(--color-accent-800); }
+  }
   .check {
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
     border: 2px solid var(--color-divider); background: transparent; padding: 0;
@@ -70,10 +103,13 @@
 <div class="phone">
   <div class="topbar">
     <span>Tâche Enfant</span>
-    <select class="input" id="child-select" style="width:auto;min-height:30px;padding:2px 28px 2px 12px;font-size:13px"></select>
-    <div class="seg" id="role-seg">
-      <label class="seg-opt"><input type="radio" name="role" value="enfant"><span>Enfant</span></label>
-      <label class="seg-opt"><input type="radio" name="role" value="parent"><span>Parent</span></label>
+    <div class="topbar-right">
+      <select class="input" id="child-select" style="width:auto;min-height:30px;padding:2px 28px 2px 12px;font-size:13px"></select>
+      <div class="seg" id="role-seg">
+        <label class="seg-opt"><input type="radio" name="role" value="enfant"><span>Enfant</span></label>
+        <label class="seg-opt"><input type="radio" name="role" value="parent"><span>Parent</span></label>
+      </div>
+      <button id="logout-btn" class="btn btn-secondary" data-action="logout" title="Se déconnecter" style="min-height:30px;padding:4px 12px;font-size:12px;gap:5px">🚪<span class="logout-label">Déconnexion</span></button>
     </div>
   </div>
   <main id="main"></main>
@@ -217,7 +253,7 @@ function screenAccueil() {
     </div>`;
   })()}
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
-  <div style="padding:4px 20px 16px;display:flex;flex-direction:column;gap:10px;flex:1">
+  <div class="deck deck-2" style="padding:4px 20px 16px;flex:1">
     ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || '<p class="text-muted" style="padding-top:8px">Aucune quête pour aujourd’hui 🎉</p>'}
   </div>`;
 }
@@ -264,7 +300,7 @@ function screenRecompenses() {
       <div style="height:100%;width:${pct}%;background:var(--color-accent-600);border-radius:999px"></div>
     </div>
   </div>
-  <div style="padding:0 20px;display:flex;flex-direction:column;gap:10px">
+  <div class="deck deck-2" style="padding:0 20px">
     ${state.rewards.map((r, i) => {
       const locked = r.lvl > lv;
       const manque = r.cost - c.gold;
@@ -323,7 +359,7 @@ function screenTaches() {
     ${childSeg()}
   </div>
   <div style="padding:14px 20px 4px" class="kicker">Quêtes de ${esc(c.name)}</div>
-  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+  <div class="deck deck-2" style="padding:0 20px">
     ${c.tasks.map((t, i) => taskRow(t, i, true)).join('') || '<p class="text-muted" style="font-size:13px">Aucune quête assignée.</p>'}
   </div>
   <div style="padding:10px 20px 24px;display:flex;flex-direction:column;gap:8px;margin-top:auto">
@@ -435,7 +471,7 @@ function screenSanctions() {
 function screenEnfants() {
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Enfants</h2></div>
-  <div style="padding:14px 20px;display:flex;flex-direction:column;gap:8px">
+  <div class="deck deck-2" style="padding:14px 20px">
     ${state.children.map((c, i) => `
     <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:12px">
       <div class="task-icon">🧒</div>
@@ -504,7 +540,7 @@ function screenFamille() {
 function renderAuth() {
   const signup = authMode === 'signup';
   document.getElementById('main').innerHTML = `
-  <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px">
+  <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="text-align:center">
       <div style="font-size:40px">🛡️</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
@@ -519,12 +555,12 @@ function renderAuth() {
     <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? 'J’ai déjà un compte' : 'Créer un nouveau compte'}</button>
     ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
   </div>`;
-  document.getElementById('nav').innerHTML = '';
+  setNav('');
 }
 
 function renderUnlock() {
   document.getElementById('main').innerHTML = `
-  <div style="padding:40px 24px;display:flex;flex-direction:column;gap:14px">
+  <div style="padding:40px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="text-align:center"><div style="font-size:40px">🔐</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton mot de passe pour déverrouiller la gestion.</p></div>
@@ -533,12 +569,12 @@ function renderUnlock() {
     <button class="btn btn-primary btn-block" data-action="unlockParent">Déverrouiller</button>
     <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
   </div>`;
-  document.getElementById('nav').innerHTML = '';
+  setNav('');
 }
 
 function renderNoFamily() {
   document.getElementById('main').innerHTML = `
-  <div style="padding:40px 24px;text-align:center;display:flex;flex-direction:column;gap:12px">
+  <div style="padding:40px 24px;text-align:center;display:flex;flex-direction:column;gap:12px;max-width:440px;width:100%;margin:0 auto">
     <div style="font-size:40px">🏠</div>
     <h3 style="margin:0">Aucune famille</h3>
     <p class="text-muted" style="font-size:13px;margin:0">Crée ta famille pour commencer à gérer des enfants.</p>
@@ -546,7 +582,7 @@ function renderNoFamily() {
     <button class="btn btn-primary btn-block" data-action="add-family">Créer la famille</button>
     <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
   </div>`;
-  document.getElementById('nav').innerHTML = '';
+  setNav('');
 }
 
 /* ── render ── */
@@ -558,12 +594,17 @@ const TABS = {
 const SCREENS = { accueil: screenAccueil, notes: screenNotes, recompenses: screenRecompenses, taches: screenTaches, sanctions: screenSanctions, enfants: screenEnfants, famille: screenFamille };
 
 function hideSelect() { document.getElementById('child-select').style.display = 'none'; }
+function setNav(html) {
+  document.getElementById('nav').innerHTML = html;
+  document.querySelector('.phone').classList.toggle('no-nav', html === '');
+}
 
 function render() {
   const role = state ? state.role : 'enfant';
   document.querySelector('.topbar > span').textContent =
     (state && role === 'parent' && me && parentUnlocked) ? '👪 ' + state.name : 'Tâche Enfant';
   document.getElementById('role-seg').style.display = me ? '' : 'none';
+  document.getElementById('logout-btn').style.display = me ? '' : 'none';
   const roleInput = document.querySelector(`#role-seg input[value=${role}]`); if (roleInput) roleInput.checked = true;
 
   if (!me) { hideSelect(); return renderAuth(); }
@@ -581,7 +622,7 @@ function render() {
 
   if (state.role === 'enfant' && !state.children.length) {
     document.getElementById('main').innerHTML = '<p class="text-muted" style="padding:24px 20px">Aucun enfant configuré. Un parent doit en ajouter un.</p>';
-    document.getElementById('nav').innerHTML = '';
+    setNav('');
     return;
   }
   if (state.role === 'enfant' && !unlocked.has(child().name)) {
@@ -592,12 +633,12 @@ function render() {
         <p class="text-muted" style="margin:0">${child().pin ? 'Entre ton code PIN pour ouvrir tes pages.' : 'Crée ton code PIN pour commencer.'}</p>
         <button class="btn btn-primary" style="margin-top:8px" data-action="unlock-child">${child().pin ? 'Entrer mon code' : 'Créer mon code'}</button>
       </div>`;
-    document.getElementById('nav').innerHTML = '';
+    setNav('');
     return;
   }
   document.getElementById('main').innerHTML = SCREENS[state.tab]();
-  document.getElementById('nav').innerHTML = TABS[state.role].map(([id, ico, label]) =>
-    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join('');
+  setNav(TABS[state.role].map(([id, ico, label]) =>
+    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
 }
 
 /* ── PIN enfant (côté client, stocké dans la donnée famille) ── */
