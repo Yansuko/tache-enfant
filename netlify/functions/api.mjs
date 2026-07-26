@@ -1,6 +1,6 @@
 // Fonction Netlify (Functions v2) — expose l'API sur /api via Netlify Blobs.
 import { getStore } from '@netlify/blobs';
-import { handleApi } from './_core.mjs';
+import { handleApi, setEmailSender } from './_core.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -13,6 +13,25 @@ function blobStore() {
     del: (k) => s.delete(k),
   };
 }
+
+// envoie un email via Resend (clé API dans RESEND_API_KEY)
+async function sendEmail({ to, subject, body }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) { console.log('RESEND_API_KEY non définie, email non envoyé:', { to, subject }); return; }
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'noreply@dailykidsquest.com', to, subject, html: `<p>${body.replace(/\n/g, '<br>')}</p>` }),
+    });
+    if (!res.ok) console.error('Erreur Resend:', await res.text());
+  } catch (e) {
+    console.error('Erreur envoi email:', e.message);
+  }
+}
+
+// configure l'envoyeur d'email
+setEmailSender(sendEmail);
 
 export default async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'POST uniquement.' });

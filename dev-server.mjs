@@ -6,7 +6,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleApi } from './netlify/functions/_core.mjs';
+import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.join(DIR, 'tache-enfant');
@@ -25,6 +25,11 @@ const store = {
 };
 
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+
+// stub pour envoyer des emails en local (juste loguer)
+setEmailSender(async ({ to, subject, body }) => {
+  console.log(`📧 Email à ${to}:\n   Sujet: ${subject}\n   ${body.substring(0, 60)}...`);
+});
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/api' && req.method === 'POST') {

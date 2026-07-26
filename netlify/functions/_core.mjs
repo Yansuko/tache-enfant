@@ -3,6 +3,9 @@
 // une interface `store` minimale { get(key), set(key,val), del(key) } (valeurs JSON).
 import crypto from 'node:crypto';
 
+let emailSender = null;
+export function setEmailSender(fn) { emailSender = fn; }
+
 /* ── crypto : vrais hachages de mot de passe (scrypt) + jetons signés (HMAC) ── */
 
 export function hashPassword(pw) {
@@ -162,6 +165,16 @@ async function saveFamily(store, email, b) {
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
+  // notifier les parents quand une demande passe à "approved"
+  if (emailSender && inc.requests) {
+    for (const req of inc.requests) {
+      const oldReq = cur.requests?.find(r => r.child === req.child && r.name === req.name);
+      if (oldReq?.status === 'pending' && req.status === 'approved') {
+        const owner = await store.get('account:' + cur.owner);
+        if (owner?.email) { await emailSender({ to: owner.email, subject: `Demande approuvée: ${req.name}`, body: `La demande « ${req.name} » de ${req.child} a été approuvée!` }); }
+      }
+    }
+  }
   await store.set('family:' + inc.id, merged);
   return { status: 200, body: { ok: true } };
 }
@@ -183,11 +196,13 @@ async function invite(store, email, b) {
   if (!fam) return err(404, 'Famille introuvable.');
   if (fam.owner !== email) return err(403, 'Seul le propriétaire peut inviter.');
   if (fam.members.includes(inv)) return err(409, 'Cet adulte a déjà accès.');
+  const inviter = await store.get('account:' + email);
   fam.members.push(inv);
   await store.set('family:' + fid, fam);
   const acc = await store.get('account:' + inv);
   if (acc) { if (!acc.familyIds.includes(fid)) { acc.familyIds.push(fid); await store.set('account:' + inv, acc); } }
   else { const p = (await store.get('invite:' + inv)) || []; if (!p.includes(fid)) { p.push(fid); await store.set('invite:' + inv, p); } }
+  if (emailSender) { await emailSender({ to: inv, subject: `Invitation à la famille « ${fam.name} »`, body: `${inviter?.name || email} vous a invité à rejoindre la famille « ${fam.name} » sur DailyKids Quest IV.` }); }
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 async function removeAdult(store, email, b) {
