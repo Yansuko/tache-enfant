@@ -151,24 +151,6 @@ async function login(store, secret, b) {
   if (!acc || !checkPassword(b.password, acc.salt, acc.hash)) return err(401, 'Email ou mot de passe incorrect.');
   return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
 }
-async function unlockChildDirect(store, b) {
-  const familyName = String(b.familyName || '').trim();
-  const pin = String(b.pin || '').trim();
-  if (!familyName || !pin) return err(400, 'Nom de famille et PIN requis.');
-  // chercher la famille par nom
-  const familyIds = (await store.get('families')) || [];
-  let fam = null;
-  for (const id of familyIds) {
-    const f = await store.get('family:' + id);
-    if (f && f.name === familyName) { fam = f; break; }
-  }
-  if (!fam) return err(404, 'Famille introuvable.');
-  // vérifier le PIN : doit correspondre à au moins un enfant
-  const childWithPin = fam.children.find(c => String(c.pin) === pin);
-  if (!childWithPin) return err(401, 'PIN incorrect.');
-  // retourner la famille
-  return { status: 200, body: { families: [fam] } };
-}
 async function saveFamily(store, email, b) {
   const inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
@@ -220,7 +202,7 @@ async function removeAdult(store, email, b) {
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect']);
+const PUBLIC = new Set(['login', 'signup']);
 
 // point d'entrée unique. payload = { action, token, body }
 export async function handleApi({ action, token, body = {} }, store) {
@@ -234,7 +216,6 @@ export async function handleApi({ action, token, body = {} }, store) {
   switch (action) {
     case 'signup': return signup(store, secret, body);
     case 'login': return login(store, secret, body);
-    case 'unlockChildDirect': return unlockChildDirect(store, body);
     case 'me': return { status: 200, body: await stateFor(store, email) };
     case 'verifyPassword': {
       const acc = await store.get('account:' + email);
