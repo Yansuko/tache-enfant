@@ -128,7 +128,7 @@ let families = [];          // familles dont je suis membre (renvoyées par le s
 let activeFamily = 0;
 let state = null;           // famille active — pointeur dans families[]
 let parentUnlocked = false; // accès espace parent — en mémoire, retombe au rechargement
-let authMode = 'login', authMsg = '';
+let authMode = 'login', authMsg = '', authRole = 'parent';
 const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
 
 const today = () => new Date().toLocaleDateString('fr-CA');
@@ -538,7 +538,30 @@ function screenFamille() {
 
 /* ── écrans d'authentification ── */
 
+function renderAuthChild() {
+  document.getElementById('main').innerHTML = `
+  <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
+    <div style="text-align:center">
+      <div style="font-size:40px">🎮</div>
+      <h2 style="margin:6px 0 0;font-size:24px">Espace enfant</h2>
+      <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton nom et le code PIN</p>
+    </div>
+    <div class="seg">
+      <label class="seg-opt"><input type="radio" name="auth-role" value="parent" data-action="set-auth" data-auth-role="parent"><span>Parent</span></label>
+      <label class="seg-opt"><input type="radio" name="auth-role" value="enfant" checked data-action="set-auth" data-auth-role="enfant"><span>Enfant</span></label>
+    </div>
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo"></div>
+    <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma"></div>
+    <div class="field" style="margin:0"><label>Ton code PIN (4 chiffres)</label><input class="input" id="ec-pin" type="password" placeholder="****"></div>
+    <button class="btn btn-primary btn-block" data-action="unlock-child-direct">Se connecter</button>
+    <p class="text-muted" style="font-size:11px;text-align:center;margin:0">Demande le code PIN a tes parents</p>
+  </div>`;
+  setNav('');
+}
+
 function renderAuth() {
+  if (authRole === 'enfant') return renderAuthChild();
   const signup = authMode === 'signup';
   document.getElementById('main').innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
@@ -546,6 +569,10 @@ function renderAuth() {
       <div style="font-size:40px">🛡️</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
+    </div>
+    <div class="seg">
+      <label class="seg-opt"><input type="radio" name="auth-role" value="parent" data-action="set-auth" data-auth-role="parent" checked><span>Parent</span></label>
+      <label class="seg-opt"><input type="radio" name="auth-role" value="enfant" data-action="set-auth" data-auth-role="enfant"><span>Enfant</span></label>
     </div>
     ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
@@ -778,6 +805,18 @@ const ACTIONS = {
   'save-children': () => {
     save();
   },
+  'set-auth': el => { authRole = el.dataset.authRole || 'parent'; },
+  'unlock-child-direct': async () => {
+    const famname = val('ec-famname').trim(), name = val('ec-name').trim(), pin = val('ec-pin').trim();
+    if (!famname || !name || !pin) { authMsg = 'Tous les champs requis.'; return; }
+    if (!/^\d{4}$/.test(pin)) { authMsg = 'PIN invalide (4 chiffres).'; return; }
+    const r = await api('unlockChildDirect', { familyName: famname, childName: name, pin });
+    if (!r || !r.families || !r.families.length) { authMsg = 'Famille ou enfant introuvable, ou PIN incorrect.'; return; }
+    me = { email: name + '@enfant.local', name };
+    families = r.families;
+    state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; state.activeChild = 0; activeFamily = 0;
+    unlocked.add(name);
+  },
   'add-reward': () => {
     const name = val('new-reward-name'), cost = parseInt(val('new-reward-cost'), 10), lvl = parseInt(val('new-reward-lvl') || '1', 10);
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
@@ -824,7 +863,7 @@ const ACTIONS = {
     replaceFamily(r.family);
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child-direct']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -881,6 +920,7 @@ document.getElementById('role-seg').addEventListener('change', e => {
   render();
 });
 document.body.addEventListener('change', e => {
+  if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
 
