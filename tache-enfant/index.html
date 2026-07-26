@@ -538,24 +538,25 @@ function screenFamille() {
 /* ── écrans d'authentification ── */
 
 function renderAuth() {
-  const signup = authMode === 'signup';
-  document.getElementById('main').innerHTML = `
-  <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
-    <div style="text-align:center">
-      <div style="font-size:40px">🛡️</div>
-      <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
-      <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
-    </div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
-    ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
-    <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>
-    <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
-    ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
-    <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
-    <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? 'J’ai déjà un compte' : 'Créer un nouveau compte'}</button>
-    ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
-  </div>`;
-  setNav('');
+  const signup = authMode === ‘signup’;
+  const child = authMode === ‘child’;
+  const btnHtml = ‘<div style="display:flex;gap:6px;justify-content:center;margin:-6px 0 8px"><button class="btn ‘ + (child?’btn-ghost’:’btn-secondary’) + ‘" data-action="set-auth" data-mode="parent" style="font-size:11px;padding:4px 12px">🛡️ Parent</button><button class="btn ‘ + (child?’btn-secondary’:’btn-ghost’) + ‘" data-action="set-auth" data-mode="child" style="font-size:11px;padding:4px 12px">🎮 Enfant</button></div>’;
+  const authMsg2 = authMsg ? ‘<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">’ + esc(authMsg) + ‘</div>’ : ‘’;
+  const content = child
+    ? ‘<div style="font-size:40px;text-align:center">🎮</div><h2 style="margin:6px 0 0;font-size:24px;text-align:center">Espace enfant</h2><p class="text-muted" style="font-size:13px;margin:4px 0 0;text-align:center">Entre ton code PIN pour accéder à tes pages.</p>’ + authMsg2 +
+      ‘<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>’ +
+      ‘<div class="field" style="margin:0"><label>Code PIN (4 chiffres)</label><input class="input" id="au-pin" type="password" placeholder="••••" maxlength="4" pattern="[0-9]*"></div>’ +
+      ‘<button class="btn btn-primary btn-block" data-action="unlock-child-direct">Déverrouiller</button>’
+    : ‘<div style="font-size:40px;text-align:center">🛡️</div><h2 style="margin:6px 0 0;font-size:24px;text-align:center">Espace parent</h2><p class="text-muted" style="font-size:13px;margin:4px 0 0;text-align:center">’ + (signup ? ‘Crée ton compte et ta famille’ : ‘Connecte-toi pour gérer ta famille’) + ‘</p>’ + authMsg2 +
+      (signup ? ‘<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>’ : ‘’) +
+      ‘<div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>’ +
+      ‘<div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>’ +
+      (signup ? ‘<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>’ : ‘’) +
+      ‘<button class="btn btn-primary btn-block" data-action="’ + (signup ? ‘signup’ : ‘login’) + ‘">’ + (signup ? ‘Créer mon compte’ : ‘Se connecter’) + ‘</button>’ +
+      ‘<button class="btn btn-ghost btn-block" data-action="auth-toggle">’ + (signup ? "J’ai déjà un compte" : ‘Créer un nouveau compte’) + ‘</button>’ +
+      (signup ? ‘’ : ‘<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>’);
+  document.getElementById(‘main’).innerHTML = ‘<div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">’ + btnHtml + ‘<div style="text-align:center">’ + content + ‘</div></div>’;
+  setNav(‘’);
 }
 
 function renderUnlock() {
@@ -797,6 +798,16 @@ const ACTIONS = {
     if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
   },
   'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
+  'set-auth': el => { authMode = el.dataset.mode; authMsg = ''; },
+  'unlock-child-direct': async () => {
+    const familyName = val('au-fam').trim(), pin = val('au-pin').trim();
+    if (!familyName || !pin) { authMsg = 'Nom de famille et code PIN requis.'; return; }
+    try {
+      const r = await api('unlockChildDirect', { familyName, pin });
+      families = r.families || [];
+      if (families.length) { setActiveFamily(0); state.role = 'enfant'; parentUnlocked = false; authMsg = ''; render(); }
+    } catch (e) { authMsg = (e && e.error) || String(e); }
+  },
   logout: () => {
     token = null; localStorage.removeItem(TOKEN_KEY);
     me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';
@@ -820,7 +831,7 @@ const ACTIONS = {
     replaceFamily(r.family);
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'unlock-child-direct', 'switch-family', 'add-family', 'invite-adult', 'remove-adult']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
