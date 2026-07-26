@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tâche Enfant</title>
+<title>DailyKids Quest IV</title>
 <link rel="stylesheet" href="./styles.css">
 <style>
   body { background: var(--color-neutral-200); }
@@ -102,7 +102,7 @@
 <body>
 <div class="phone">
   <div class="topbar">
-    <span>Tâche Enfant</span>
+    <span>DailyKids Quest IV</span>
     <div class="topbar-right">
       <select class="input" id="child-select" style="width:auto;min-height:30px;padding:2px 28px 2px 12px;font-size:13px"></select>
       <div class="seg" id="role-seg">
@@ -602,7 +602,7 @@ function setNav(html) {
 function render() {
   const role = state ? state.role : 'enfant';
   document.querySelector('.topbar > span').textContent =
-    (state && role === 'parent' && me && parentUnlocked) ? '👪 ' + state.name : 'Tâche Enfant';
+    (state && role === 'parent' && me && parentUnlocked) ? '👪 ' + state.name : 'DailyKids Quest IV';
   document.getElementById('role-seg').style.display = me ? '' : 'none';
   document.getElementById('logout-btn').style.display = me ? '' : 'none';
   const roleInput = document.querySelector(`#role-seg input[value=${role}]`); if (roleInput) roleInput.checked = true;

@@ -1,4 +1,4 @@
-# Tâche Enfant
+# DailyKids Quest IV
 
 Appli familiale de quêtes/XP/or pour enfants, avec espace parent protégé,
 multi-famille et partage d'accès entre adultes. Front statique + backend
