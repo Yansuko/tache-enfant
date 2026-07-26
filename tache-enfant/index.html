@@ -491,6 +491,7 @@ function screenEnfants() {
       <div class="field" style="margin:0"><label>Prénom</label><input class="input" id="new-child-name" placeholder="Ex : Léa"></div>
       <button class="btn btn-primary btn-block" data-action="add-child">Ajouter l'enfant</button>
     </div>
+    <button class="btn btn-secondary btn-block" style="margin-top:12px" data-action="save-children">Enregistrer les enfants</button>
   </div>`;
 }
 
@@ -773,6 +774,9 @@ const ACTIONS = {
     if (!confirm(`Réinitialiser le PIN de ${c.name} ? Il devra en créer un nouveau.`)) return;
     c.pin = null;
     unlocked.delete(c.name);
+  },
+  'save-children': () => {
+    save();
   },
   'add-reward': () => {
     const name = val('new-reward-name'), cost = parseInt(val('new-reward-cost'), 10), lvl = parseInt(val('new-reward-lvl') || '1', 10);
