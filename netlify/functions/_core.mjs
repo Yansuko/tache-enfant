@@ -112,6 +112,7 @@ async function ensureSeed(store) {
   const { salt, hash } = hashPassword('demo');
   await store.set('family:' + fam.id, fam);
   await store.set('account:parent@demo.fr', { email: 'parent@demo.fr', name: 'Parent démo', salt, hash, familyIds: [fam.id] });
+  await updateFamilyNameIndex(store, fam.name, fam.id);
   await store.set('seeded', { at: Date.now() });
 }
 
@@ -141,6 +142,7 @@ async function signup(store, secret, b) {
   const fam = newFamily(familyName, email);
   const pending = (await store.get('invite:' + email)) || [];
   await store.set('family:' + fam.id, fam);
+  await updateFamilyNameIndex(store, fam.name, fam.id);
   await store.set('account:' + email, { email, name, ...hashPassword(password), familyIds: [fam.id, ...pending] });
   if (pending.length) await store.del('invite:' + email);
   return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
@@ -168,6 +170,7 @@ async function createFamily(store, email, b) {
   if (!name) return err(400, 'Nom de la famille requis.');
   const fam = newFamily(name, email);
   await store.set('family:' + fam.id, fam);
+  await updateFamilyNameIndex(store, fam.name, fam.id);
   const acc = await store.get('account:' + email);
   acc.familyIds.push(fam.id);
   await store.set('account:' + email, acc);
@@ -202,7 +205,30 @@ async function removeAdult(store, email, b) {
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 
-const PUBLIC = new Set(['login', 'signup']);
+async function updateFamilyNameIndex(store, name, familyId) {
+  const idx = (await store.get('family-names-index')) || {};
+  const key = name.toLowerCase();
+  if (!idx[key]) idx[key] = [];
+  if (!idx[key].includes(familyId)) idx[key].push(familyId);
+  await store.set('family-names-index', idx);
+}
+async function unlockChildDirect(store, b) {
+  const famname = (b.familyName || '').trim().toLowerCase();
+  const childName = (b.childName || '').trim();
+  const pin = String(b.pin || '').trim();
+  if (!famname || !childName || !pin) return err(400, 'Tous les parametres requis.');
+  const idx = (await store.get('family-names-index')) || {};
+  const famIds = idx[famname] || [];
+  for (const fid of famIds) {
+    const fam = await store.get('family:' + fid);
+    if (!fam) continue;
+    const child = fam.children.find(c => c.name === childName);
+    if (!child || !child.pin || child.pin !== pin) continue;
+    return { status: 200, body: { families: [await withNames(store, fam)] } };
+  }
+  return err(401, 'Famille ou enfant introuvable, ou PIN incorrect.');
+}
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect']);
 
 // point d'entrée unique. payload = { action, token, body }
 export async function handleApi({ action, token, body = {} }, store) {
@@ -216,6 +242,7 @@ export async function handleApi({ action, token, body = {} }, store) {
   switch (action) {
     case 'signup': return signup(store, secret, body);
     case 'login': return login(store, secret, body);
+    case 'unlockChildDirect': return unlockChildDirect(store, body);
     case 'me': return { status: 200, body: await stateFor(store, email) };
     case 'verifyPassword': {
       const acc = await store.get('account:' + email);
