@@ -14,17 +14,22 @@ function blobStore() {
   };
 }
 
-// envoie un email via Resend (clé API dans RESEND_API_KEY)
+// envoie un email via Brevo (clé API dans BREVO_API_KEY)
 async function sendEmail({ to, subject, body }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) { console.log('RESEND_API_KEY non définie, email non envoyé:', { to, subject }); return; }
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) { console.log('BREVO_API_KEY non définie, email non envoyé:', { to, subject }); return; }
   try {
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'noreply@dailykidsquest.com', to, subject, html: `<p>${body.replace(/\n/g, '<br>')}</p>` }),
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'DailyKids Quest IV', email: 'noreply@dailykidsquest.brevo.fr' },
+        to: [{ email: to }],
+        subject,
+        htmlContent: `<p>${body.replace(/\n/g, '<br>')}</p>`
+      }),
     });
-    if (!res.ok) console.error('Erreur Resend:', await res.text());
+    if (!res.ok) console.error('Erreur Brevo:', await res.text());
   } catch (e) {
     console.error('Erreur envoi email:', e.message);
   }
