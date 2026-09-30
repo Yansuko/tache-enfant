@@ -412,17 +412,20 @@ function screenTaches() {
   ${pending.length > 0 ? `
   <div style="padding:14px 20px 4px" class="kicker">⏳ Tâches en attente (${pending.length})</div>
   <div style="padding:0 20px 10px">
-    ${pending.map((req, idx) => `
+    ${pending.map((req) => {
+      const realIdx = (state.taskRequests || []).findIndex(r => r === req);
+      return `
     <div class="card elev-sm" style="gap:8px;margin-bottom:10px">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <span class="card-title" style="font-size:15px">${esc(req.taskName)}</span>
         ${loot(req.xp, req.gold)}
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="flex:1" data-action="approve-task" data-i="${idx}">Valider</button>
-        <button class="btn btn-secondary" style="flex:1" data-action="reject-task" data-i="${idx}">Refuser</button>
+        <button class="btn btn-primary" style="flex:1" data-action="approve-task" data-i="${realIdx}">Valider</button>
+        <button class="btn btn-secondary" style="flex:1" data-action="reject-task" data-i="${realIdx}">Refuser</button>
       </div>
-    </div>`).join('')}
+    </div>`;
+    }).join('')}
   </div>` : ''}
   <div style="padding:14px 20px 4px" class="kicker">Quêtes de ${esc(c.name)}</div>
   <div class="deck deck-2" style="padding:0 20px">
