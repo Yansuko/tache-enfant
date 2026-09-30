@@ -886,7 +886,7 @@ const ACTIONS = {
   },
   'del-sanction-def': el => { state.sanctionsList.splice(+el.dataset.i, 1); },
   'unlock-child': () => { childAuth(child()); },
-  'submit-pin': () => {
+  'submit-pin': async () => {
     const c = child(), mode = document.querySelector('[data-action="submit-pin"]').dataset.mode;
     const pin1 = val('pin-input-1');
     if (!/^\d{4}$/.test(pin1)) { authMsg = 'PIN invalide : 4 chiffres attendus.'; render(); return; }
@@ -897,7 +897,7 @@ const ACTIONS = {
     } else if (pin1 !== c.pin) {
       authMsg = 'Code PIN incorrect.'; render(); return;
     }
-    creatingPin = false; save(); unlocked.add(c.name); render();
+    creatingPin = false; await save(); unlocked.add(c.name); render();
   },
   'cancel-pin': () => { creatingPin = false; render(); },
   'submit-grade': async () => {
@@ -968,6 +968,7 @@ const ACTIONS = {
     if (!confirm(`Réinitialiser le PIN de ${c.name} ? Il devra en créer un nouveau.`)) return;
     c.pin = null;
     unlocked.delete(c.name);
+    render();
   },
   'save-children': () => {
     save();
