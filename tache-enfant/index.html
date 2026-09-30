@@ -972,7 +972,7 @@ const ACTIONS = {
   'save-children': () => {
     save();
   },
-  'set-auth': el => { authRole = el.dataset.authRole || 'parent'; },
+  'set-auth': el => { authRole = el.dataset.authRole || 'parent'; render(); },
   'unlock-child-direct': async () => {
     const famname = val('ec-famname').trim(), name = val('ec-name').trim(), pin = val('ec-pin').trim();
     if (!famname || !name || !pin) { authMsg = 'Tous les champs requis.'; return; }
