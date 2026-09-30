@@ -129,6 +129,7 @@ let activeFamily = 0;
 let state = null;           // famille active — pointeur dans families[]
 let parentUnlocked = false; // accès espace parent — en mémoire, retombe au rechargement
 let authMode = 'login', authMsg = '', authRole = 'parent';
+let creatingPin = false; // affiche le formulaire de création de PIN
 const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
 
 const today = () => new Date().toLocaleDateString('fr-CA');
@@ -654,6 +655,7 @@ function render() {
     return;
   }
   if (state.role === 'enfant' && !unlocked.has(child().name)) {
+    if (creatingPin) return; // formulaire de PIN déjà affiché par childAuth
     document.getElementById('main').innerHTML = `
       <div style="padding:60px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
         <div style="font-size:44px">🔒</div>
@@ -705,6 +707,7 @@ function renderPinPrompt(mode = 'create') {
 }
 function childAuth(c) {
   if (unlocked.has(c.name)) return true;
+  creatingPin = true;
   if (!c.pin) renderPinPrompt('create');
   else renderPinPrompt('enter');
   return false;
@@ -800,9 +803,9 @@ const ACTIONS = {
     } else if (pin1 !== c.pin) {
       authMsg = 'Code PIN incorrect.'; render(); return;
     }
-    save(); unlocked.add(c.name); render();
+    creatingPin = false; save(); unlocked.add(c.name); render();
   },
-  'cancel-pin': () => { render(); },
+  'cancel-pin': () => { creatingPin = false; render(); },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
   'propose-reward': () => {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
