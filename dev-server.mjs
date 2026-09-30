@@ -54,7 +54,7 @@ async function sendEmail({ to, subject, body }) {
       }),
     });
     if (!res.ok) console.error('Erreur Brevo:', await res.text());
-    else console.log(`✅ Email envoyé à ${to} (Brevo)`);
+    else console.log(`✅ Email envoyé à ${to}: "${subject}" (Brevo)`);
   } catch (e) {
     console.error('Erreur envoi email:', e.message);
   }
