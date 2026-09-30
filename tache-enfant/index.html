@@ -261,26 +261,64 @@ function screenAccueil() {
 
 function screenNotes() {
   const c = child();
+  const pending = (state.gradeRequests || []).filter(r => r.child === c.name && r.status === 'pending');
+  const approved = (state.gradeRequests || []).filter(r => r.child === c.name && r.status === 'approved');
+
   return `
   <div style="padding:22px 20px 4px">
     <h2 style="margin:0;font-size:24px">Mes notes 📘</h2>
-    <p style="margin:6px 0 0;font-size:13px;color:var(--color-neutral-600)">Une bonne note, c'est de l'XP et de l'or en plus !</p>
+    <p style="margin:6px 0 0;font-size:13px;color:var(--color-neutral-600)">Soumet tes notes pour gagner de l'or !</p>
   </div>
-  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1">
-    ${c.grades.map((g, i) => `
-    <div class="card elev-sm" style="gap:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <span class="card-title" style="font-size:15px">${esc(g.subject)}</span>
-        ${g.grade ? loot(g.xp, g.gold) : '<span class="tag tag-neutral">à saisir</span>'}
+  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1;overflow:auto">
+    ${approved.length > 0 ? `
+    <div>
+      <div class="kicker" style="margin-bottom:10px">Notes approuvées ✅</div>
+      ${approved.map(r => `
+      <div class="card elev-sm" style="gap:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="card-title" style="font-size:15px">${esc(r.subject)}</span>
+          ${loot(0, r.gold)}
+        </div>
+        <div class="field" style="margin:0"><label>Note</label>
+          <input class="input" value="${esc(r.grade)}" readonly>
+        </div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${pending.length > 0 ? `
+    <div>
+      <div class="kicker" style="margin-bottom:10px">En attente d'approbation ⏳</div>
+      ${pending.map(r => `
+      <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="card-title" style="font-size:15px">${esc(r.subject)}</span>
+          <span class="tag tag-accent">${r.gold} 🪙</span>
+        </div>
+        <div class="field" style="margin:0"><label>Note</label>
+          <input class="input" value="${esc(r.grade)}" readonly>
+        </div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div>
+      <div class="kicker" style="margin-bottom:10px">Soumettre une note</div>
+      <div class="card elev-sm" style="gap:12px;padding:16px">
+        <div class="field">
+          <label>Matière</label>
+          <input class="input" id="grade-subject" placeholder="Ex : Mathématiques">
+        </div>
+        <div class="field">
+          <label>Note obtenue</label>
+          <input class="input" id="grade-value" placeholder="Ex : 18/20">
+        </div>
+        <div class="field">
+          <label>Or demandé</label>
+          <input class="input" id="grade-gold" type="number" min="0" placeholder="Ex : 20">
+        </div>
+        <button class="btn btn-primary btn-block" data-action="submit-grade">Soumettre</button>
       </div>
-      <div class="field" style="margin:0"><label>Note obtenue</label>
-        ${g.grade
-          ? `<input class="input" value="${esc(g.grade)}" readonly>`
-          : `<input class="input" placeholder="Ex : 14/20" data-grade="${i}">`}
-      </div>
-    </div>`).join('')}
-  </div>
-  <div style="padding:0 20px 24px"><button class="btn btn-primary btn-block" data-action="save-grades">Enregistrer mes notes</button></div>`;
+    </div>
+  </div>`;
 }
 
 function screenRecompenses() {
@@ -469,6 +507,57 @@ function screenSanctions() {
   </div>`;
 }
 
+function screenGrades() {
+  const pending = (state.gradeRequests || []).filter(r => r.status === 'pending');
+  const approved = (state.gradeRequests || []).filter(r => r.status === 'approved');
+
+  return `
+  <div style="padding:22px 20px 4px">
+    <h2 style="margin:0;font-size:22px">Notes 📘</h2>
+  </div>
+  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1;overflow:auto">
+    ${pending.length > 0 ? `
+    <div>
+      <div class="kicker" style="margin-bottom:10px">À valider (${pending.length})</div>
+      ${pending.map((r, i) => `
+      <div class="card elev-sm" style="gap:10px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
+          </div>
+          <span class="tag tag-accent">${r.gold} 🪙</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-i="${i}">Approuver</button>
+          <button class="btn btn-secondary" style="flex:1" data-action="refuse-grade" data-i="${i}">Refuser</button>
+        </div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${approved.length > 0 ? `
+    <div>
+      <div class="kicker" style="margin-bottom:10px">Approuvées ✅ (${approved.length})</div>
+      ${approved.map(r => `
+      <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
+          </div>
+          <span class="tag tag-accent">${r.gold} 🪙 ✓</span>
+        </div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${pending.length === 0 && approved.length === 0 ? `
+    <div style="padding:40px 20px;text-align:center;color:var(--color-neutral-600)">
+      <div style="font-size:32px;margin-bottom:10px">📘</div>
+      <p>Aucune note soumise pour le moment</p>
+    </div>` : ''}
+  </div>`;
+}
+
 function screenEnfants() {
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Enfants</h2></div>
@@ -618,9 +707,9 @@ function renderNoFamily() {
 
 const TABS = {
   enfant: [['accueil', '⚔️', 'Quêtes'], ['notes', '📘', 'Notes'], ['recompenses', '🛒', 'Boutique']],
-  parent: [['taches', '⚔️', 'Quêtes'], ['sanctions', '🛒', 'Boutique'], ['enfants', '🧒', 'Enfants'], ['famille', '👪', 'Famille']],
+  parent: [['taches', '⚔️', 'Quêtes'], ['grades', '📘', 'Notes'], ['sanctions', '🛒', 'Boutique'], ['enfants', '🧒', 'Enfants'], ['famille', '👪', 'Famille']],
 };
-const SCREENS = { accueil: screenAccueil, notes: screenNotes, recompenses: screenRecompenses, taches: screenTaches, sanctions: screenSanctions, enfants: screenEnfants, famille: screenFamille };
+const SCREENS = { accueil: screenAccueil, notes: screenNotes, recompenses: screenRecompenses, taches: screenTaches, grades: screenGrades, sanctions: screenSanctions, enfants: screenEnfants, famille: screenFamille };
 
 function hideSelect() { document.getElementById('child-select').style.display = 'none'; }
 function setNav(html) {
@@ -806,6 +895,16 @@ const ACTIONS = {
     creatingPin = false; save(); unlocked.add(c.name); render();
   },
   'cancel-pin': () => { creatingPin = false; render(); },
+  'submit-grade': async () => {
+    const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
+    if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
+    const c = child();
+    await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+    document.getElementById('grade-subject').value = '';
+    document.getElementById('grade-value').value = '';
+    document.getElementById('grade-gold').value = '';
+    render();
+  },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
   'propose-reward': () => {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
@@ -818,6 +917,23 @@ const ACTIONS = {
     state.rewards.push({ icon: '💡', name: p.name, cost: p.cost, lvl: 1 });
   },
   'refuse-proposal': el => { state.proposals[+el.dataset.i].status = 'refused'; },
+  'approve-grade': async el => {
+    const i = +el.dataset.i;
+    const pending = (state.gradeRequests || []).filter(r => r.status === 'pending');
+    if (i < pending.length) {
+      const gi = state.gradeRequests.indexOf(pending[i]);
+      await api('approveGrade', { familyId: state.id, index: gi });
+      render();
+    }
+  },
+  'refuse-grade': el => {
+    const i = +el.dataset.i;
+    const pending = (state.gradeRequests || []).filter(r => r.status === 'pending');
+    if (i < pending.length) {
+      const gi = state.gradeRequests.indexOf(pending[i]);
+      state.gradeRequests[gi].status = 'refused';
+    }
+  },
   'add-child': () => {
     const name = val('new-child-name');
     if (!name) return alert('Prénom requis.');
@@ -830,6 +946,7 @@ const ACTIONS = {
     state.children.splice(+el.dataset.i, 1);
     state.requests = state.requests.filter(r => r.child !== c.name);
     state.proposals = state.proposals.filter(p => p.child !== c.name);
+    state.gradeRequests = (state.gradeRequests || []).filter(r => r.child !== c.name);
     unlocked.delete(c.name);
   },
   'reset-child-pin': el => {

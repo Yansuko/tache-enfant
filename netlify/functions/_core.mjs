@@ -50,7 +50,7 @@ export function newFamily(name, owner) {
   return {
     id: 'fam-' + crypto.randomBytes(5).toString('hex'), name, owner, members: [owner],
     day: '', dailyBonus: { xp: 30, gold: 15 },
-    questList: [], proposals: [], children: [], sanctionsList: [], rewards: [], requests: [],
+    questList: [], proposals: [], children: [], sanctionsList: [], rewards: [], requests: [], gradeRequests: [],
   };
 }
 
@@ -64,6 +64,7 @@ function seedFamily() {
       { icon: '🛏️', name: 'Faire son lit', xp: 10, gold: 5, daily: true },
     ],
     proposals: [],
+    gradeRequests: [],
     children: [
       { name: 'Emma', xp: 230, gold: 128,
         tasks: [
@@ -243,7 +244,35 @@ async function unlockChildDirect(store, b) {
   }
   return err(401, 'Famille ou enfant introuvable, ou PIN incorrect.');
 }
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect']);
+async function submitGrade(store, famId, b) {
+  const fam = await store.get('family:' + famId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  const { childName, subject, grade, gold } = b;
+  if (!childName || !subject || !grade || gold === undefined) return err(400, 'Tous les champs requis.');
+  if (isNaN(gold) || gold < 0) return err(400, 'Or invalide.');
+  fam.gradeRequests = fam.gradeRequests || [];
+  fam.gradeRequests.push({
+    child: childName, subject, grade, gold, status: 'pending', submittedAt: Date.now()
+  });
+  await store.set('family:' + famId, fam);
+  return { status: 200, body: { ok: true } };
+}
+async function approveGrade(store, email, b) {
+  const { familyId, index } = b;
+  const fam = await store.get('family:' + familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  if (!fam.members.includes(email)) return err(403, 'Accès refusé.');
+  if (!fam.gradeRequests || !fam.gradeRequests[index]) return err(404, 'Note introuvable.');
+  const req = fam.gradeRequests[index];
+  if (req.status !== 'pending') return err(400, 'Seules les notes en attente peuvent être approuvées.');
+  const child = fam.children.find(c => c.name === req.child);
+  if (child) { child.gold = (child.gold || 0) + req.gold; }
+  req.status = 'approved';
+  req.approvedAt = Date.now();
+  await store.set('family:' + familyId, fam);
+  return { status: 200, body: { ok: true } };
+}
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade']);
 
 // point d'entrée unique. payload = { action, token, body }
 export async function handleApi({ action, token, body = {} }, store) {
@@ -267,6 +296,8 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'createFamily': return createFamily(store, email, body);
     case 'invite': return invite(store, email, body);
     case 'removeAdult': return removeAdult(store, email, body);
+    case 'submitGrade': return submitGrade(store, body.familyId, body);
+    case 'approveGrade': return approveGrade(store, email, body);
     default: return err(400, 'Action inconnue : ' + action);
   }
 }
