@@ -23,7 +23,7 @@ async function sendEmail({ to, subject, body }) {
       method: 'POST',
       headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sender: { name: 'DailyKids Quest IV', email: 'noreply@dailykidsquest.brevo.fr' },
+        sender: { name: 'DailyKids Quest IV', email: 'yansu@free.fr' },
         to: [{ email: to }],
         subject,
         htmlContent: `<p>${body.replace(/\n/g, '<br>')}</p>`
