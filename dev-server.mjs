@@ -70,8 +70,9 @@ const server = http.createServer(async (req, res) => {
       try { payload = JSON.parse(raw || '{}'); } catch {}
       const auth = req.headers['authorization'] || '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-      const { action, body: bodyData } = payload;
-      const body = bodyData || {};
+      const { action, ...bodyData } = payload;
+      const body = bodyData;
+      if (action === 'login') console.log('[LOGIN REQUEST]', JSON.stringify({ action, body }));
       try {
         const r = await handleApi({ action, token, body }, store);
         res.writeHead(r.status, { 'content-type': 'application/json' });
