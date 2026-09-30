@@ -897,9 +897,12 @@ const ACTIONS = {
   },
   'reject-task': el => {
     const idx = +el.dataset.i;
+    const req = (state.taskRequests || []).find((r, i) => i === idx && r.child === child().name && r.status === 'pending');
+    if (req) {
+      const task = child().tasks[req.taskIndex];
+      if (task) task.done = false;
+    }
     state.taskRequests = (state.taskRequests || []).filter((r, i) => !(i === idx && r.child === child().name && r.status === 'pending'));
-    const task = child().tasks.find(t => t.name === (state.taskRequests[idx]?.taskName));
-    if (task) task.done = false;
     save(); render();
   },
   'propose-task': () => {
