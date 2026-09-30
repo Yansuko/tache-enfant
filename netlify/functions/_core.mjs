@@ -50,7 +50,7 @@ export function newFamily(name, owner) {
   return {
     id: 'fam-' + crypto.randomBytes(5).toString('hex'), name, owner, members: [owner],
     day: '', dailyBonus: { xp: 30, gold: 15 },
-    questList: [], proposals: [], children: [], sanctionsList: [], rewards: [], requests: [], gradeRequests: [],
+    questList: [], proposals: [], children: [], sanctionsList: [], rewards: [], requests: [], gradeRequests: [], taskRequests: [],
   };
 }
 
@@ -65,6 +65,7 @@ function seedFamily() {
     ],
     proposals: [],
     gradeRequests: [],
+    taskRequests: [],
     children: [
       { name: 'Emma', xp: 230, gold: 128,
         tasks: [

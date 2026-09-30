@@ -254,8 +254,19 @@ function screenAccueil() {
     </div>`;
   })()}
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
-  <div class="deck deck-2" style="padding:4px 20px 16px;flex:1">
-    ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || '<p class="text-muted" style="padding-top:8px">Aucune quête pour aujourd’hui 🎉</p>'}
+  <div class="deck deck-2" style="padding:4px 20px 16px">
+    ${c.tasks.map((t, i) => taskRow(t, i, false)).join(‘’) || ‘<p class="text-muted" style="padding-top:8px">Aucune quête pour aujourd’hui 🎉</p>’}
+  </div>
+  <div style="padding:14px 20px 4px" class="kicker">💡 Proposer une quête</div>
+  <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;flex:1">
+    <div class="card elev-sm" style="gap:8px">
+      <div class="field" style="margin:0"><label>Nom de la quête</label><input class="input" id="propose-task-name" placeholder="Ex : Laver la voiture"></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="propose-task-xp" type="number" min="1" placeholder="Ex : 25"></div>
+        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="propose-task-gold" type="number" min="0" placeholder="Ex : 15"></div>
+      </div>
+      <button class="btn btn-primary btn-block" data-action="propose-task">Proposer</button>
+    </div>
   </div>`;
 }
 
@@ -392,11 +403,27 @@ function childSeg() {
 
 function screenTaches() {
   const c = child();
+  const pending = (state.taskRequests || []).filter(t => t.child === c.name && t.status === 'pending');
   return `
   <div style="padding:22px 20px 4px">
     <h2 style="margin:0;font-size:22px">Quêtes</h2>
     ${childSeg()}
   </div>
+  ${pending.length > 0 ? `
+  <div style="padding:14px 20px 4px" class="kicker">⏳ Tâches en attente (${pending.length})</div>
+  <div style="padding:0 20px 10px">
+    ${pending.map((req, idx) => `
+    <div class="card elev-sm" style="gap:8px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="card-title" style="font-size:15px">${esc(req.taskName)}</span>
+        ${loot(req.xp, req.gold)}
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" data-action="approve-task" data-i="${idx}">Valider</button>
+        <button class="btn btn-secondary" style="flex:1" data-action="reject-task" data-i="${idx}">Refuser</button>
+      </div>
+    </div>`).join('')}
+  </div>` : ''}
   <div style="padding:14px 20px 4px" class="kicker">Quêtes de ${esc(c.name)}</div>
   <div class="deck deck-2" style="padding:0 20px">
     ${c.tasks.map((t, i) => taskRow(t, i, true)).join('') || '<p class="text-muted" style="font-size:13px">Aucune quête assignée.</p>'}
@@ -828,11 +855,20 @@ function onAuthed(r) {
 const ACTIONS = {
   nav: el => { state.tab = el.dataset.tab; },
   'toggle-task': el => {
-    const t = child().tasks[+el.dataset.i];
+    const c = child(), i = +el.dataset.i, t = c.tasks[i];
+    if (!t.done) {
+      // Enfant coche la tâche → créer une demande de validation
+      state.taskRequests = state.taskRequests || [];
+      state.taskRequests.push({
+        child: c.name, taskIndex: i, taskName: t.name, xp: t.xp, gold: t.gold,
+        status: 'pending', submittedAt: Date.now()
+      });
+    } else {
+      // Enfant décoche → retirer de la queue
+      state.taskRequests = state.taskRequests?.filter(req => !(req.child === c.name && req.taskIndex === i)) || [];
+    }
     t.done = !t.done;
-    const m = t.done ? 1 : -1;
-    child().xp = Math.max(0, child().xp + m * t.xp);
-    child().gold = Math.max(0, child().gold + m * t.gold);
+    save();
   },
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
   'add-task': () => {
@@ -849,6 +885,32 @@ const ACTIONS = {
     const daily = document.getElementById('qd-daily').checked;
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
     state.questList.push({ icon: '⭐', name, xp, gold, daily });
+  },
+  'approve-task': el => {
+    const idx = +el.dataset.i;
+    const req = (state.taskRequests || []).find((r, i) => i === idx && r.child === child().name && r.status === 'pending');
+    if (!req) return;
+    const task = child().tasks[req.taskIndex];
+    if (task) { task.done = true; child().xp += req.xp; child().gold += req.gold; }
+    req.status = 'approved';
+    save(); render();
+  },
+  'reject-task': el => {
+    const idx = +el.dataset.i;
+    state.taskRequests = (state.taskRequests || []).filter((r, i) => !(i === idx && r.child === child().name && r.status === 'pending'));
+    const task = child().tasks.find(t => t.name === (state.taskRequests[idx]?.taskName));
+    if (task) task.done = false;
+    save(); render();
+  },
+  'propose-task': () => {
+    const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10);
+    if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
+    state.proposals = state.proposals || [];
+    state.proposals.push({ icon: '⭐', name, xp, gold, child: child().name, status: 'pending', proposedAt: Date.now() });
+    document.getElementById('propose-task-name').value = '';
+    document.getElementById('propose-task-xp').value = '';
+    document.getElementById('propose-task-gold').value = '';
+    save(); render();
   },
   'save-grades': () => {
     document.querySelectorAll('[data-grade]').forEach(inp => {
