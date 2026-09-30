@@ -8,6 +8,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
 
+// Load .env file if present
+try {
+  const envContent = fs.readFileSync('.env', 'utf8');
+  envContent.split('\n').forEach(line => {
+    const [key, val] = line.split('=').map(s => s.trim());
+    if (key && val) process.env[key] = val;
+  });
+} catch {};
+
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.join(DIR, 'tache-enfant');
 const DATA = path.join(DIR, '.data', 'store.json');
@@ -26,10 +35,31 @@ const store = {
 
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
-// stub pour envoyer des emails en local (juste loguer)
-setEmailSender(async ({ to, subject, body }) => {
-  console.log(`📧 Email à ${to}:\n   Sujet: ${subject}\n   ${body.substring(0, 60)}...`);
-});
+// email sender: utilise Brevo si BREVO_API_KEY, sinon loggue simplement
+async function sendEmail({ to, subject, body }) {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    console.log(`📧 Email à ${to}:\n   Sujet: ${subject}\n   ${body.substring(0, 60)}...`);
+    return;
+  }
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'DailyKids Quest IV', email: 'noreply@dailykidsquest.brevo.fr' },
+        to: [{ email: to }],
+        subject,
+        htmlContent: `<p>${body.replace(/\n/g, '<br>')}</p>`
+      }),
+    });
+    if (!res.ok) console.error('Erreur Brevo:', await res.text());
+    else console.log(`✅ Email envoyé à ${to} (Brevo)`);
+  } catch (e) {
+    console.error('Erreur envoi email:', e.message);
+  }
+}
+setEmailSender(sendEmail);
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/api' && req.method === 'POST') {
@@ -40,7 +70,8 @@ const server = http.createServer(async (req, res) => {
       try { payload = JSON.parse(raw || '{}'); } catch {}
       const auth = req.headers['authorization'] || '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-      const { action, ...body } = payload;
+      const { action, body: bodyData } = payload;
+      const body = bodyData || {};
       try {
         const r = await handleApi({ action, token, body }, store);
         res.writeHead(r.status, { 'content-type': 'application/json' });

@@ -154,7 +154,10 @@ async function signup(store, secret, b) {
 async function login(store, secret, b) {
   const email = String(b.email || '').toLowerCase();
   const acc = await store.get('account:' + email);
-  if (!acc || !checkPassword(b.password, acc.salt, acc.hash)) return err(401, 'Email ou mot de passe incorrect.');
+  const pwCheck = acc && checkPassword(b.password, acc.salt, acc.hash);
+  if (!acc) console.log(`[LOGIN] Account not found for ${email}`);
+  if (acc && !pwCheck) console.log(`[LOGIN] Password mismatch for ${email}`);
+  if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
   return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
 }
 async function saveFamily(store, email, b) {
