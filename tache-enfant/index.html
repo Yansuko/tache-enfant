@@ -255,7 +255,7 @@ function screenAccueil() {
   })()}
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
   <div class="deck deck-2" style="padding:4px 20px 16px">
-    ${c.tasks.map((t, i) => taskRow(t, i, false)).join(‘’) || ‘<p class="text-muted" style="padding-top:8px">Aucune quête pour aujourd’hui 🎉</p>’}
+    ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || "<p class='text-muted' style='padding-top:8px'>Aucune quête pour aujourd'hui 🎉</p>"}
   </div>
   <div style="padding:14px 20px 4px" class="kicker">💡 Proposer une quête</div>
   <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;flex:1">
@@ -375,7 +375,7 @@ function screenRecompenses() {
     ${hist.map(r => `
     <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
       <span>${r.icon} ${esc(r.name)}</span>${statusTag[r.status]}
-    </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucune demande pour l’instant.</p>'}
+    </div>`).join('') || "<p class='text-muted' style='font-size:13px'>Aucune demande pour l'instant.</p>"}
   </div>
   <div style="padding:0 20px 8px" class="kicker">Mes idées d'articles</div>
   <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
@@ -702,7 +702,7 @@ function renderAuth() {
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
     ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
     <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
-    <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? 'J’ai déjà un compte' : 'Créer un nouveau compte'}</button>
+    <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? "J'ai déjà un compte" : "Créer un nouveau compte"}</button>
     ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
   </div>`;
   setNav('');
