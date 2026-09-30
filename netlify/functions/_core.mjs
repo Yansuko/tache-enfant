@@ -169,12 +169,23 @@ async function saveFamily(store, email, b) {
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
-  // notifier les parents quand une demande passe à "approved"
+  // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
+    const owner = await store.get('account:' + cur.owner);
     for (const req of inc.requests) {
       const oldReq = cur.requests?.find(r => r.child === req.child && r.name === req.name);
+      // Nouvelle demande en attente
+      if (!oldReq && req.status === 'pending') {
+        if (owner?.email) {
+          await emailSender({
+            to: owner.email,
+            subject: `Nouvelle demande à valider: ${req.child} - ${req.name}`,
+            body: `${req.child} a soumis une demande de récompense à valider:\n\nRécompense: ${req.name}\nCoût: ${req.cost} or\n\nVeuillez vous connecter pour approuver ou refuser cette demande.`
+          });
+        }
+      }
+      // Demande approuvée
       if (oldReq?.status === 'pending' && req.status === 'approved') {
-        const owner = await store.get('account:' + cur.owner);
         if (owner?.email) { await emailSender({ to: owner.email, subject: `Demande approuvée: ${req.name}`, body: `La demande « ${req.name} » de ${req.child} a été approuvée!` }); }
       }
     }
@@ -258,6 +269,19 @@ async function submitGrade(store, famId, b) {
     child: childName, subject, grade, gold, status: 'pending', submittedAt: Date.now()
   });
   await store.set('family:' + famId, fam);
+
+  // Envoyer un email au parent
+  if (emailSender) {
+    const owner = await store.get('account:' + fam.owner);
+    if (owner?.email) {
+      await emailSender({
+        to: owner.email,
+        subject: `Nouvelle note à valider: ${childName} - ${subject}`,
+        body: `${childName} a soumis une note à valider:\n\nMatière: ${subject}\nNote: ${grade}\nOr demandé: ${gold}\n\nVeuillez vous connecter pour valider ou refuser cette note.`
+      });
+    }
+  }
+
   return { status: 200, body: { ok: true } };
 }
 async function approveGrade(store, email, b) {
