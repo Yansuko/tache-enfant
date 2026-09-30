@@ -683,12 +683,33 @@ function checkPin(pin, label) {
   if (p !== null) alert('Code incorrect.');
   return false;
 }
+function renderPinPrompt(mode = 'create') {
+  const c = child();
+  const title = mode === 'create' ? 'Créer ton code PIN' : 'Entre ton code PIN';
+  const desc = mode === 'create' ? 'Choisis un code PIN à 4 chiffres' : 'Code PIN de ' + c.name;
+  document.getElementById('main').innerHTML = `
+  <div style="padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:440px;width:100%;margin:0 auto">
+    <div style="font-size:40px">🔐</div>
+    <h2 style="margin:0;text-align:center">${title}</h2>
+    <p class="text-muted" style="margin:0;text-align:center;font-size:13px">${desc}</p>
+    <div class="field" style="margin:0;width:100%">
+      <label>Code PIN (4 chiffres)</label>
+      <input class="input" id="pin-input-1" type="password" placeholder="****" maxlength="4" style="text-align:center;font-size:24px;letter-spacing:8px">
+    </div>
+    ${mode === 'create' ? `<div class="field" style="margin:0;width:100%">
+      <label>Confirmer le code PIN</label>
+      <input class="input" id="pin-input-2" type="password" placeholder="****" maxlength="4" style="text-align:center;font-size:24px;letter-spacing:8px">
+    </div>` : ''}
+    <button class="btn btn-primary btn-block" data-action="submit-pin" data-mode="${mode}">Valider</button>
+    <button class="btn btn-ghost btn-block" data-action="cancel-pin">Annuler</button>
+  </div>`;
+  setNav('');
+}
 function childAuth(c) {
   if (unlocked.has(c.name)) return true;
-  if (!c.pin) { const p = createPin(`pour ${c.name}`); if (!p) return false; c.pin = p; save(); }
-  else if (!checkPin(c.pin, `de ${c.name}`)) return false;
-  unlocked.add(c.name);
-  return true;
+  if (!c.pin) renderPinPrompt('create');
+  else renderPinPrompt('enter');
+  return false;
 }
 
 /* ── actions ── */
@@ -770,6 +791,20 @@ const ACTIONS = {
   },
   'del-sanction-def': el => { state.sanctionsList.splice(+el.dataset.i, 1); },
   'unlock-child': () => { childAuth(child()); },
+  'submit-pin': () => {
+    const c = child(), mode = document.querySelector('[data-action="submit-pin"]').dataset.mode;
+    const pin1 = val('pin-input-1');
+    if (!/^\d{4}$/.test(pin1)) { authMsg = 'PIN invalide : 4 chiffres attendus.'; render(); return; }
+    if (mode === 'create') {
+      const pin2 = val('pin-input-2');
+      if (pin1 !== pin2) { authMsg = 'Les codes ne correspondent pas.'; render(); return; }
+      c.pin = pin1;
+    } else if (pin1 !== c.pin) {
+      authMsg = 'Code PIN incorrect.'; render(); return;
+    }
+    save(); unlocked.add(c.name); render();
+  },
+  'cancel-pin': () => { render(); },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
   'propose-reward': () => {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
@@ -863,7 +898,7 @@ const ACTIONS = {
     replaceFamily(r.family);
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child-direct']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child-direct', 'submit-pin', 'cancel-pin']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
