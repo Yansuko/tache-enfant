@@ -900,6 +900,8 @@ const ACTIONS = {
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
     await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+    state.gradeRequests = state.gradeRequests || [];
+    state.gradeRequests.push({ child: c.name, subject, grade: gradeVal, gold, status: 'pending', submittedAt: Date.now() });
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
     document.getElementById('grade-gold').value = '';
@@ -923,6 +925,10 @@ const ACTIONS = {
     if (i < pending.length) {
       const gi = state.gradeRequests.indexOf(pending[i]);
       await api('approveGrade', { familyId: state.id, index: gi });
+      state.gradeRequests[gi].status = 'approved';
+      state.gradeRequests[gi].approvedAt = Date.now();
+      const child = state.children.find(c => c.name === pending[i].child);
+      if (child) child.gold = (child.gold || 0) + pending[i].gold;
       render();
     }
   },
@@ -932,6 +938,7 @@ const ACTIONS = {
     if (i < pending.length) {
       const gi = state.gradeRequests.indexOf(pending[i]);
       state.gradeRequests[gi].status = 'refused';
+      save();
     }
   },
   'add-child': () => {
