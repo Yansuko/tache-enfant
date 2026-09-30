@@ -526,11 +526,12 @@ function screenGrades() {
             <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
             <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
           </div>
+          <span class="tag tag-accent">${r.gold} 🪙</span>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="flex:1;font-size:12px;color:var(--color-neutral-600)">Or à attribuer:</label>
-          <input type="number" id="grade-gold-${i}" class="input" value="${r.gold}" min="0" style="width:80px;padding:6px;font-size:13px">
-          <span style="min-width:30px">🪙</span>
+        <div style="display:flex;gap:8px;align-items:center;font-size:12px">
+          <label style="color:var(--color-neutral-600)">Or à attribuer:</label>
+          <input type="number" id="grade-gold-${i}" class="input" value="${r.gold}" min="0" style="width:60px;padding:4px;font-size:12px">
+          <span>🪙</span>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-i="${i}">Approuver</button>
