@@ -68,7 +68,7 @@ function seedFamily() {
     gradeRequests: [],
     taskRequests: [],
     children: [
-      { name: 'Emma', xp: 230, gold: 128,
+      { id: 'child-emma-demo', name: 'Emma', xp: 230, gold: 128,
         tasks: [
           { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 86400000 },
           { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: false, daily: true, completedAt: null },
@@ -83,7 +83,7 @@ function seedFamily() {
         ],
         sanctions: [{ motif: 'Croix de conduite', gold: 10 }],
       },
-      { name: 'Lucas', xp: 90, gold: 64,
+      { id: 'child-lucas-demo', name: 'Lucas', xp: 90, gold: 64,
         tasks: [
           { icon: '🛏️', name: 'Faire son lit', xp: 10, gold: 5, done: false, daily: true, completedAt: null },
           { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: false, daily: true, completedAt: null },
@@ -119,6 +119,14 @@ async function ensureSeed(store) {
   await store.set('family:' + fam.id, fam);
   await store.set('account:parent@demo.fr', { email: 'parent@demo.fr', name: 'Parent démo', salt, hash, familyIds: [fam.id] });
   await updateFamilyNameIndex(store, fam.name, fam.id);
+  // Index children by ID for fast lookup
+  for (const child of fam.children) {
+    if (child.id) {
+      const idx = (await store.get('child-id-index')) || {};
+      idx[child.id] = fam.id;
+      await store.set('child-id-index', idx);
+    }
+  }
   await store.set('seeded', { at: Date.now() });
 }
 
@@ -343,7 +351,105 @@ async function approveGrade(store, email, b) {
   await store.set('family:' + familyId, fam);
   return { status: 200, body: { ok: true } };
 }
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password']);
+
+/* ── Task statistics aggregation ── */
+
+function dateToISO(ms) {
+  return new Date(ms).toISOString().split('T')[0];  // "YYYY-MM-DD"
+}
+
+function getDateRange(period, endDate = Date.now()) {
+  const end = new Date(endDate);
+  const start = new Date(end);
+
+  if (period === 'day') {
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  } else if (period === 'week') {
+    const day = end.getDay();
+    start.setDate(end.getDate() - day);  // Sunday
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  } else if (period === 'month') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  } else if (period === 'year') {
+    start.setMonth(0, 1);
+    start.setHours(0, 0, 0, 0);
+    end.setMonth(11, 31);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  return { start: start.getTime(), end: end.getTime() };
+}
+
+function aggregateTaskStats(child, period = 'week') {
+  const { start, end } = getDateRange(period);
+
+  const dailyBreakdown = {};
+  let tasksCount = 0;
+  let xpGained = 0;
+  let goldGained = 0;
+  const taskNameCounts = {};  // { "Ranger sa chambre": 3, ... }
+  let bestDay = { date: '', tasksCount: 0, xp: 0, gold: 0 };
+
+  for (const task of child.tasks) {
+    if (task.completedAt && task.completedAt >= start && task.completedAt <= end) {
+      const iso = dateToISO(task.completedAt);
+
+      // Update global counters
+      tasksCount++;
+      xpGained += task.xp || 0;
+      goldGained += task.gold || 0;
+
+      // Update daily breakdown
+      if (!dailyBreakdown[iso]) {
+        dailyBreakdown[iso] = { tasksCount: 0, xp: 0, gold: 0 };
+      }
+      dailyBreakdown[iso].tasksCount++;
+      dailyBreakdown[iso].xp += task.xp || 0;
+      dailyBreakdown[iso].gold += task.gold || 0;
+
+      // Track best day
+      if (dailyBreakdown[iso].tasksCount > bestDay.tasksCount ||
+          (dailyBreakdown[iso].tasksCount === bestDay.tasksCount && iso < bestDay.date)) {
+        bestDay = { date: iso, ...dailyBreakdown[iso] };
+      }
+
+      // Count task occurrences
+      const key = task.name || 'Sans nom';
+      taskNameCounts[key] = (taskNameCounts[key] || 0) + 1;
+    }
+  }
+
+  // Count total attempted tasks (heuristic: all tasks are "attempted")
+  const tasksAttempted = child.tasks.length;
+
+  // Top 5 tasks
+  const topTasks = Object.entries(taskNameCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, count]) => {
+      const task = child.tasks.find(t => t.name === name);
+      return { name, count, icon: task?.icon || '⭐' };
+    });
+
+  const completionRate = tasksAttempted > 0 ? Math.round((tasksCount / tasksAttempted) * 100) : 0;
+
+  return {
+    tasksCount,
+    tasksAttempted,
+    completionRate,
+    xpGained,
+    goldGained,
+    dailyBreakdown,
+    topTasks,
+    bestDay: bestDay.tasksCount > 0 ? bestDay : null
+  };
+}
+
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats']);
 
 // point d'entrée unique. payload = { action, token, body }
 export async function handleApi({ action, token, body = {} }, store) {
@@ -359,6 +465,18 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'login': return login(store, secret, body);
     case 'reset-password': return resetPassword(store, secret, body);
     case 'unlockChildDirect': return unlockChildDirect(store, body);
+    case 'getTaskStats': {
+      const { childId, period = 'week' } = body;
+      if (!childId) return err(400, 'childId requis.');
+      const idx = (await store.get('child-id-index')) || {};
+      const familyId = idx[childId];
+      if (!familyId) return err(404, 'Enfant non trouvé.');
+      const family = await store.get('family:' + familyId);
+      if (!family) return err(404, 'Famille non trouvée.');
+      const child = family.children.find(c => c.id === childId);
+      if (!child) return err(404, 'Enfant non trouvé.');
+      return { status: 200, body: aggregateTaskStats(child, period) };
+    }
     case 'me': return { status: 200, body: await stateFor(store, email) };
     case 'verifyPassword': {
       const acc = await store.get('account:' + email);
