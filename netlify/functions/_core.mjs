@@ -125,13 +125,20 @@ function seedFamily() {
 
 // crée le compte démo (parent@demo.fr / demo) + sa famille au tout premier appel
 async function ensureSeed(store) {
+  const fam = seedFamily();
   if (await store.get('seeded')) {
     // Always refresh demo family data to keep test data up-to-date
-    const fam = seedFamily();
     await store.set('family:' + fam.id, fam);
+    // Re-index children
+    for (const child of fam.children) {
+      if (child.id) {
+        const idx = (await store.get('child-id-index')) || {};
+        idx[child.id] = fam.id;
+        await store.set('child-id-index', idx);
+      }
+    }
     return;
   }
-  const fam = seedFamily();
   const { salt, hash } = hashPassword('demo');
   await store.set('family:' + fam.id, fam);
   await store.set('account:parent@demo.fr', { email: 'parent@demo.fr', name: 'Parent démo', salt, hash, familyIds: [fam.id] });
