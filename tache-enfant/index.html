@@ -773,7 +773,7 @@ function renderNoFamily() {
   setNav('');
 }
 
-async function renderStatsCharts() {
+function renderStatsCharts() {
   if (!statsData) return;
 
   // Destroy existing charts if any
@@ -1019,22 +1019,19 @@ function render() {
     return;
   }
   if (state.tab === 'stats') {
-    (async () => {
-      // Load stats data before rendering
-      try {
-        statsData = await api('getTaskStats', {
-          childId: state.children[statsChildIndex]?.id,
-          period: statsPeriod
-        });
-      } catch (err) {
-        console.error('Erreur lors du chargement des statistiques:', err);
-        statsData = null;
-      }
-      document.getElementById('main').innerHTML = screenStats();
-      setNav(TABS[state.role].map(([id, ico, label]) =>
-        `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
-      if (statsData) await renderStatsCharts();
-    })();
+    document.getElementById('main').innerHTML = screenStats();
+    setNav(TABS[state.role].map(([id, ico, label]) =>
+      `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
+    api('getTaskStats', {
+      childId: state.children[statsChildIndex]?.id,
+      period: statsPeriod
+    }).then(r => {
+      statsData = r;
+      renderStatsCharts();
+    }).catch(err => {
+      console.error('Erreur statistiques:', err);
+      statsData = null;
+    });
   } else {
     document.getElementById('main').innerHTML = SCREENS[state.tab]();
     setNav(TABS[state.role].map(([id, ico, label]) =>
@@ -1310,33 +1307,35 @@ const ACTIONS = {
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
     state.rewards.push({ icon: '🎁', name, cost, lvl });
   },
-  'stats-select-child': async el => {
+  'stats-select-child': el => {
     statsChildIndex = +el.dataset.index;
     localStorage.setItem('statsChildIndex', statsChildIndex);
-    try {
-      statsData = await api('getTaskStats', {
-        childId: state.children[statsChildIndex]?.id,
-        period: statsPeriod
-      });
-    } catch (err) {
-      console.error('Erreur lors du chargement des statistiques:', err);
-      statsData = { tasksCount: 0, xpGained: 0, goldGained: 0, bestDay: null, topTasks: [], dailyBreakdown: {} };
-    }
-    await renderStatsCharts();
+    document.getElementById('main').innerHTML = screenStats();
+    api('getTaskStats', {
+      childId: state.children[statsChildIndex]?.id,
+      period: statsPeriod
+    }).then(r => {
+      statsData = r;
+      renderStatsCharts();
+    }).catch(err => {
+      console.error('Erreur statistiques:', err);
+      statsData = null;
+    });
   },
-  'stats-period': async el => {
+  'stats-period': el => {
     statsPeriod = el.dataset.period;
     localStorage.setItem('statsPeriod', statsPeriod);
-    try {
-      statsData = await api('getTaskStats', {
-        childId: state.children[statsChildIndex]?.id,
-        period: statsPeriod
-      });
-    } catch (err) {
-      console.error('Erreur lors du chargement des statistiques:', err);
-      statsData = { tasksCount: 0, xpGained: 0, goldGained: 0, bestDay: null, topTasks: [], dailyBreakdown: {} };
-    }
-    await renderStatsCharts();
+    document.getElementById('main').innerHTML = screenStats();
+    api('getTaskStats', {
+      childId: state.children[statsChildIndex]?.id,
+      period: statsPeriod
+    }).then(r => {
+      statsData = r;
+      renderStatsCharts();
+    }).catch(err => {
+      console.error('Erreur statistiques:', err);
+      statsData = null;
+    });
   },
 
   // ── actions serveur (async, gèrent leur propre persistance) ──
