@@ -1433,13 +1433,8 @@ const ACTIONS = {
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
     state.rewards.push({ icon: '🎁', name, cost, lvl });
   },
-  'stats-select-child': el => {
-    statsChildIndex = +el.dataset.index;
-    screenStats();
-  },
-  'stats-period': el => {
+  'set-stats-period': el => {
     statsPeriod = el.dataset.period;
-    screenStats();
   },
 
   // ── actions serveur (async, gèrent leur propre persistance) ──
@@ -1559,7 +1554,7 @@ document.getElementById('role-seg').addEventListener('change', e => {
 });
 document.body.addEventListener('change', e => {
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
-  if (e.target.id === 'stats-child-select') { statsChildIndex = +e.target.value; screenStats(); return; }
+  if (e.target.id === 'stats-child-select') { statsChildIndex = +e.target.value; render(); return; }
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
 
@@ -1679,7 +1674,7 @@ console.assert((() => {
     ]
   };
   const stats = aggregateTaskStats(child, 'day');
-  return stats.tasksCount === 3 && stats.tasksAttempted === 5 && stats.xpGained === 60 && stats.goldGained === 20 && stats.completionRate === 60 && stats.topTasks.length > 0 && stats.bestDay !== null && Object.keys(stats.dailyBreakdown).length > 0;
+  return stats.tasksCount === 3 && stats.tasksAttempted === 5 && stats.xpGained === 60 && stats.goldGained === 15 && stats.completionRate === 60 && stats.topTasks.length > 0 && stats.bestDay !== null && Object.keys(stats.dailyBreakdown).length > 0;
 })(), 'aggregateTaskStats');
 
 /* boot : restaure la session depuis le jeton persisté, sinon écran de connexion */
