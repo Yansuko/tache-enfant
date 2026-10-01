@@ -861,94 +861,6 @@ function renderNoFamily() {
   setNav('');
 }
 
-function screenStats() {
-  if (!state || state.children.length === 0) {
-    document.getElementById('main').innerHTML = '<div style="padding: 20px"><p>Aucun enfant à afficher.</p></div>';
-    setNav('');
-    return;
-  }
-
-  const child = state.children[statsChildIndex];
-
-  try {
-    api('getTaskStats', { childId: child.id, period: statsPeriod }).then(data => {
-      statsData = data;
-      renderStatsScreen();
-    }).catch(e => {
-      document.getElementById('main').innerHTML = `<div style="padding: 20px"><p>Erreur: ${esc(String(e))}</p></div>`;
-      setNav('');
-    });
-  } catch (e) {
-    document.getElementById('main').innerHTML = `<div style="padding: 20px"><p>Erreur: ${esc(String(e))}</p></div>`;
-    setNav('');
-  }
-}
-
-function renderStatsScreen() {
-  if (!statsData) return;
-
-  const html = `
-  <div style="padding: 20px; max-width: 1200px; margin: 0 auto;">
-    <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
-      <div>
-        <label style="font-size: 13px; color: var(--color-neutral-600);">Enfant</label>
-        <select id="stats-child-select" style="padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);">
-          ${state.children.map((c, i) => `<option value="${i}" ${i === statsChildIndex ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-        </select>
-      </div>
-      <div style="display: flex; gap: 4px;">
-        ${['day', 'week', 'month', 'year'].map(p => `<button class="btn ${statsPeriod === p ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="${p}" style="font-size: 12px; padding: 6px 12px;">${p === 'day' ? 'Jour' : p === 'week' ? 'Semaine' : p === 'month' ? 'Mois' : 'Année'}</button>`).join('')}
-      </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">📋 Tâches</div>
-        <div style="font-size: 28px; font-weight: bold;">${statsData.tasksCount}</div>
-        <div style="font-size: 12px; margin-top: 4px;">${statsData.completionRate}% (${statsData.tasksCount}/${statsData.tasksAttempted})</div>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">⚔️ XP</div>
-        <div style="font-size: 28px; font-weight: bold;">${statsData.xpGained}</div>
-        <div style="font-size: 12px; margin-top: 4px; color: var(--color-accent-700);">Gagné</div>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">🪙 Or</div>
-        <div style="font-size: 28px; font-weight: bold;">${statsData.goldGained}</div>
-        <div style="font-size: 12px; margin-top: 4px; color: var(--color-accent-700);">Gagné</div>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">🏆 Meilleur jour</div>
-        <div style="font-size: 20px; font-weight: bold;">${statsData.bestDay ? statsData.bestDay.tasksCount + ' tâches' : '-'}</div>
-        <div style="font-size: 12px; margin-top: 4px;">${statsData.bestDay ? statsData.bestDay.date : 'Aucune donnée'}</div>
-      </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px;">
-      <div class="card" style="padding: 16px;">
-        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Tâches par jour</h3>
-        <canvas id="chart-tasks-per-day" style="max-height: 200px;"></canvas>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Progression XP/Or</h3>
-        <canvas id="chart-progression" style="max-height: 200px;"></canvas>
-      </div>
-    </div>
-
-    <div class="card" style="padding: 16px; margin-bottom: 20px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 16px;">Top 5 tâches</h3>
-      <canvas id="chart-top-tasks" style="max-height: 200px;"></canvas>
-    </div>
-  </div>
-  `;
-
-  document.getElementById('main').innerHTML = html;
-  setNav(TABS[state.role].map(([id, ico, label]) =>
-    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
-
-  renderStatsCharts();
-}
-
 async function renderStatsCharts() {
   if (!statsData) return;
 
@@ -1506,7 +1418,7 @@ document.getElementById('role-seg').addEventListener('change', e => {
 });
 document.body.addEventListener('change', e => {
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
-  if (e.target.id === 'stats-child-select') { statsChildIndex = +e.target.value; render(); return; }
+  if (e.target.id === 'stats-child-select') { statsChildIndex = +e.target.value; localStorage.setItem('statsChildIndex', statsChildIndex); render(); return; }
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
 
