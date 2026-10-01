@@ -62,6 +62,13 @@
       flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; font-size: 13px;
     }
     .bottom-nav button.active { background: var(--color-accent-100); color: var(--color-accent-800); }
+    .deck-2 { grid-template-columns: 1fr 1fr; }
+    /* Stats desktop optimization */
+    #charts-container { grid-template-columns: 1fr 1fr; }
+    #chart-tasks-per-day > div { height: 250px; min-width: 0; }
+    #chart-progression table { font-size: 13px; }
+    #chart-progression th, #chart-progression td { padding: 12px; }
+    #chart-top-tasks { padding: 8px 0; }
   }
   .check {
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
@@ -903,10 +910,15 @@ function screenStats() {
     </div>
   </div>
 
-  <div style="padding:14px 20px 4px" class="kicker">Tâches par jour</div>
-  <div style="padding:0 20px 10px">
+  <div style="padding:14px 20px 4px" class="kicker">Graphiques</div>
+  <div style="padding:0 20px 10px;display:grid;grid-template-columns:1fr;gap:10px" id="charts-container">
     <div class="card elev-sm" style="padding:16px">
+      <div style="font-size:12px;margin-bottom:8px;font-weight:bold">Tâches par jour</div>
       <div id="chart-tasks-per-day"></div>
+    </div>
+    <div class="card elev-sm" style="padding:16px">
+      <div style="font-size:12px;margin-bottom:8px;font-weight:bold">Top 5 tâches</div>
+      <div id="chart-top-tasks"></div>
     </div>
   </div>
 
@@ -914,13 +926,6 @@ function screenStats() {
   <div style="padding:0 20px 10px">
     <div class="card elev-sm" style="padding:16px">
       <div id="chart-progression" style="overflow-x:auto"></div>
-    </div>
-  </div>
-
-  <div style="padding:14px 20px 4px" class="kicker">Top 5 tâches</div>
-  <div style="padding:0 20px 10px">
-    <div class="card elev-sm" style="padding:16px">
-      <div id="chart-top-tasks"></div>
     </div>
   </div>
 
