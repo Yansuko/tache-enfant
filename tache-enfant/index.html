@@ -877,24 +877,10 @@ async function renderStatsCharts() {
   }
 }
 
-    <div class="card" style="padding: 16px; margin-bottom: 20px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 16px;">Top 5 tâches</h3>
-      <canvas id="chart-top-tasks" style="max-height: 200px;"></canvas>
-    </div>
-  </div>
-  `;
-
-  document.getElementById('main').innerHTML = html;
-  setNav(TABS[state.role].map(([id, ico, label]) =>
-    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
-
-  renderStatsCharts();
-}
-
 function screenStats() {
   const c = state.children[statsChildIndex] || {};
   const children = state.children || [];
-  const data = statsData || { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
+  const data = statsData || { tasksCount: 0, xpGained: 0, goldGained: 0, bestDay: null };
 
   return `
   <div style="padding:22px 20px 4px">
@@ -917,19 +903,19 @@ function screenStats() {
   <div class="deck deck-2" style="padding:4px 20px;gap:10px">
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Tâches complétées</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-800)">${data?.tasks || 0}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-800)">${data?.tasksCount || 0}</div>
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">XP gagnés</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-2-800)">${data?.xp || 0}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-2-800)">${data?.xpGained || 0}</div>
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Or 🪙 gagnés</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${data?.gold || 0}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${data?.goldGained || 0}</div>
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Meilleur jour</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${data?.bestDay || 'N/A'}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${data?.bestDay ? `${data.bestDay.date}` : 'N/A'}</div>
     </div>
   </div>
 
@@ -1334,7 +1320,7 @@ const ACTIONS = {
       });
     } catch (err) {
       console.error('Erreur lors du chargement des statistiques:', err);
-      statsData = { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
+      statsData = { tasksCount: 0, xpGained: 0, goldGained: 0, bestDay: null, topTasks: [], dailyBreakdown: {} };
     }
     await renderStatsCharts();
   },
@@ -1348,7 +1334,7 @@ const ACTIONS = {
       });
     } catch (err) {
       console.error('Erreur lors du chargement des statistiques:', err);
-      statsData = { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
+      statsData = { tasksCount: 0, xpGained: 0, goldGained: 0, bestDay: null, topTasks: [], dailyBreakdown: {} };
     }
     await renderStatsCharts();
   },
@@ -1474,8 +1460,6 @@ document.body.addEventListener('change', e => {
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
 
-// Note: aggregateTaskStats, dateToISO, getDateRange are only defined in the backend (_core.mjs)
-
 /* self-check (fonctions pures) */
 console.assert(gradeReward('16').xp === 50 && gradeReward('13,5').gold === 5 && gradeReward('8').gold === 0, 'gradeReward barème');
 console.assert(gradeReward('25') === null && gradeReward('abc') === null, 'gradeReward validation');
@@ -1483,20 +1467,6 @@ console.assert(level(0) === 1 && level(99) === 1 && level(230) === 3, 'level');
 console.assert(nextReward(128, [{ cost: 50 }, { cost: 80 }, { cost: 150 }]).cost === 150, 'nextReward');
 console.assert(esc('<b>&"') === '&lt;b&gt;&amp;&quot;', 'esc');
 console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true }, { daily: true, done: true }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
-console.assert((() => {
-  const now = Date.now(), day = dateToISO(now);
-  const child = {
-    tasks: [
-      { name: 'Homework', xp: 25, gold: 10, done: true, completedAt: now, icon: '📚' },
-      { name: 'Homework', xp: 25, gold: 10, done: true, completedAt: now - 86400000, icon: '📚' },
-      { name: 'Chores', xp: 15, gold: 5, done: true, completedAt: now, icon: '🧹' },
-      { name: 'Sport', xp: 20, gold: 0, done: true, completedAt: now, icon: '⚽' },
-      { name: 'Reading', xp: 10, gold: 5, done: false, icon: '📖' }
-    ]
-  };
-  const stats = aggregateTaskStats(child, 'day');
-  return stats.tasksCount === 3 && stats.tasksAttempted === 5 && stats.xpGained === 60 && stats.goldGained === 15 && stats.completionRate === 60 && stats.topTasks.length > 0 && stats.bestDay !== null && Object.keys(stats.dailyBreakdown).length > 0;
-})(), 'aggregateTaskStats');
 
 /* boot : restaure la session depuis le jeton persisté, sinon écran de connexion */
 async function boot() {
