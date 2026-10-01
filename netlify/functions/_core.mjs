@@ -70,10 +70,10 @@ function seedFamily() {
     children: [
       { name: 'Emma', xp: 230, gold: 128,
         tasks: [
-          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true },
-          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: false, daily: true },
-          { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: false },
-          { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true },
+          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 86400000 },
+          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: false, daily: true, completedAt: null },
+          { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: false, completedAt: null },
+          { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: Date.now() - 86400000 },
         ],
         grades: [
           { subject: 'Mathématiques', grade: '16/20', xp: 50, gold: 10 },
@@ -85,8 +85,8 @@ function seedFamily() {
       },
       { name: 'Lucas', xp: 90, gold: 64,
         tasks: [
-          { icon: '🛏️', name: 'Faire son lit', xp: 10, gold: 5, done: false, daily: true },
-          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: false, daily: true },
+          { icon: '🛏️', name: 'Faire son lit', xp: 10, gold: 5, done: false, daily: true, completedAt: null },
+          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: false, daily: true, completedAt: null },
         ],
         grades: [
           { subject: 'Mathématiques', grade: '', xp: 0, gold: 0 },

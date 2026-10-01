@@ -896,6 +896,11 @@ const ACTIONS = {
       state.taskRequests = state.taskRequests?.filter(req => !(req.child === c.name && req.taskIndex === i)) || [];
     }
     t.done = !t.done;
+    if (t.done) {
+      t.completedAt = Date.now();
+    } else {
+      t.completedAt = null;
+    }
     save();
   },
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
