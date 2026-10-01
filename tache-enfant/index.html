@@ -98,7 +98,7 @@
     border-radius: 999px; font-size: 13px; display: none; z-index: 60;
   }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+<script src="https://unpkg.com/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="phone">
@@ -774,7 +774,7 @@ function renderNoFamily() {
 }
 
 function renderStatsCharts() {
-  if (!statsData) return;
+  if (!statsData || typeof Chart === 'undefined') return;
 
   // Destroy existing charts if any
   Object.values(statsCharts).forEach(chart => chart?.destroy());
@@ -963,6 +963,7 @@ function screenStats() {
       </tbody>
     </table>
   </div>` : ''}
+  <div style="height:40px"></div>
   `;
 }
 
