@@ -721,6 +721,100 @@ function screenFamille() {
   <div style="padding:20px 20px 28px"><button class="btn btn-secondary btn-block" data-action="logout">Se déconnecter</button></div>`;
 }
 
+async function screenStats() {
+  try {
+    // Fetch stats data from API
+    statsData = await api('getTaskStats', {
+      childId: state.children[statsChildIndex]?.id,
+      period: statsPeriod
+    });
+  } catch (err) {
+    console.error('Erreur lors du chargement des statistiques:', err);
+    statsData = { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
+  }
+
+  const c = state.children[statsChildIndex] || {};
+  const children = state.children || [];
+
+  return `
+  <div style="padding:22px 20px 4px">
+    <h2 style="margin:0;font-size:22px">Statistiques</h2>
+    ${childSeg()}
+  </div>
+
+  <div style="padding:16px 20px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn ${statsPeriod === 'day' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="day">Jour</button>
+    <button class="btn ${statsPeriod === 'week' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="week">Semaine</button>
+    <button class="btn ${statsPeriod === 'month' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="month">Mois</button>
+    <button class="btn ${statsPeriod === 'year' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="year">Année</button>
+  </div>
+
+  <div class="deck deck-2" style="padding:4px 20px;gap:10px">
+    <div class="card elev-sm" style="padding:16px;text-align:center">
+      <div class="kicker">Tâches complétées</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-800)">${statsData?.tasks || 0}</div>
+    </div>
+    <div class="card elev-sm" style="padding:16px;text-align:center">
+      <div class="kicker">XP gagnés</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-2-800)">${statsData?.xp || 0}</div>
+    </div>
+    <div class="card elev-sm" style="padding:16px;text-align:center">
+      <div class="kicker">Or 🪙 gagnés</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${statsData?.gold || 0}</div>
+    </div>
+    <div class="card elev-sm" style="padding:16px;text-align:center">
+      <div class="kicker">Meilleur jour</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${statsData?.bestDay || 'N/A'}</div>
+    </div>
+  </div>
+
+  <div style="padding:14px 20px 4px" class="kicker">Progressions</div>
+  <div style="padding:0 20px 10px">
+    <div class="card elev-sm" style="padding:16px">
+      <canvas id="chart-tasks-per-day" style="max-height:200px"></canvas>
+    </div>
+  </div>
+
+  <div style="padding:14px 20px 4px" class="kicker">Courbe de progression XP</div>
+  <div style="padding:0 20px 10px">
+    <div class="card elev-sm" style="padding:16px">
+      <canvas id="chart-progression" style="max-height:200px"></canvas>
+    </div>
+  </div>
+
+  <div style="padding:14px 20px 4px" class="kicker">Top 5 tâches</div>
+  <div style="padding:0 20px 10px">
+    <div class="card elev-sm" style="padding:16px">
+      <canvas id="chart-top-tasks" style="max-height:200px"></canvas>
+    </div>
+  </div>
+
+  ${children.length > 1 ? `
+  <div style="padding:14px 20px 4px" class="kicker">Statistiques des autres enfants</div>
+  <div style="padding:0 20px 20px;overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="border-bottom:2px solid var(--color-divider)">
+          <th style="padding:10px;text-align:left">Enfant</th>
+          <th style="padding:10px;text-align:center">Tâches</th>
+          <th style="padding:10px;text-align:center">XP</th>
+          <th style="padding:10px;text-align:center">Or</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${children.map((child, idx) => statsChildIndex === idx ? '' : `
+        <tr style="border-bottom:1px solid var(--color-divider)">
+          <td style="padding:10px"><strong>${esc(child.name)}</strong></td>
+          <td style="padding:10px;text-align:center">${(statsData?.childrenStats?.[idx]?.tasks || 0)}</td>
+          <td style="padding:10px;text-align:center">${(statsData?.childrenStats?.[idx]?.xp || 0)}</td>
+          <td style="padding:10px;text-align:center">${(statsData?.childrenStats?.[idx]?.gold || 0)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+  `;
+}
+
 /* ── écrans d'authentification ── */
 
 function renderAuthChild() {
@@ -820,6 +914,198 @@ function renderNoFamily() {
     <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
   </div>`;
   setNav('');
+}
+
+function screenStats() {
+  if (!state || state.children.length === 0) {
+    document.getElementById('main').innerHTML = '<div style="padding: 20px"><p>Aucun enfant à afficher.</p></div>';
+    setNav('');
+    return;
+  }
+
+  const child = state.children[statsChildIndex];
+
+  try {
+    api('getTaskStats', { childId: child.id, period: statsPeriod }).then(data => {
+      statsData = data;
+      renderStatsScreen();
+    }).catch(e => {
+      document.getElementById('main').innerHTML = `<div style="padding: 20px"><p>Erreur: ${esc(String(e))}</p></div>`;
+      setNav('');
+    });
+  } catch (e) {
+    document.getElementById('main').innerHTML = `<div style="padding: 20px"><p>Erreur: ${esc(String(e))}</p></div>`;
+    setNav('');
+  }
+}
+
+function renderStatsScreen() {
+  if (!statsData) return;
+
+  const html = `
+  <div style="padding: 20px; max-width: 1200px; margin: 0 auto;">
+    <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
+      <div>
+        <label style="font-size: 13px; color: var(--color-neutral-600);">Enfant</label>
+        <select id="stats-child-select" style="padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);">
+          ${state.children.map((c, i) => `<option value="${i}" ${i === statsChildIndex ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display: flex; gap: 4px;">
+        ${['day', 'week', 'month', 'year'].map(p => `<button class="btn ${statsPeriod === p ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="${p}" style="font-size: 12px; padding: 6px 12px;">${p === 'day' ? 'Jour' : p === 'week' ? 'Semaine' : p === 'month' ? 'Mois' : 'Année'}</button>`).join('')}
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+      <div class="card" style="padding: 16px;">
+        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">📋 Tâches</div>
+        <div style="font-size: 28px; font-weight: bold;">${statsData.tasksCount}</div>
+        <div style="font-size: 12px; margin-top: 4px;">${statsData.completionRate}% (${statsData.tasksCount}/${statsData.tasksAttempted})</div>
+      </div>
+      <div class="card" style="padding: 16px;">
+        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">⚔️ XP</div>
+        <div style="font-size: 28px; font-weight: bold;">${statsData.xpGained}</div>
+        <div style="font-size: 12px; margin-top: 4px; color: var(--color-accent-700);">Gagné</div>
+      </div>
+      <div class="card" style="padding: 16px;">
+        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">🪙 Or</div>
+        <div style="font-size: 28px; font-weight: bold;">${statsData.goldGained}</div>
+        <div style="font-size: 12px; margin-top: 4px; color: var(--color-accent-700);">Gagné</div>
+      </div>
+      <div class="card" style="padding: 16px;">
+        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">🏆 Meilleur jour</div>
+        <div style="font-size: 20px; font-weight: bold;">${statsData.bestDay ? statsData.bestDay.tasksCount + ' tâches' : '-'}</div>
+        <div style="font-size: 12px; margin-top: 4px;">${statsData.bestDay ? statsData.bestDay.date : 'Aucune donnée'}</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px;">
+      <div class="card" style="padding: 16px;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Tâches par jour</h3>
+        <canvas id="chart-tasks-per-day" style="max-height: 200px;"></canvas>
+      </div>
+      <div class="card" style="padding: 16px;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Progression XP/Or</h3>
+        <canvas id="chart-progression" style="max-height: 200px;"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="padding: 16px; margin-bottom: 20px;">
+      <h3 style="margin: 0 0 12px 0; font-size: 16px;">Top 5 tâches</h3>
+      <canvas id="chart-top-tasks" style="max-height: 200px;"></canvas>
+    </div>
+  </div>
+  `;
+
+  document.getElementById('main').innerHTML = html;
+  setNav(TABS[state.role].map(([id, ico, label]) =>
+    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
+
+  renderStatsCharts();
+}
+
+async function renderStatsCharts() {
+  if (!statsData) return;
+
+  // Destroy existing charts if any
+  Object.values(statsCharts).forEach(chart => chart?.destroy());
+  statsCharts = {};
+
+  // Chart 1: Tasks per day (bar chart)
+  const dates = Object.keys(statsData.dailyBreakdown).sort();
+  const taskCounts = dates.map(d => statsData.dailyBreakdown[d].tasksCount);
+  const avgTasks = taskCounts.length > 0 ? Math.round(taskCounts.reduce((a, b) => a + b, 0) / taskCounts.length) : 0;
+
+  const ctx1 = document.getElementById('chart-tasks-per-day')?.getContext('2d');
+  if (ctx1) {
+    statsCharts.tasksPerDay = new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels: dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', month: 'short', day: 'numeric' })),
+        datasets: [{
+          label: 'Tâches',
+          data: taskCounts,
+          backgroundColor: taskCounts.map(t => t >= avgTasks ? '#22c55e' : '#9ca3af'),
+          borderRadius: 4
+        }]
+      },
+      options: {
+        indexAxis: 'x',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+      }
+    });
+  }
+
+  // Chart 2: XP/Gold progression (line chart)
+  let xpCum = 0, goldCum = 0;
+  const xpProgression = [], goldProgression = [];
+  for (const d of dates) {
+    xpCum += statsData.dailyBreakdown[d].xp;
+    goldCum += statsData.dailyBreakdown[d].gold;
+    xpProgression.push(xpCum);
+    goldProgression.push(goldCum);
+  }
+
+  const ctx2 = document.getElementById('chart-progression')?.getContext('2d');
+  if (ctx2) {
+    statsCharts.progression = new Chart(ctx2, {
+      type: 'line',
+      data: {
+        labels: dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', month: 'short', day: 'numeric' })),
+        datasets: [
+          {
+            label: 'XP',
+            data: xpProgression,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            tension: 0.3
+          },
+          {
+            label: 'Or',
+            data: goldProgression,
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: true } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  // Chart 3: Top 5 tasks (horizontal bar)
+  const ctx3 = document.getElementById('chart-top-tasks')?.getContext('2d');
+  if (ctx3) {
+    statsCharts.topTasks = new Chart(ctx3, {
+      type: 'bar',
+      data: {
+        labels: statsData.topTasks.map(t => t.name),
+        datasets: [{
+          label: 'Fois complétées',
+          data: statsData.topTasks.map(t => t.count),
+          backgroundColor: '#06b6d4',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+      }
+    });
+  }
 }
 
 /* ── render ── */
@@ -1228,11 +1514,6 @@ function celebrate(text) {
     }).join('');
   document.body.appendChild(o);
   setTimeout(() => o.remove(), 1900);
-}
-
-// affichage de l'écran de statistiques
-function screenStats() {
-  render();
 }
 
 // bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant actif sont faites
