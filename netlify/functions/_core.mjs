@@ -125,7 +125,12 @@ function seedFamily() {
 
 // crée le compte démo (parent@demo.fr / demo) + sa famille au tout premier appel
 async function ensureSeed(store) {
-  if (await store.get('seeded')) return;
+  if (await store.get('seeded')) {
+    // Always refresh demo family data to keep test data up-to-date
+    const fam = seedFamily();
+    await store.set('family:' + fam.id, fam);
+    return;
+  }
   const fam = seedFamily();
   const { salt, hash } = hashPassword('demo');
   await store.set('family:' + fam.id, fam);
