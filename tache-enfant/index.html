@@ -1027,6 +1027,7 @@ function render() {
       period: statsPeriod
     }).then(r => {
       statsData = r;
+      document.getElementById('main').innerHTML = screenStats();
       renderStatsCharts();
     }).catch(err => {
       console.error('Erreur statistiques:', err);
