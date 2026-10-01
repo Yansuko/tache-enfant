@@ -671,94 +671,6 @@ function screenFamille() {
   <div style="padding:20px 20px 28px"><button class="btn btn-secondary btn-block" data-action="logout">Se déconnecter</button></div>`;
 }
 
-function screenStats() {
-  const c = state.children[statsChildIndex] || {};
-  const children = state.children || [];
-  const data = statsData || { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
-
-  return `
-  <div style="padding:22px 20px 4px">
-    <h2 style="margin:0;font-size:22px">Statistiques</h2>
-    <div style="margin-top:12px">
-      <label style="font-size:13px;display:block;margin-bottom:6px">Enfant</label>
-      <select class="input" id="stats-child-select" style="width:100%">
-        ${children.map((c, i) => `<option value="${i}"${i === statsChildIndex ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
-      </select>
-    </div>
-  </div>
-
-  <div style="padding:16px 20px;display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn ${statsPeriod === 'day' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="day">Jour</button>
-    <button class="btn ${statsPeriod === 'week' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="week">Semaine</button>
-    <button class="btn ${statsPeriod === 'month' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="month">Mois</button>
-    <button class="btn ${statsPeriod === 'year' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="year">Année</button>
-  </div>
-
-  <div class="deck deck-2" style="padding:4px 20px;gap:10px">
-    <div class="card elev-sm" style="padding:16px;text-align:center">
-      <div class="kicker">Tâches complétées</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-800)">${data?.tasks || 0}</div>
-    </div>
-    <div class="card elev-sm" style="padding:16px;text-align:center">
-      <div class="kicker">XP gagnés</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-2-800)">${data?.xp || 0}</div>
-    </div>
-    <div class="card elev-sm" style="padding:16px;text-align:center">
-      <div class="kicker">Or 🪙 gagnés</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${data?.gold || 0}</div>
-    </div>
-    <div class="card elev-sm" style="padding:16px;text-align:center">
-      <div class="kicker">Meilleur jour</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${data?.bestDay || 'N/A'}</div>
-    </div>
-  </div>
-
-  <div style="padding:14px 20px 4px" class="kicker">Progressions</div>
-  <div style="padding:0 20px 10px">
-    <div class="card elev-sm" style="padding:16px">
-      <canvas id="chart-tasks-per-day" style="max-height:200px"></canvas>
-    </div>
-  </div>
-
-  <div style="padding:14px 20px 4px" class="kicker">Courbe de progression XP</div>
-  <div style="padding:0 20px 10px">
-    <div class="card elev-sm" style="padding:16px">
-      <canvas id="chart-progression" style="max-height:200px"></canvas>
-    </div>
-  </div>
-
-  <div style="padding:14px 20px 4px" class="kicker">Top 5 tâches</div>
-  <div style="padding:0 20px 10px">
-    <div class="card elev-sm" style="padding:16px">
-      <canvas id="chart-top-tasks" style="max-height:200px"></canvas>
-    </div>
-  </div>
-
-  ${children.length > 1 ? `
-  <div style="padding:14px 20px 4px" class="kicker">Statistiques des autres enfants</div>
-  <div style="padding:0 20px 20px;overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead>
-        <tr style="border-bottom:2px solid var(--color-divider)">
-          <th style="padding:10px;text-align:left">Enfant</th>
-          <th style="padding:10px;text-align:center">Tâches</th>
-          <th style="padding:10px;text-align:center">XP</th>
-          <th style="padding:10px;text-align:center">Or</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${children.map((child, idx) => statsChildIndex === idx ? '' : `
-        <tr style="border-bottom:1px solid var(--color-divider)">
-          <td style="padding:10px"><strong>${esc(child.name)}</strong></td>
-          <td style="padding:10px;text-align:center">${(data?.childrenStats?.[idx]?.tasks || 0)}</td>
-          <td style="padding:10px;text-align:center">${(data?.childrenStats?.[idx]?.xp || 0)}</td>
-          <td style="padding:10px;text-align:center">${(data?.childrenStats?.[idx]?.gold || 0)}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>` : ''}
-  `;
-}
 
 /* ── écrans d'authentification ── */
 
@@ -965,80 +877,6 @@ async function renderStatsCharts() {
   }
 }
 
-function screenStats() {
-  if (!state || state.children.length === 0) {
-    document.getElementById('main').innerHTML = '<div style="padding: 20px"><p>Aucun enfant à afficher.</p></div>';
-    setNav('');
-    return;
-  }
-
-  const child = state.children[statsChildIndex];
-
-  try {
-    api('getTaskStats', { childId: child.id, period: statsPeriod }).then(data => {
-      statsData = data;
-      renderStatsScreen();
-    }).catch(e => {
-      document.getElementById('main').innerHTML = `<div style="padding: 20px"><p>Erreur: ${esc(String(e))}</p></div>`;
-      setNav('');
-    });
-  } catch (e) {
-    document.getElementById('main').innerHTML = `<div style="padding: 20px"><p>Erreur: ${esc(String(e))}</p></div>`;
-    setNav('');
-  }
-}
-
-function renderStatsScreen() {
-  if (!statsData) return;
-
-  const html = `
-  <div style="padding: 20px; max-width: 1200px; margin: 0 auto;">
-    <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
-      <div>
-        <label style="font-size: 13px; color: var(--color-neutral-600);">Enfant</label>
-        <select id="stats-child-select" style="padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);">
-          ${state.children.map((c, i) => `<option value="${i}" ${i === statsChildIndex ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
-        </select>
-      </div>
-      <div style="display: flex; gap: 4px;">
-        ${['day', 'week', 'month', 'year'].map(p => `<button class="btn ${statsPeriod === p ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="${p}" style="font-size: 12px; padding: 6px 12px;">${p === 'day' ? 'Jour' : p === 'week' ? 'Semaine' : p === 'month' ? 'Mois' : 'Année'}</button>`).join('')}
-      </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">📋 Tâches</div>
-        <div style="font-size: 28px; font-weight: bold;">${statsData.tasksCount}</div>
-        <div style="font-size: 12px; margin-top: 4px;">${statsData.completionRate}% (${statsData.tasksCount}/${statsData.tasksAttempted})</div>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">⚔️ XP</div>
-        <div style="font-size: 28px; font-weight: bold;">${statsData.xpGained}</div>
-        <div style="font-size: 12px; margin-top: 4px; color: var(--color-accent-700);">Gagné</div>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">🪙 Or</div>
-        <div style="font-size: 28px; font-weight: bold;">${statsData.goldGained}</div>
-        <div style="font-size: 12px; margin-top: 4px; color: var(--color-accent-700);">Gagné</div>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <div style="font-size: 12px; color: var(--color-neutral-600); margin-bottom: 6px;">🏆 Meilleur jour</div>
-        <div style="font-size: 20px; font-weight: bold;">${statsData.bestDay ? statsData.bestDay.tasksCount + ' tâches' : '-'}</div>
-        <div style="font-size: 12px; margin-top: 4px;">${statsData.bestDay ? statsData.bestDay.date : 'Aucune donnée'}</div>
-      </div>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px;">
-      <div class="card" style="padding: 16px;">
-        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Tâches par jour</h3>
-        <canvas id="chart-tasks-per-day" style="max-height: 200px;"></canvas>
-      </div>
-      <div class="card" style="padding: 16px;">
-        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Progression XP/Or</h3>
-        <canvas id="chart-progression" style="max-height: 200px;"></canvas>
-      </div>
-    </div>
-
     <div class="card" style="padding: 16px; margin-bottom: 20px;">
       <h3 style="margin: 0 0 12px 0; font-size: 16px;">Top 5 tâches</h3>
       <canvas id="chart-top-tasks" style="max-height: 200px;"></canvas>
@@ -1105,9 +943,13 @@ function render() {
     setNav('');
     return;
   }
-  document.getElementById('main').innerHTML = SCREENS[state.tab]();
-  setNav(TABS[state.role].map(([id, ico, label]) =>
-    `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
+  if (state.tab === 'stats') {
+    screenStats();
+  } else {
+    document.getElementById('main').innerHTML = SCREENS[state.tab]();
+    setNav(TABS[state.role].map(([id, ico, label]) =>
+      `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
+  }
 }
 
 /* ── PIN enfant (côté client, stocké dans la donnée famille) ── */
@@ -1378,15 +1220,33 @@ const ACTIONS = {
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
     state.rewards.push({ icon: '🎁', name, cost, lvl });
   },
-  'stats-select-child': el => {
+  'stats-select-child': async el => {
     statsChildIndex = +el.dataset.index;
     localStorage.setItem('statsChildIndex', statsChildIndex);
-    render();
+    try {
+      statsData = await api('getTaskStats', {
+        childId: state.children[statsChildIndex]?.id,
+        period: statsPeriod
+      });
+    } catch (err) {
+      console.error('Erreur lors du chargement des statistiques:', err);
+      statsData = { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
+    }
+    await renderStatsCharts();
   },
-  'stats-period': el => {
+  'stats-period': async el => {
     statsPeriod = el.dataset.period;
     localStorage.setItem('statsPeriod', statsPeriod);
-    render();
+    try {
+      statsData = await api('getTaskStats', {
+        childId: state.children[statsChildIndex]?.id,
+        period: statsPeriod
+      });
+    } catch (err) {
+      console.error('Erreur lors du chargement des statistiques:', err);
+      statsData = { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
+    }
+    await renderStatsCharts();
   },
 
   // ── actions serveur (async, gèrent leur propre persistance) ──
