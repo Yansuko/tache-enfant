@@ -630,56 +630,6 @@ function screenEnfants() {
   </div>`;
 }
 
-function screenStats() {
-  const totalXp = state.children.reduce((sum, c) => sum + c.xp, 0);
-  const totalGold = state.children.reduce((sum, c) => sum + c.gold, 0);
-  const totalTasksDone = state.children.reduce((sum, c) => sum + c.tasks.filter(t => t.done).length, 0);
-  const totalTasksAssigned = state.children.reduce((sum, c) => sum + c.tasks.length, 0);
-  const avgLevel = state.children.length ? (state.children.reduce((sum, c) => sum + level(c.xp), 0) / state.children.length).toFixed(1) : 0;
-
-  return `
-  <div style="padding:22px 20px 4px">
-    <h2 style="margin:0;font-size:22px">Statistiques 📊</h2>
-    <p class="text-muted" style="font-size:13px;margin:4px 0 0">Vue d'ensemble de la famille</p>
-  </div>
-  <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px;flex:1;overflow:auto">
-    <div class="deck deck-2" style="gap:12px;padding:0">
-      <div class="card elev-sm" style="gap:8px">
-        <div style="font-size:12px;color:var(--color-neutral-600);text-transform:uppercase;letter-spacing:0.08em">Total XP</div>
-        <div style="font-size:28px;font-family:var(--font-heading);color:var(--color-accent-2-700)">${totalXp}</div>
-      </div>
-      <div class="card elev-sm" style="gap:8px">
-        <div style="font-size:12px;color:var(--color-neutral-600);text-transform:uppercase;letter-spacing:0.08em">Total Or</div>
-        <div style="font-size:28px;font-family:var(--font-heading);color:var(--color-accent-700)">🪙 ${totalGold}</div>
-      </div>
-      <div class="card elev-sm" style="gap:8px">
-        <div style="font-size:12px;color:var(--color-neutral-600);text-transform:uppercase;letter-spacing:0.08em">Quêtes faites</div>
-        <div style="font-size:28px;font-family:var(--font-heading);color:var(--color-accent-800)">${totalTasksDone}/${totalTasksAssigned}</div>
-      </div>
-      <div class="card elev-sm" style="gap:8px">
-        <div style="font-size:12px;color:var(--color-neutral-600);text-transform:uppercase;letter-spacing:0.08em">Niveau moyen</div>
-        <div style="font-size:28px;font-family:var(--font-heading);color:var(--color-accent-500)">⚔️ ${avgLevel}</div>
-      </div>
-    </div>
-
-    <div style="padding:14px 20px 4px" class="kicker">Enfants</div>
-    <div style="padding:0;display:flex;flex-direction:column;gap:8px">
-      ${state.children.map((c, i) => `
-      <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:14px">
-        <div class="task-icon">🧒</div>
-        <div style="flex:1">
-          <div class="card-title" style="font-size:15px">${esc(c.name)}</div>
-          <div style="display:flex;gap:6px;margin-top:4px">
-            <span class="tag tag-accent-2">⚔️ Niv. ${level(c.xp)}</span>
-            <span class="tag tag-accent">🪙 ${c.gold}</span>
-            <span class="tag tag-neutral">${c.tasks.filter(t => t.done).length}/${c.tasks.length} tâches</span>
-          </div>
-        </div>
-      </div>`).join('')}
-    </div>
-  </div>`;
-}
-
 function screenFamille() {
   const owner = state.owner === me.email;
   return `
@@ -721,25 +671,20 @@ function screenFamille() {
   <div style="padding:20px 20px 28px"><button class="btn btn-secondary btn-block" data-action="logout">Se déconnecter</button></div>`;
 }
 
-async function screenStats() {
-  try {
-    // Fetch stats data from API
-    statsData = await api('getTaskStats', {
-      childId: state.children[statsChildIndex]?.id,
-      period: statsPeriod
-    });
-  } catch (err) {
-    console.error('Erreur lors du chargement des statistiques:', err);
-    statsData = { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
-  }
-
+function screenStats() {
   const c = state.children[statsChildIndex] || {};
   const children = state.children || [];
+  const data = statsData || { tasks: 0, xp: 0, gold: 0, bestDay: 'N/A', children: [] };
 
   return `
   <div style="padding:22px 20px 4px">
     <h2 style="margin:0;font-size:22px">Statistiques</h2>
-    ${childSeg()}
+    <div style="margin-top:12px">
+      <label style="font-size:13px;display:block;margin-bottom:6px">Enfant</label>
+      <select class="input" id="stats-child-select" style="width:100%">
+        ${children.map((c, i) => `<option value="${i}"${i === statsChildIndex ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
+      </select>
+    </div>
   </div>
 
   <div style="padding:16px 20px;display:flex;gap:8px;flex-wrap:wrap">
@@ -752,19 +697,19 @@ async function screenStats() {
   <div class="deck deck-2" style="padding:4px 20px;gap:10px">
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Tâches complétées</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-800)">${statsData?.tasks || 0}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-800)">${data?.tasks || 0}</div>
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">XP gagnés</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-2-800)">${statsData?.xp || 0}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-2-800)">${data?.xp || 0}</div>
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Or 🪙 gagnés</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${statsData?.gold || 0}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${data?.gold || 0}</div>
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Meilleur jour</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${statsData?.bestDay || 'N/A'}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${data?.bestDay || 'N/A'}</div>
     </div>
   </div>
 
@@ -1433,8 +1378,13 @@ const ACTIONS = {
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
     state.rewards.push({ icon: '🎁', name, cost, lvl });
   },
-  'set-stats-period': el => {
+  'stats-select-child': el => {
+    statsChildIndex = +el.dataset.index;
+    render();
+  },
+  'stats-period': el => {
     statsPeriod = el.dataset.period;
+    render();
   },
 
   // ── actions serveur (async, gèrent leur propre persistance) ──
