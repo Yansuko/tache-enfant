@@ -129,6 +129,7 @@ let activeFamily = 0;
 let state = null;           // famille active — pointeur dans families[]
 let parentUnlocked = false; // accès espace parent — en mémoire, retombe au rechargement
 let authMode = 'login', authMsg = '', authRole = 'parent';
+let resetPasswordStep = 0, resetEmail = '', resetMsg = ''; // modal réinitialisation password
 let creatingPin = false; // affiche le formulaire de création de PIN
 const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
 
@@ -685,8 +686,31 @@ function renderAuthChild() {
   setNav('');
 }
 
+function renderResetPassword() {
+  document.getElementById('main').innerHTML = `
+  <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
+    <div style="text-align:center">
+      <div style="font-size:40px">🔐</div>
+      <h2 style="margin:6px 0 0;font-size:24px">Réinitialiser le mot de passe</h2>
+    </div>
+    ${resetMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(resetMsg)}</div>` : ''}
+    ${resetPasswordStep === 1 ? `
+    <div class="field" style="margin:0"><label>Email</label><input class="input" id="reset-email" type="email" placeholder="parent@email.fr"></div>
+    <button class="btn btn-primary btn-block" data-action="reset-password-step1">Envoyer le code</button>
+    ` : `
+    <div class="field" style="margin:0"><label>Code (6 chiffres)</label><input class="input" id="reset-code" placeholder="123456" maxlength="6"></div>
+    <div class="field" style="margin:0"><label>Nouveau mot de passe</label><input class="input" id="reset-password" type="password" placeholder="••••••"></div>
+    <div class="field" style="margin:0"><label>Confirmer mot de passe</label><input class="input" id="reset-password-confirm" type="password" placeholder="••••••"></div>
+    <button class="btn btn-primary btn-block" data-action="reset-password-step2">Réinitialiser</button>
+    `}
+    <button class="btn btn-ghost btn-block" data-action="show-reset-password">← Retour</button>
+  </div>`;
+  setNav('');
+}
+
 function renderAuth() {
   if (authRole === 'enfant') return renderAuthChild();
+  if (resetPasswordStep > 0) return renderResetPassword();
   const signup = authMode === 'signup';
   document.getElementById('main').innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
@@ -703,6 +727,7 @@ function renderAuth() {
     ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
     <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
+    ${!signup ? '<div style="text-align:right"><button class="btn btn-ghost" style="font-size:12px;padding:0;margin-top:-8px" data-action="show-reset-password">Mot de passe oublié?</button></div>' : ''}
     ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
     <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
     <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? "J'ai déjà un compte" : "Créer un nouveau compte"}</button>
@@ -1076,6 +1101,25 @@ const ACTIONS = {
     if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
   },
   'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
+  'show-reset-password': () => { resetPasswordStep = 1; resetEmail = ''; resetMsg = ''; render(); },
+  'reset-password-step1': async () => {
+    const email = val('reset-email'); if (!email) { resetMsg = 'Email requis.'; render(); return; }
+    try {
+      const r = await api('reset-password', { step: 1, email });
+      resetEmail = email; resetPasswordStep = 2; resetMsg = '';
+    } catch (e) { resetMsg = 'Erreur: ' + String(e); }
+    render();
+  },
+  'reset-password-step2': async () => {
+    const code = val('reset-code'), password = val('reset-password'), confirm = val('reset-password-confirm');
+    if (!code || !password || !confirm) { resetMsg = 'Tous les champs requis.'; render(); return; }
+    if (password !== confirm) { resetMsg = 'Les passwords ne correspondent pas.'; render(); return; }
+    try {
+      await api('reset-password', { step: 2, email: resetEmail, code, password });
+      authMsg = 'Mot de passe changé! Reconnecte-toi.'; resetPasswordStep = 0; authMode = 'login';
+    } catch (e) { resetMsg = 'Erreur: ' + String(e); }
+    render();
+  },
   logout: () => {
     token = null; localStorage.removeItem(TOKEN_KEY);
     me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';

@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 
 let emailSender = null;
 export function setEmailSender(fn) { emailSender = fn; }
+let resetCodes = {};
 
 /* ── crypto : vrais hachages de mot de passe (scrypt) + jetons signés (HMAC) ── */
 
@@ -161,6 +162,48 @@ async function login(store, secret, b) {
   if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
   return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
 }
+async function resetPassword(store, secret, b) {
+  // Nettoyer les codes expirés
+  const now = Date.now();
+  for (const [email, data] of Object.entries(resetCodes)) {
+    if (data.expiresAt < now) delete resetCodes[email];
+  }
+
+  if (b.step === 1) {
+    // Générer et envoyer code
+    const email = String(b.email || '').toLowerCase();
+    const acc = await store.get('account:' + email);
+    if (!acc) return err(404, 'Email non trouvé.');
+    const code = Math.random().toString().slice(2, 8).padStart(6, '0');
+    resetCodes[email] = { code, expiresAt: Date.now() + 15 * 60 * 1000 };
+    if (emailSender) await emailSender({
+      to: email,
+      subject: 'Code de réinitialisation - DailyKids Quest',
+      body: `Ton code de réinitialisation: ${code}\nValide 15 minutes.`
+    });
+    return { status: 200, body: { message: 'Code envoyé' } };
+  }
+
+  if (b.step === 2) {
+    // Valider code et changer password
+    const email = String(b.email || '').toLowerCase();
+    const data = resetCodes[email];
+    if (!data) return err(400, 'Pas de demande en cours.');
+    if (data.expiresAt < now) return err(400, 'Code expiré.');
+    if (data.code !== String(b.code)) return err(400, 'Code incorrect.');
+    const acc = await store.get('account:' + email);
+    if (!acc) return err(404, 'Compte non trouvé.');
+    if (checkPassword(b.password, acc.salt, acc.hash)) return err(400, 'Nouveau password identique à l\'ancien.');
+    const newPw = hashPassword(b.password);
+    acc.salt = newPw.salt;
+    acc.hash = newPw.hash;
+    await store.set('account:' + email, acc);
+    delete resetCodes[email];
+    return { status: 200, body: { message: 'Password changé' } };
+  }
+
+  return err(400, 'Étape invalide.');
+}
 async function saveFamily(store, email, b) {
   const inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
@@ -300,7 +343,7 @@ async function approveGrade(store, email, b) {
   await store.set('family:' + familyId, fam);
   return { status: 200, body: { ok: true } };
 }
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade']);
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password']);
 
 // point d'entrée unique. payload = { action, token, body }
 export async function handleApi({ action, token, body = {} }, store) {
@@ -314,6 +357,7 @@ export async function handleApi({ action, token, body = {} }, store) {
   switch (action) {
     case 'signup': return signup(store, secret, body);
     case 'login': return login(store, secret, body);
+    case 'reset-password': return resetPassword(store, secret, body);
     case 'unlockChildDirect': return unlockChildDirect(store, body);
     case 'me': return { status: 200, body: await stateFor(store, email) };
     case 'verifyPassword': {
