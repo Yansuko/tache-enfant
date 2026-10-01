@@ -1033,7 +1033,24 @@ function render() {
     return;
   }
   if (state.tab === 'stats') {
-    screenStats();
+    (async () => {
+      // Load stats data before rendering
+      if (!statsData || statsChildIndex !== (statsChildIndex ?? 0)) {
+        try {
+          statsData = await api('getTaskStats', {
+            childId: state.children[statsChildIndex]?.id,
+            period: statsPeriod
+          });
+        } catch (err) {
+          console.error('Erreur lors du chargement des statistiques:', err);
+          statsData = null;
+        }
+      }
+      screenStats();
+      setNav(TABS[state.role].map(([id, ico, label]) =>
+        `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
+      if (statsData) await renderStatsCharts();
+    })();
   } else {
     document.getElementById('main').innerHTML = SCREENS[state.tab]();
     setNav(TABS[state.role].map(([id, ico, label]) =>
