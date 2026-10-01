@@ -775,109 +775,89 @@ function renderNoFamily() {
 
 function renderStatsCharts() {
   if (!statsData) return;
-  if (typeof Chart === 'undefined') {
-    console.log('Chart.js not loaded, skipping charts');
-    return;
-  }
 
-  // Destroy existing charts if any
-  Object.values(statsCharts).forEach(chart => chart?.destroy());
-  statsCharts = {};
-
-  // Chart 1: Tasks per day (bar chart)
+  // Render CSS-based charts (no Chart.js needed)
   const dates = Object.keys(statsData.dailyBreakdown).sort();
   const taskCounts = dates.map(d => statsData.dailyBreakdown[d].tasksCount);
   const avgTasks = taskCounts.length > 0 ? Math.round(taskCounts.reduce((a, b) => a + b, 0) / taskCounts.length) : 0;
+  const maxTasks = Math.max(1, ...taskCounts);
 
-  const ctx1 = document.getElementById('chart-tasks-per-day')?.getContext('2d');
-  if (ctx1) {
-    statsCharts.tasksPerDay = new Chart(ctx1, {
-      type: 'bar',
-      data: {
-        labels: dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', month: 'short', day: 'numeric' })),
-        datasets: [{
-          label: 'Tâches',
-          data: taskCounts,
-          backgroundColor: taskCounts.map(t => t >= avgTasks ? '#22c55e' : '#9ca3af'),
-          borderRadius: 4
-        }]
-      },
-      options: {
-        indexAxis: 'x',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1 } }
-        }
-      }
-    });
+  // Chart 1: Tasks per day (bar chart)
+  const barChart = document.getElementById('chart-tasks-per-day');
+  if (barChart) {
+    barChart.innerHTML = `
+      <div style="display:flex;align-items:flex-end;justify-content:space-around;height:150px;gap:6px;padding:8px">
+        ${dates.map(d => {
+          const count = statsData.dailyBreakdown[d].tasksCount;
+          const pct = (count / maxTasks) * 100;
+          const isAboveAvg = count >= avgTasks;
+          const dateLabel = new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
+          return `
+            <div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:4px">
+              <div style="width:100%;height:${pct}px;background:${isAboveAvg ? '#22c55e' : '#9ca3af'};border-radius:4px;min-height:8px" title="${count} tâches"></div>
+              <div style="font-size:11px;text-align:center;color:var(--color-neutral-600)">${dateLabel}</div>
+              <div style="font-size:12px;font-weight:bold">${count}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 
-  // Chart 2: XP/Gold progression (line chart)
+  // Chart 2: XP/Gold progression (table)
   let xpCum = 0, goldCum = 0;
-  const xpProgression = [], goldProgression = [];
-  for (const d of dates) {
-    xpCum += statsData.dailyBreakdown[d].xp;
-    goldCum += statsData.dailyBreakdown[d].gold;
-    xpProgression.push(xpCum);
-    goldProgression.push(goldCum);
+  const progressionTable = document.getElementById('chart-progression');
+  if (progressionTable) {
+    progressionTable.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--color-divider)">
+            <th style="padding:8px;text-align:left">Date</th>
+            <th style="padding:8px;text-align:right">XP total</th>
+            <th style="padding:8px;text-align:right">Or total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${dates.map(d => {
+            xpCum += statsData.dailyBreakdown[d].xp;
+            goldCum += statsData.dailyBreakdown[d].gold;
+            const dateLabel = new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', month: 'short', day: 'numeric' });
+            return `
+              <tr style="border-bottom:1px solid var(--color-divider)">
+                <td style="padding:8px">${dateLabel}</td>
+                <td style="padding:8px;text-align:right"><span style="color:var(--color-accent-2-800)">⭐ ${xpCum}</span></td>
+                <td style="padding:8px;text-align:right"><span style="color:var(--color-accent-700)">🪙 ${goldCum}</span></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
   }
 
-  const ctx2 = document.getElementById('chart-progression')?.getContext('2d');
-  if (ctx2) {
-    statsCharts.progression = new Chart(ctx2, {
-      type: 'line',
-      data: {
-        labels: dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', month: 'short', day: 'numeric' })),
-        datasets: [
-          {
-            label: 'XP',
-            data: xpProgression,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            tension: 0.3
-          },
-          {
-            label: 'Or',
-            data: goldProgression,
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-            tension: 0.3
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: true } },
-        scales: { y: { beginAtZero: true } }
-      }
-    });
-  }
-
-  // Chart 3: Top 5 tasks (horizontal bar)
-  const ctx3 = document.getElementById('chart-top-tasks')?.getContext('2d');
-  if (ctx3) {
-    statsCharts.topTasks = new Chart(ctx3, {
-      type: 'bar',
-      data: {
-        labels: statsData.topTasks.map(t => t.name),
-        datasets: [{
-          label: 'Fois complétées',
-          data: statsData.topTasks.map(t => t.count),
-          backgroundColor: '#06b6d4',
-          borderRadius: 4
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
-      }
-    });
+  // Chart 3: Top 5 tasks (horizontal bars)
+  const topTasksChart = document.getElementById('chart-top-tasks');
+  if (topTasksChart && statsData.topTasks.length > 0) {
+    const maxCount = Math.max(1, ...statsData.topTasks.map(t => t.count));
+    topTasksChart.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        ${statsData.topTasks.map(t => {
+          const pct = (t.count / maxCount) * 100;
+          return `
+            <div>
+              <div style="font-size:12px;margin-bottom:4px;display:flex;align-items:center;gap:6px">
+                <span>${t.icon}</span>
+                <span style="flex:1">${esc(t.name)}</span>
+                <span style="font-weight:bold;color:var(--color-accent-800)">${t.count}x</span>
+              </div>
+              <div style="width:100%;height:16px;background:var(--color-neutral-200);border-radius:4px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:#06b6d4"></div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 }
 
@@ -923,24 +903,24 @@ function screenStats() {
     </div>
   </div>
 
-  <div style="padding:14px 20px 4px" class="kicker">Progressions</div>
+  <div style="padding:14px 20px 4px" class="kicker">Tâches par jour</div>
   <div style="padding:0 20px 10px">
     <div class="card elev-sm" style="padding:16px">
-      <canvas id="chart-tasks-per-day" style="max-height:200px"></canvas>
+      <div id="chart-tasks-per-day"></div>
     </div>
   </div>
 
-  <div style="padding:14px 20px 4px" class="kicker">Courbe de progression XP</div>
+  <div style="padding:14px 20px 4px" class="kicker">Cumul XP et Or</div>
   <div style="padding:0 20px 10px">
     <div class="card elev-sm" style="padding:16px">
-      <canvas id="chart-progression" style="max-height:200px"></canvas>
+      <div id="chart-progression" style="overflow-x:auto"></div>
     </div>
   </div>
 
   <div style="padding:14px 20px 4px" class="kicker">Top 5 tâches</div>
   <div style="padding:0 20px 10px">
     <div class="card elev-sm" style="padding:16px">
-      <canvas id="chart-top-tasks" style="max-height:200px"></canvas>
+      <div id="chart-top-tasks"></div>
     </div>
   </div>
 
@@ -1461,7 +1441,21 @@ document.getElementById('role-seg').addEventListener('change', e => {
 });
 document.body.addEventListener('change', e => {
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
-  if (e.target.id === 'stats-child-select') { statsChildIndex = +e.target.value; localStorage.setItem('statsChildIndex', statsChildIndex); render(); return; }
+  if (e.target.id === 'stats-child-select') {
+    statsChildIndex = +e.target.value;
+    localStorage.setItem('statsChildIndex', statsChildIndex);
+    api('getTaskStats', {
+      childId: state.children[statsChildIndex]?.id,
+      period: statsPeriod
+    }).then(r => {
+      statsData = r;
+      renderStatsCharts();
+    }).catch(err => {
+      console.error('Erreur statistiques:', err);
+      statsData = null;
+    });
+    return;
+  }
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
 
