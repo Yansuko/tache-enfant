@@ -894,10 +894,10 @@ function screenStats() {
   </div>
 
   <div style="padding:16px 20px;display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn ${statsPeriod === 'day' ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="day">Jour</button>
-    <button class="btn ${statsPeriod === 'week' ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="week">Semaine</button>
-    <button class="btn ${statsPeriod === 'month' ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="month">Mois</button>
-    <button class="btn ${statsPeriod === 'year' ? 'btn-primary' : 'btn-secondary'}" data-action="stats-period" data-period="year">Année</button>
+    <button class="btn ${statsPeriod === 'day' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="day">Jour</button>
+    <button class="btn ${statsPeriod === 'week' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="week">Semaine</button>
+    <button class="btn ${statsPeriod === 'month' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="month">Mois</button>
+    <button class="btn ${statsPeriod === 'year' ? 'btn-primary' : 'btn-secondary'}" data-action="set-stats-period" data-period="year">Année</button>
   </div>
 
   <div class="deck deck-2" style="padding:4px 20px;gap:10px">
@@ -1308,7 +1308,7 @@ const ACTIONS = {
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
     state.rewards.push({ icon: '🎁', name, cost, lvl });
   },
-  'stats-select-child': el => {
+  'set-stats-select-child': el => {
     statsChildIndex = +el.dataset.index;
     localStorage.setItem('statsChildIndex', statsChildIndex);
     document.getElementById('main').innerHTML = screenStats();
@@ -1323,7 +1323,7 @@ const ACTIONS = {
       statsData = null;
     });
   },
-  'stats-period': el => {
+  'set-stats-period': el => {
     statsPeriod = el.dataset.period;
     localStorage.setItem('statsPeriod', statsPeriod);
     document.getElementById('main').innerHTML = screenStats();
@@ -1398,7 +1398,7 @@ const ACTIONS = {
     replaceFamily(r.family);
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'stats-select-child', 'stats-period']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
