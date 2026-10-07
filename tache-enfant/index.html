@@ -211,7 +211,9 @@ async function persistFamily() {
   while (dirty) {
     dirty = false;
     try {
-      const res = await api('saveFamily', { family: stripUi(state) });
+      const payload = { family: stripUi(state) };
+      console.log(`[SAVE] Sending Lucas tasks:`, payload.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })));
+      const res = await api('saveFamily', payload);
       if (res.family) Object.assign(state, res.family);
       toast(false);
     }
