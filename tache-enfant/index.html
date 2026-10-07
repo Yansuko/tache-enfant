@@ -1127,7 +1127,7 @@ function onAuthed(r) {
 
 const ACTIONS = {
   nav: el => { state.tab = el.dataset.tab; },
-  'toggle-task': el => {
+  'toggle-task': async (el) => {
     const c = child(), i = +el.dataset.i, t = c.tasks[i];
     if (!t.done) {
       // Enfant coche la tâche → créer une demande de validation
@@ -1146,7 +1146,10 @@ const ACTIONS = {
     } else {
       t.completedAt = null;
     }
-    save(); render();
+    // MUST await save() before render() to prevent render() from resetting state
+    // with stale backend data before the save completes
+    await save();
+    render();
   },
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
   'add-task': () => {
