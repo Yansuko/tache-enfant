@@ -1540,7 +1540,33 @@ async function boot() {
     try {
       const r = await api('me');
       if (!r.me) throw 'session invalide';
-      me = r.me; families = r.families || []; parentUnlocked = false;
+      me = r.me;
+      // Merge new families with existing state to preserve approved tasks
+      const oldFamilies = families;
+      families = r.families || [];
+      if (oldFamilies.length && families.length) {
+        // If we have old state, merge to preserve any approved tasks
+        for (let i = 0; i < families.length && i < oldFamilies.length; i++) {
+          const oldFamily = oldFamilies[i];
+          const newFamily = families[i];
+          if (oldFamily.id === newFamily.id && oldFamily.children && newFamily.children) {
+            // Preserve approved tasks from old state
+            for (let j = 0; j < oldFamily.children.length && j < newFamily.children.length; j++) {
+              const oldChild = oldFamily.children[j];
+              const newChild = newFamily.children[j];
+              if (oldChild.tasks && newChild.tasks) {
+                for (let k = 0; k < oldChild.tasks.length && k < newChild.tasks.length; k++) {
+                  // Keep local approved tasks (done=true) instead of backend version
+                  if (oldChild.tasks[k].done && oldChild.tasks[k].completedAt) {
+                    newChild.tasks[k] = oldChild.tasks[k];
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      parentUnlocked = false;
       if (families.length) setActiveFamily(0);
       if (localStorage.getItem('statsChildIndex')) {
         statsChildIndex = +localStorage.getItem('statsChildIndex');
