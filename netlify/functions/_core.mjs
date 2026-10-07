@@ -245,6 +245,13 @@ async function saveFamily(store, email, b) {
     console.log(`[SAVE] Child: ${c.name}`);
     console.log(`[SAVE]  - Tasks: ${JSON.stringify(c.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || [])}`);
   });
+  // Generate missing child IDs (for children created before ID generation was implemented)
+  for (const child of merged.children || []) {
+    if (!child.id) {
+      child.id = 'child-' + crypto.randomBytes(4).toString('hex');
+      console.log(`[SAVE] Generated ID for child ${child.name}: ${child.id}`);
+    }
+  }
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
     const owner = await store.get('account:' + cur.owner);

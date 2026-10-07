@@ -192,6 +192,12 @@ function setActiveFamily(i) {
   state = families[activeFamily] || null;
   if (state) {
     state.role ??= 'enfant'; state.tab ??= 'accueil'; state.activeChild ??= 0;
+    // Generate missing child IDs (for children created before ID generation was implemented)
+    for (const child of state.children || []) {
+      if (!child.id) {
+        child.id = 'child-' + Math.random().toString(36).substring(2, 10);
+      }
+    }
     if (rolloverDay(state, today())) save();
   }
 }
