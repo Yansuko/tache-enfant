@@ -25,13 +25,26 @@ const PORT = process.env.PORT || 8123;
 // store fichier : une map { key: value } chargée en mémoire, réécrite à chaque set/del
 fs.mkdirSync(path.dirname(DATA), { recursive: true });
 let mem = {};
-try { mem = JSON.parse(fs.readFileSync(DATA, 'utf8')); } catch { mem = {}; }
+const loadMem = () => {
+  try {
+    mem = JSON.parse(fs.readFileSync(DATA, 'utf8'));
+  } catch {
+    mem = {};
+  }
+};
+loadMem();
 const flush = () => {
   const data = JSON.stringify(mem);
   fs.writeFileSync(DATA, data);
-  // Verify what was actually written
-  const diskData = fs.readFileSync(DATA, 'utf8');
-  if (data !== diskData) console.log('[FLUSH-ERROR] Disk data mismatch!');
+  // After writing, reload to ensure mem is always synced with disk
+  loadMem();
+  // Verify reload succeeded
+  const reloadedData = JSON.stringify(mem);
+  if (data !== reloadedData) {
+    console.log('[FLUSH-DESYNC] Data mismatch after reload!');
+    console.log('[FLUSH-DESYNC] Before:', data.substring(0, 200));
+    console.log('[FLUSH-DESYNC] After:', reloadedData.substring(0, 200));
+  }
 };
 const store = {
   get: async (k) => {
