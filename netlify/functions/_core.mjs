@@ -410,6 +410,8 @@ function getDateRange(period, endDate = Date.now()) {
 
 function aggregateTaskStats(child, period = 'week') {
   const { start, end } = getDateRange(period);
+  console.log(`[STATS] Child: ${child.name}, Period: ${period}, Start: ${new Date(start).toISOString()}, End: ${new Date(end).toISOString()}`);
+  console.log(`[STATS] Tasks with completedAt:`, child.tasks.filter(t => t.completedAt).map(t => ({ name: t.name, done: t.done, completedAt: new Date(t.completedAt).toISOString() })));
 
   const dailyBreakdown = {};
   let tasksCount = 0;
