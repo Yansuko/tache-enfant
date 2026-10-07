@@ -830,7 +830,7 @@ function renderStatsCharts() {
   // Chart 1: Tasks per day (line chart)
   const barChart = document.getElementById('chart-tasks-per-day');
   if (barChart && dates.length > 0) {
-    const width = 100, height = 120, padding = 20;
+    const width = 400, height = 180, padding = 30;
     const pointSpacing = (width - 2 * padding) / Math.max(1, dates.length - 1);
 
     // Build SVG path for line chart
@@ -847,13 +847,13 @@ function renderStatsCharts() {
       return `<text x="${p.x}" y="${height - 2}" text-anchor="middle" font-size="11" fill="var(--color-neutral-600)">${dateLabel}</text>`;
     }).join('');
 
-    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#3b82f6" stroke="white" stroke-width="1.5"/><title>${p.count} tâches</title>`).join('');
+    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#3b82f6" stroke="white" stroke-width="2"/><title>${p.count} tâches</title>`).join('');
 
     barChart.innerHTML = `
-      <svg width="100%" viewBox="0 0 ${width} ${height}" style="max-height:200px;stroke-linecap:round;stroke-linejoin:round">
-        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="1"/>
-        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="1"/>
-        <path d="${pathD}" stroke="#3b82f6" stroke-width="2" fill="none"/>
+      <svg width="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="max-height:250px;stroke-linecap:round;stroke-linejoin:round">
+        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="2"/>
+        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="2"/>
+        <path d="${pathD}" stroke="#3b82f6" stroke-width="3" fill="none"/>
         ${circlePoints}
         ${dateLabels}
       </svg>
