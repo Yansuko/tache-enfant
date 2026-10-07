@@ -1366,7 +1366,10 @@ const ACTIONS = {
     if (!r || !r.families || !r.families.length) { authMsg = 'Famille ou enfant introuvable, ou PIN incorrect.'; return; }
     me = { email: name + '@enfant.local', name };
     families = r.families;
-    state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; state.activeChild = 0; activeFamily = 0;
+    state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
+    // Find the correct child by name and set activeChild to their index
+    state.activeChild = state.children.findIndex(c => c.name === name);
+    if (state.activeChild < 0) state.activeChild = 0; // fallback if not found
     unlocked.add(name);
   },
   'add-reward': () => {
