@@ -1132,10 +1132,12 @@ const ACTIONS = {
   },
   'approve-task': el => {
     const idx = +el.dataset.i;
-    const req = (state.taskRequests || []).find((r, i) => i === idx && r.child === child().name && r.status === 'pending');
+    const req = (state.taskRequests || []).find((r, i) => i === idx && r.status === 'pending');
     if (!req) return;
-    const task = child().tasks[req.taskIndex];
-    if (task) { task.done = true; task.completedAt = Date.now(); child().xp += req.xp; child().gold += req.gold; }
+    const c = state.children.find(ch => ch.name === req.child);
+    if (!c) return;
+    const task = c.tasks[req.taskIndex];
+    if (task) { task.done = true; task.completedAt = Date.now(); c.xp = (c.xp || 0) + req.xp; c.gold = (c.gold || 0) + req.gold; }
     req.status = 'approved';
     save(); render();
   },
