@@ -26,27 +26,39 @@ const PORT = process.env.PORT || 8123;
 fs.mkdirSync(path.dirname(DATA), { recursive: true });
 let mem = {};
 try { mem = JSON.parse(fs.readFileSync(DATA, 'utf8')); } catch { mem = {}; }
-const flush = () => fs.writeFileSync(DATA, JSON.stringify(mem));
+const flush = () => {
+  const data = JSON.stringify(mem);
+  fs.writeFileSync(DATA, data);
+  // Verify what was actually written
+  const diskData = fs.readFileSync(DATA, 'utf8');
+  if (data !== diskData) console.log('[FLUSH-ERROR] Disk data mismatch!');
+};
 const store = {
   get: async (k) => {
     const result = k in mem ? structuredClone(mem[k]) : null;
     if (k.startsWith('family:')) {
       const lucas = result?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.GET] ${k} - Lucas first task:`, JSON.stringify(lucas?.tasks?.[0]));
+      const done = lucas?.tasks?.[0]?.done;
+      console.log(`[STORE.GET] ${k} - Lucas first task done=${done}:`, JSON.stringify(lucas?.tasks?.[0]));
     }
     return result;
   },
   set: async (k, v) => {
+    if (k.startsWith('family:')) {
+      const lukas_input = v?.children?.find(c => c.name === 'Lucas');
+      console.log(`[STORE.SET-INPUT] ${k} - Input Lucas done=${lukas_input?.tasks?.[0]?.done}:`, JSON.stringify(lukas_input?.tasks?.[0]));
+    }
     mem[k] = structuredClone(v);
     if (k.startsWith('family:')) {
-      const lucas = v?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET] ${k} - Saving Lucas first task:`, JSON.stringify(lucas?.tasks?.[0]));
+      const lucas_mem = mem[k]?.children?.find(c => c.name === 'Lucas');
+      console.log(`[STORE.SET-MEM] ${k} - After clone, Lucas done=${lucas_mem?.tasks?.[0]?.done}:`, JSON.stringify(lucas_mem?.tasks?.[0]));
     }
     flush();
     if (k.startsWith('family:')) {
-      const verify = mem[k];
-      const lucas = verify?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.FLUSHED] ${k} - After flush, Lucas first task:`, JSON.stringify(lucas?.tasks?.[0]));
+      // Read back from disk to verify
+      const disk = JSON.parse(fs.readFileSync(DATA, 'utf8'));
+      const lucas_disk = disk[k]?.children?.find(c => c.name === 'Lucas');
+      console.log(`[STORE.SET-DISK] ${k} - After flush, Lucas done=${lucas_disk?.tasks?.[0]?.done}:`, JSON.stringify(lucas_disk?.tasks?.[0]));
     }
   },
   del: async (k) => { delete mem[k]; flush(); },
