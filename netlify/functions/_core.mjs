@@ -273,7 +273,13 @@ async function saveFamily(store, email, b) {
       }
     }
   }
+  const lucas_before = merged.children?.find(c => c.name === 'Lucas');
+  console.log(`[SAVE-BEFORE-STORE] Lucas tasks:`, JSON.stringify(lucas_before?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
   await store.set('family:' + inc.id, merged);
+  // Verify what was actually stored
+  const verify = await store.get('family:' + inc.id);
+  const lucas_verify = verify?.children?.find(c => c.name === 'Lucas');
+  console.log(`[SAVE-AFTER-STORE] Lucas tasks (read back):`, JSON.stringify(lucas_verify?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
   // Return the merged data directly without reloading from storage
   // (avoids stale data if storage didn't persist the changes yet)
   merged.memberInfo = {};
