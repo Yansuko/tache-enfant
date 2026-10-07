@@ -110,12 +110,12 @@
           body: JSON.stringify({ action: 'getAdminStats', adminKey })
         });
         const data = await res.json();
-        if (data.status === 200) {
-          showDashboard(data.body);
+        if (res.ok) {
+          showDashboard(data);
           document.getElementById('login-section').classList.add('hidden');
           document.getElementById('dashboard-section').classList.remove('hidden');
         } else {
-          alert('Erreur: ' + (data.body?.error || 'Clé invalide'));
+          alert('Erreur: ' + (data.error || 'Clé invalide'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);
