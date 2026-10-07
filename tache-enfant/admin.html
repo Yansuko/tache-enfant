@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: #333; margin-bottom: 30px; }
+    .login-form { background: white; padding: 30px; border-radius: 8px; max-width: 400px; margin: 50px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .login-form input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .login-form button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+    .login-form button:hover { background: #0056b3; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .stat-card h3 { font-size: 14px; color: #666; margin-bottom: 10px; }
+    .stat-card .value { font-size: 32px; font-weight: bold; color: #007bff; }
+    table { width: 100%; background: white; border-collapse: collapse; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    th { background: #f8f9fa; padding: 15px; text-align: left; font-weight: 600; color: #333; }
+    td { padding: 12px 15px; border-top: 1px solid #eee; }
+    tr:hover { background: #f9f9f9; }
+    .section { margin-bottom: 40px; }
+    .section h2 { font-size: 20px; color: #333; margin-bottom: 20px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="login-section" class="login-form">
+      <h2 style="margin-bottom: 20px;">Admin Dashboard</h2>
+      <input type="password" id="admin-key" placeholder="Clé admin" />
+      <button onclick="login()">Se connecter</button>
+    </div>
+
+    <div id="dashboard-section" class="hidden">
+      <h1>Dashboard Admin 📊</h1>
+      <button onclick="logout()" style="margin-bottom: 20px; padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Déconnexion</button>
+
+      <div class="section">
+        <h2>Statistiques d'utilisation</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Utilisateurs</h3>
+            <div class="value" id="stat-users">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Familles</h3>
+            <div class="value" id="stat-families">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Enfants</h3>
+            <div class="value" id="stat-children">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Tâches complétées</h3>
+            <div class="value" id="stat-tasks">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Moy. par enfant</h3>
+            <div class="value" id="stat-avg">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Familles créées</h2>
+        <table id="families-table">
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Propriétaire</th>
+              <th>Enfants</th>
+              <th>Tâches complétées</th>
+            </tr>
+          </thead>
+          <tbody id="families-body">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>Utilisateurs</h2>
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Nom</th>
+            </tr>
+          </thead>
+          <tbody id="users-body">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let adminKey = '';
+
+    async function login() {
+      adminKey = document.getElementById('admin-key').value;
+      if (!adminKey) return alert('Clé requise');
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getAdminStats', body: { adminKey } })
+        });
+        const data = await res.json();
+        if (data.status === 200) {
+          showDashboard(data.body);
+          document.getElementById('login-section').classList.add('hidden');
+          document.getElementById('dashboard-section').classList.remove('hidden');
+        } else {
+          alert('Erreur: ' + (data.body?.error || 'Clé invalide'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    function logout() {
+      adminKey = '';
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('dashboard-section').classList.add('hidden');
+      document.getElementById('admin-key').value = '';
+    }
+
+    function showDashboard(data) {
+      const { stats, families, accounts } = data;
+      document.getElementById('stat-users').textContent = stats.totalAccounts;
+      document.getElementById('stat-families').textContent = stats.totalFamilies;
+      document.getElementById('stat-children').textContent = stats.totalChildren;
+      document.getElementById('stat-tasks').textContent = stats.totalTasksCompleted;
+      document.getElementById('stat-avg').textContent = stats.averageTasksPerChild;
+
+      const fbody = document.getElementById('families-body');
+      fbody.innerHTML = families.map(f => `
+        <tr>
+          <td>${f.name}</td>
+          <td>${f.owner}</td>
+          <td>${f.children}</td>
+          <td>${f.tasksCompleted}</td>
+        </tr>
+      `).join('');
+
+      const ubody = document.getElementById('users-body');
+      ubody.innerHTML = accounts.map(a => `
+        <tr>
+          <td>${a.email}</td>
+          <td>${a.name}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Try to load from localStorage if key exists
+    window.addEventListener('load', () => {
+      const savedKey = localStorage.getItem('admin-key');
+      if (savedKey) {
+        document.getElementById('admin-key').value = savedKey;
+        // Don't auto-login for security
+      }
+    });
+  </script>
+</body>
+</html>
