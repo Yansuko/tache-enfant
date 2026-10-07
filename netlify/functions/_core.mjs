@@ -438,16 +438,22 @@ function getDateRange(period, endDate = Date.now()) {
 }
 
 function aggregateTaskStats(child, period = 'week') {
+  console.log(`[STATS-ENTER] Child: ${child?.name}, Tasks type: ${Array.isArray(child?.tasks) ? 'array' : typeof child?.tasks}, Length: ${child?.tasks?.length || 0}`);
   const { start, end } = getDateRange(period);
+  console.log(`[STATS-RANGE] Period: ${period}, Start (epoch): ${start}, End (epoch): ${end}`);
+  console.log(`[STATS-RANGE] Start ISO: ${new Date(start).toISOString()}, End ISO: ${new Date(end).toISOString()}`);
   console.log(`[STATS] Child: ${child.name}, Period: ${period}, Range: ${new Date(start).toISOString()} to ${new Date(end).toISOString()}`);
 
   // Ensure tasks array exists and all have completedAt field
-  const tasks = (child.tasks || []).map(t => ({
+  const rawTasks = child.tasks || [];
+  console.log(`[STATS-RAW] Raw tasks before map: ${JSON.stringify(rawTasks.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt, completedAtType: typeof t.completedAt })))}`);
+
+  const tasks = rawTasks.map(t => ({
     ...t,
     completedAt: t.completedAt ? Number(t.completedAt) : null
   }));
 
-  console.log(`[STATS] All ${tasks.length} tasks:`, JSON.stringify(tasks.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
+  console.log(`[STATS] All ${tasks.length} tasks after map:`, JSON.stringify(tasks.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
 
   const dailyBreakdown = {};
   let tasksCount = 0;
@@ -457,6 +463,8 @@ function aggregateTaskStats(child, period = 'week') {
   let bestDay = { date: '', tasksCount: 0, xp: 0, gold: 0 };
 
   for (const task of tasks) {
+    const inRange = task.completedAt && task.completedAt >= start && task.completedAt <= end;
+    console.log(`[STATS-CHECK] "${task.name}": done=${task.done}, completedAt=${task.completedAt}, start=${start}, end=${end}, inRange=${inRange}`);
     if (task.completedAt && task.completedAt >= start && task.completedAt <= end) {
       const iso = dateToISO(task.completedAt);
 
