@@ -1543,12 +1543,40 @@ async function boot() {
       const r = await api('me');
       if (!r.me) throw 'session invalide';
       me = r.me;
-      // Preserve approved tasks from both old families and current state
+
+      // Save ALL currently approved tasks BEFORE loading new families
+      const approvedTasks = {};
+      if (families.length && state?.children) {
+        for (const family of families) {
+          for (const child of family.children || []) {
+            for (const task of child.tasks || []) {
+              if (task.done && task.completedAt) {
+                const key = `${child.id}:${task.name}`;
+                approvedTasks[key] = task;
+              }
+            }
+          }
+        }
+      }
+
+      // Load new families from backend
       const oldFamilies = families;
       const savedState = state ? JSON.parse(JSON.stringify(state)) : null;
       families = r.families || [];
 
-      // Merge with oldFamilies to preserve approved tasks from before
+      // Restore ALL previously approved tasks to the new families
+      for (const family of families) {
+        for (const child of family.children || []) {
+          for (let k = 0; k < (child.tasks || []).length; k++) {
+            const key = `${child.id}:${child.tasks[k].name}`;
+            if (approvedTasks[key]) {
+              child.tasks[k] = approvedTasks[key];
+            }
+          }
+        }
+      }
+
+      // Merge with oldFamilies for any other approved tasks
       for (let i = 0; i < families.length && i < oldFamilies.length; i++) {
         const oldFamily = oldFamilies[i];
         const newFamily = families[i];
@@ -1567,7 +1595,7 @@ async function boot() {
         }
       }
 
-      // Also merge with savedState (for the active child) to preserve in-memory approvals
+      // Merge with savedState (for the active child) to preserve in-memory approvals
       if (savedState && savedState.children) {
         const activeChildId = savedState.children[savedState.activeChild]?.id;
         if (activeChildId) {
