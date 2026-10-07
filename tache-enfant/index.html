@@ -1137,21 +1137,26 @@ const ACTIONS = {
   'approve-task': el => {
     const idx = +el.dataset.i;
     const req = (state.taskRequests || []).find((r, i) => i === idx && r.status === 'pending');
+    console.log(`[APPROVE] Request found:`, req);
+    console.log(`[APPROVE] Children in state:`, state.children?.map(c => ({ name: c.name, taskCount: c.tasks?.length })));
     if (!req) return;
     // Find the child and mark task as done
     let found = false;
     for (const c of state.children || []) {
       if (c.name === req.child && c.tasks && c.tasks[req.taskIndex]) {
+        console.log(`[APPROVE] Found child ${c.name}, task at index ${req.taskIndex}`);
         const task = c.tasks[req.taskIndex];
+        console.log(`[APPROVE] Before: task.done=${task.done}, completedAt=${task.completedAt}`);
         task.done = true;
         task.completedAt = Date.now();
         c.xp = (c.xp || 0) + req.xp;
         c.gold = (c.gold || 0) + req.gold;
+        console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
         found = true;
         break;
       }
     }
-    if (!found) { console.log(`[APPROVE] FAILED to find child or task for request:`, req); }
+    if (!found) { console.log(`[APPROVE] FAILED: req.child=${req.child}, children=${state.children?.map(c => c.name).join(',')}, taskIndex=${req.taskIndex}`); }
     req.status = 'approved';
     save(); render();
   },
