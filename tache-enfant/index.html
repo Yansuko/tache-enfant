@@ -221,18 +221,20 @@ async function persistFamily() {
       const res = await api('saveFamily', payload);
       if (res.family) {
         console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
-        // Merge backend response with local state, preserving local task approvals
+        // Merge backend response with local state, preserving approved tasks (done=true with completedAt)
         for (let i = 0; i < (res.family.children || []).length; i++) {
           if (state.children && state.children[i]) {
-            // Merge: keep local approved tasks, but accept server updates for unapproved tasks
             const remoteChild = res.family.children[i];
             const localChild = state.children[i];
             for (let j = 0; j < (remoteChild.tasks || []).length; j++) {
-              // If task is done locally and was sent to server, trust the server's version
-              // Otherwise if task is NOT done locally, keep it that way (don't let server undo approvals)
+              // Preserve local approved tasks even if server returns them as unapproved
+              // Only accept server version if task is NOT approved locally (done=false or no completedAt)
               if (!localChild.tasks[j].done || !localChild.tasks[j].completedAt) {
-                // Task not approved locally, accept server version
                 localChild.tasks[j] = remoteChild.tasks[j];
+              } else {
+                // Task is approved locally (done=true with completedAt): ensure it stays approved
+                // even if server sent back an old version without approval
+                localChild.tasks[j] = { ...remoteChild.tasks[j], done: true, completedAt: localChild.tasks[j].completedAt };
               }
             }
           }
@@ -1541,24 +1543,43 @@ async function boot() {
       const r = await api('me');
       if (!r.me) throw 'session invalide';
       me = r.me;
-      // Merge new families with existing state to preserve approved tasks
+      // Preserve approved tasks from both old families and current state
       const oldFamilies = families;
+      const savedState = state ? JSON.parse(JSON.stringify(state)) : null;
       families = r.families || [];
-      if (oldFamilies.length && families.length) {
-        // If we have old state, merge to preserve any approved tasks
-        for (let i = 0; i < families.length && i < oldFamilies.length; i++) {
-          const oldFamily = oldFamilies[i];
-          const newFamily = families[i];
-          if (oldFamily.id === newFamily.id && oldFamily.children && newFamily.children) {
-            // Preserve approved tasks from old state
-            for (let j = 0; j < oldFamily.children.length && j < newFamily.children.length; j++) {
-              const oldChild = oldFamily.children[j];
-              const newChild = newFamily.children[j];
-              if (oldChild.tasks && newChild.tasks) {
-                for (let k = 0; k < oldChild.tasks.length && k < newChild.tasks.length; k++) {
-                  // Keep local approved tasks (done=true) instead of backend version
-                  if (oldChild.tasks[k].done && oldChild.tasks[k].completedAt) {
-                    newChild.tasks[k] = oldChild.tasks[k];
+
+      // Merge with oldFamilies to preserve approved tasks from before
+      for (let i = 0; i < families.length && i < oldFamilies.length; i++) {
+        const oldFamily = oldFamilies[i];
+        const newFamily = families[i];
+        if (oldFamily.id === newFamily.id && oldFamily.children && newFamily.children) {
+          for (let j = 0; j < oldFamily.children.length && j < newFamily.children.length; j++) {
+            const oldChild = oldFamily.children[j];
+            const newChild = newFamily.children[j];
+            if (oldChild.tasks && newChild.tasks) {
+              for (let k = 0; k < oldChild.tasks.length && k < newChild.tasks.length; k++) {
+                if (oldChild.tasks[k].done && oldChild.tasks[k].completedAt) {
+                  newChild.tasks[k] = oldChild.tasks[k];
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Also merge with savedState (for the active child) to preserve in-memory approvals
+      if (savedState && savedState.children) {
+        const activeChildId = savedState.children[savedState.activeChild]?.id;
+        if (activeChildId) {
+          for (const family of families) {
+            for (const child of family.children || []) {
+              if (child.id === activeChildId && savedState.children[savedState.activeChild]) {
+                const inMemChild = savedState.children[savedState.activeChild];
+                if (inMemChild.tasks && child.tasks) {
+                  for (let k = 0; k < inMemChild.tasks.length && k < child.tasks.length; k++) {
+                    if (inMemChild.tasks[k].done && inMemChild.tasks[k].completedAt) {
+                      child.tasks[k] = inMemChild.tasks[k];
+                    }
                   }
                 }
               }
@@ -1566,6 +1587,7 @@ async function boot() {
           }
         }
       }
+
       parentUnlocked = false;
       if (families.length) setActiveFamily(0);
       if (localStorage.getItem('statsChildIndex')) {
