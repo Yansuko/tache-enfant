@@ -480,7 +480,7 @@ function aggregateTaskStats(child, period = 'week') {
   };
 }
 
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats']);
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData']);
 
 // point d'entrée unique. payload = { action, token, body }
 export async function handleApi({ action, token, body = {} }, store) {
