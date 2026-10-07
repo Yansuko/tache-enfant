@@ -245,9 +245,10 @@ async function saveFamily(store, email, b) {
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
+  console.log(`[SAVE] Inc children: ${inc.children?.length}, Merged children: ${merged.children?.length}`);
   merged.children?.forEach(c => {
-    const tasksWithCompletedAt = c.tasks?.filter(t => t.completedAt);
-    console.log(`[SAVE] ${c.name}: ${c.tasks?.length || 0} tasks, ${tasksWithCompletedAt?.length || 0} completed`, tasksWithCompletedAt?.map(t => t.name) || []);
+    console.log(`[SAVE] Child: ${c.name}`);
+    console.log(`[SAVE]  - Tasks: ${JSON.stringify(c.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || [])}`);
   });
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
@@ -271,7 +272,7 @@ async function saveFamily(store, email, b) {
     }
   }
   await store.set('family:' + inc.id, merged);
-  return { status: 200, body: { ok: true } };
+  return { status: 200, body: { family: await withNames(store, merged) } };
 }
 async function createFamily(store, email, b) {
   const name = (b.name || '').trim();

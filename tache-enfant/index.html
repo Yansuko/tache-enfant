@@ -210,7 +210,11 @@ async function persistFamily() {
   saving = true;
   while (dirty) {
     dirty = false;
-    try { await api('saveFamily', { family: stripUi(state) }); toast(false); }
+    try {
+      const res = await api('saveFamily', { family: stripUi(state) });
+      if (res.family) Object.assign(state, res.family);
+      toast(false);
+    }
     catch { toast(true); break; }
   }
   saving = false;
