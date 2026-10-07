@@ -499,7 +499,9 @@ export async function handleApi({ action, token, body = {} }, store) {
       if (!family) return err(404, 'Famille non trouvée.');
       const child = family.children.find(c => c.id === childId);
       if (!child) return err(404, 'Enfant non trouvé.');
-      return { status: 200, body: aggregateTaskStats(child, period) };
+      const stats = aggregateTaskStats(child, period);
+      const childrenStats = family.children.map(c => ({ tasks: aggregateTaskStats(c, period).tasksCount || 0, xp: aggregateTaskStats(c, period).xpGained || 0, gold: aggregateTaskStats(c, period).goldGained || 0 }));
+      return { status: 200, body: { ...stats, childrenStats } };
     }
     case 'me': return { status: 200, body: await stateFor(store, email) };
     case 'verifyPassword': {

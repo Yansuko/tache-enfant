@@ -1135,7 +1135,7 @@ const ACTIONS = {
     const req = (state.taskRequests || []).find((r, i) => i === idx && r.child === child().name && r.status === 'pending');
     if (!req) return;
     const task = child().tasks[req.taskIndex];
-    if (task) { task.done = true; child().xp += req.xp; child().gold += req.gold; }
+    if (task) { task.done = true; task.completedAt = Date.now(); child().xp += req.xp; child().gold += req.gold; }
     req.status = 'approved';
     save(); render();
   },
