@@ -827,25 +827,36 @@ function renderStatsCharts() {
   const avgTasks = taskCounts.length > 0 ? Math.round(taskCounts.reduce((a, b) => a + b, 0) / taskCounts.length) : 0;
   const maxTasks = Math.max(1, ...taskCounts);
 
-  // Chart 1: Tasks per day (bar chart)
+  // Chart 1: Tasks per day (line chart)
   const barChart = document.getElementById('chart-tasks-per-day');
-  if (barChart) {
+  if (barChart && dates.length > 0) {
+    const width = 100, height = 120, padding = 20;
+    const pointSpacing = (width - 2 * padding) / Math.max(1, dates.length - 1);
+
+    // Build SVG path for line chart
+    const points = dates.map((d, i) => {
+      const count = statsData.dailyBreakdown[d].tasksCount;
+      const x = padding + i * pointSpacing;
+      const y = height - padding - (count / maxTasks) * (height - 2 * padding);
+      return { x, y, count, date: d };
+    });
+
+    const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const dateLabels = points.map(p => {
+      const dateLabel = new Date(p.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
+      return `<text x="${p.x}" y="${height - 2}" text-anchor="middle" font-size="11" fill="var(--color-neutral-600)">${dateLabel}</text>`;
+    }).join('');
+
+    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#3b82f6" stroke="white" stroke-width="1.5"/><title>${p.count} tâches</title>`).join('');
+
     barChart.innerHTML = `
-      <div style="display:flex;align-items:flex-end;justify-content:center;height:150px;gap:12px;padding:8px;flex-wrap:wrap">
-        ${dates.map(d => {
-          const count = statsData.dailyBreakdown[d].tasksCount;
-          const pct = (count / maxTasks) * 100;
-          const isAboveAvg = count >= avgTasks;
-          const dateLabel = new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
-          return `
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 1 80px;min-width:60px">
-              <div style="width:40px;height:${pct}px;background:${isAboveAvg ? '#22c55e' : '#9ca3af'};border-radius:4px;min-height:8px" title="${count} tâches"></div>
-              <div style="font-size:11px;text-align:center;color:var(--color-neutral-600)">${dateLabel}</div>
-              <div style="font-size:12px;font-weight:bold">${count}</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
+      <svg width="100%" viewBox="0 0 ${width} ${height}" style="max-height:200px;stroke-linecap:round;stroke-linejoin:round">
+        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="1"/>
+        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="1"/>
+        <path d="${pathD}" stroke="#3b82f6" stroke-width="2" fill="none"/>
+        ${circlePoints}
+        ${dateLabels}
+      </svg>
     `;
   }
 
