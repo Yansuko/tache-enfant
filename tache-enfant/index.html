@@ -221,9 +221,24 @@ async function persistFamily() {
       const res = await api('saveFamily', payload);
       if (res.family) {
         console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
-        // Don't use backend response to overwrite state for tasks - keep local approved tasks
-        // Only update server-managed fields (id, owner, members)
-        Object.assign(state, { id: res.family.id, owner: res.family.owner, members: res.family.members, memberInfo: res.family.memberInfo });
+        // Merge backend response with local state, preserving local task approvals
+        for (let i = 0; i < (res.family.children || []).length; i++) {
+          if (state.children && state.children[i]) {
+            // Merge: keep local approved tasks, but accept server updates for unapproved tasks
+            const remoteChild = res.family.children[i];
+            const localChild = state.children[i];
+            for (let j = 0; j < (remoteChild.tasks || []).length; j++) {
+              // If task is done locally and was sent to server, trust the server's version
+              // Otherwise if task is NOT done locally, keep it that way (don't let server undo approvals)
+              if (!localChild.tasks[j].done || !localChild.tasks[j].completedAt) {
+                // Task not approved locally, accept server version
+                localChild.tasks[j] = remoteChild.tasks[j];
+              }
+            }
+          }
+        }
+        // Update only server-managed fields
+        Object.assign(state, { id: res.family.id, owner: res.family.owner, members: res.family.members, memberInfo: res.family.memberInfo, requests: res.family.requests });
       }
       console.log(`[SAVE] Success`);
       toast(false);
