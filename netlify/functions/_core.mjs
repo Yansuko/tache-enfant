@@ -245,7 +245,10 @@ async function saveFamily(store, email, b) {
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
-  console.log(`[SAVE] Family: ${inc.id}, Children with tasks:`, merged.children?.map(c => ({ name: c.name, taskCount: c.tasks?.length, tasksWithCompletedAt: c.tasks?.filter(t => t.completedAt).length })));
+  merged.children?.forEach(c => {
+    const tasksWithCompletedAt = c.tasks?.filter(t => t.completedAt);
+    console.log(`[SAVE] ${c.name}: ${c.tasks?.length || 0} tasks, ${tasksWithCompletedAt?.length || 0} completed`, tasksWithCompletedAt?.map(t => t.name) || []);
+  });
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
     const owner = await store.get('account:' + cur.owner);
