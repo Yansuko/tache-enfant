@@ -252,7 +252,7 @@ async function persistFamily() {
   localStorage.setItem('statsPeriod', statsPeriod);
 }
 function stripUi(f) { const { role, tab, activeChild, memberInfo, ...rest } = f; return rest; }
-function save() { persistFamily(); }
+async function save() { return await persistFamily(); }
 
 /* ── écrans enfant & parent ── */
 
