@@ -303,11 +303,17 @@ async function createFamily(store, email, b) {
   const name = (b.name || '').trim();
   if (!name) return err(400, 'Nom de la famille requis.');
   const fam = newFamily(name, email);
+  fam.createdAt = Date.now();
   await store.set('family:' + fam.id, fam);
   await updateFamilyNameIndex(store, fam.name, fam.id);
   const acc = await store.get('account:' + email);
   acc.familyIds.push(fam.id);
   await store.set('account:' + email, acc);
+  // Update admin metadata
+  const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+  if (!metadata.familyIds.includes(fam.id)) metadata.familyIds.push(fam.id);
+  if (!metadata.accountEmails.includes(email)) metadata.accountEmails.push(email);
+  await store.set('_admin_metadata', metadata);
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 async function invite(store, email, b) {
@@ -580,6 +586,62 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'removeAdult': return removeAdult(store, email, body);
     case 'submitGrade': return submitGrade(store, body.familyId, body);
     case 'approveGrade': return approveGrade(store, email, body);
+    case 'getAdminStats': {
+      // Verify admin key
+      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+        return err(403, 'Clé admin invalide.');
+      }
+      // Collect all families and accounts - NOTE: This is a simplified approach for dev
+      // In production with Netlify Blobs, would need a separate admin metadata store
+      const families = [];
+      const accounts = [];
+      let totalChildren = 0;
+      let totalTasksCompleted = 0;
+
+      // Get metadata list (in production would maintain this separately)
+      const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+
+      // Load families
+      for (const famId of metadata.familyIds || []) {
+        const fam = await store.get('family:' + famId);
+        if (fam) {
+          totalChildren += fam.children?.length || 0;
+          let familyTasks = 0;
+          for (const child of fam.children || []) {
+            const childStats = aggregateTaskStats(child, 'year');
+            familyTasks += childStats.tasksCount || 0;
+          }
+          totalTasksCompleted += familyTasks;
+          families.push({
+            name: fam.name,
+            owner: fam.owner,
+            children: fam.children?.length || 0,
+            tasksCompleted: familyTasks
+          });
+        }
+      }
+
+      // Load accounts
+      for (const email of metadata.accountEmails || []) {
+        const acc = await store.get('account:' + email);
+        if (acc) accounts.push({ email: acc.email, name: acc.name });
+      }
+
+      return {
+        status: 200,
+        body: {
+          stats: {
+            totalAccounts: accounts.length,
+            totalFamilies: families.length,
+            totalChildren,
+            totalTasksCompleted,
+            averageTasksPerChild: totalChildren > 0 ? Math.round(totalTasksCompleted / totalChildren) : 0
+          },
+          families: families.slice(0, 50),
+          accounts: accounts.slice(0, 50)
+        }
+      };
+    }
     default: return err(400, 'Action inconnue : ' + action);
   }
 }
