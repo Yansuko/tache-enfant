@@ -62,6 +62,10 @@ const store = {
     if (k.startsWith('family:')) {
       const lukas_input = v?.children?.find(c => c.name === 'Lucas');
       console.log(`[STORE.SET-INPUT-${setId}] ${setTime} ${k} - Input Lucas done=${lukas_input?.tasks?.[0]?.done}:`, JSON.stringify(lukas_input?.tasks?.[0]));
+      if (lukas_input?.tasks?.[0]?.done === false) {
+        // Show stack trace for the mystery done=false calls
+        console.log(`[STORE.SET-STACK-${setId}] Stack:`, new Error().stack?.split('\n').slice(1,6).join(' | '));
+      }
     }
     mem[k] = structuredClone(v);
     if (k.startsWith('family:')) {

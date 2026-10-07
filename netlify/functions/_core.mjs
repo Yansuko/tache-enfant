@@ -125,20 +125,11 @@ function seedFamily() {
 
 // crée le compte démo (parent@demo.fr / demo) + sa famille au tout premier appel
 async function ensureSeed(store) {
-  const fam = seedFamily();
   if (await store.get('seeded')) {
-    // Always refresh demo family data to keep test data up-to-date
-    await store.set('family:' + fam.id, fam);
-    // Re-index children
-    for (const child of fam.children) {
-      if (child.id) {
-        const idx = (await store.get('child-id-index')) || {};
-        idx[child.id] = fam.id;
-        await store.set('child-id-index', idx);
-      }
-    }
+    // Already seeded, don't overwrite user changes
     return;
   }
+  const fam = seedFamily();
   const { salt, hash } = hashPassword('demo');
   await store.set('family:' + fam.id, fam);
   await store.set('account:parent@demo.fr', { email: 'parent@demo.fr', name: 'Parent démo', salt, hash, familyIds: [fam.id] });
@@ -276,7 +267,10 @@ async function saveFamily(store, email, b) {
     }
   }
   const lucas_before = merged.children?.find(c => c.name === 'Lucas');
-  console.log(`[SAVE-BEFORE-STORE] Lucas tasks:`, JSON.stringify(lucas_before?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
+  console.log(`[SAVE-BEFORE-STORE] Lucas tasks:`, JSON.stringify(lucas_before?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt, xp: t.xp })) || []));
+  // DEBUG: Check first task specifically
+  const firstTask = lucas_before?.tasks?.[0];
+  console.log(`[SAVE-DEBUG] First task name: "${firstTask?.name}", done: ${firstTask?.done}, completedAt: ${firstTask?.completedAt}`);
   console.log(`[SAVE-TIMESTAMP] Saved at ${new Date().toISOString()}, storing family ID: ${inc.id}`);
   await store.set('family:' + inc.id, merged);
   // Verify what was actually stored
