@@ -57,21 +57,24 @@ const store = {
     return result;
   },
   set: async (k, v) => {
+    const setId = Math.random().toString(36).substring(7);
+    const setTime = new Date().toISOString();
     if (k.startsWith('family:')) {
       const lukas_input = v?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET-INPUT] ${k} - Input Lucas done=${lukas_input?.tasks?.[0]?.done}:`, JSON.stringify(lukas_input?.tasks?.[0]));
+      console.log(`[STORE.SET-INPUT-${setId}] ${setTime} ${k} - Input Lucas done=${lukas_input?.tasks?.[0]?.done}:`, JSON.stringify(lukas_input?.tasks?.[0]));
+      console.log(`[STORE.SET-STACK-${setId}] Stack trace:`, new Error().stack.split('\n').slice(1,4).join(' | '));
     }
     mem[k] = structuredClone(v);
     if (k.startsWith('family:')) {
       const lucas_mem = mem[k]?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET-MEM] ${k} - After clone, Lucas done=${lucas_mem?.tasks?.[0]?.done}:`, JSON.stringify(lucas_mem?.tasks?.[0]));
+      console.log(`[STORE.SET-MEM-${setId}] ${setTime} After clone, Lucas done=${lucas_mem?.tasks?.[0]?.done}:`, JSON.stringify(lucas_mem?.tasks?.[0]));
     }
     flush();
     if (k.startsWith('family:')) {
       // Read back from disk to verify
       const disk = JSON.parse(fs.readFileSync(DATA, 'utf8'));
       const lucas_disk = disk[k]?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET-DISK] ${k} - After flush, Lucas done=${lucas_disk?.tasks?.[0]?.done}:`, JSON.stringify(lucas_disk?.tasks?.[0]));
+      console.log(`[STORE.SET-DISK-${setId}] ${setTime} After flush, Lucas done=${lucas_disk?.tasks?.[0]?.done}:`, JSON.stringify(lucas_disk?.tasks?.[0]));
     }
   },
   del: async (k) => { delete mem[k]; flush(); },

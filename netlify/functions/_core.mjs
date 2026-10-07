@@ -237,10 +237,12 @@ async function resetPassword(store, secret, b) {
   return err(400, 'Étape invalide.');
 }
 async function saveFamily(store, email, b) {
+  const saveId = Math.random().toString(36).substring(7);
+  const saveTime = new Date().toISOString();
   const inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
   const lucas = inc.children?.find(c => c.name === 'Lucas');
-  console.log(`[SAVE-RECV] Lucas from frontend:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
+  console.log(`[SAVE-RECV-${saveId}] ${saveTime} Lucas from frontend:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
   const cur = await store.get('family:' + inc.id);
   if (!cur) return err(404, 'Famille introuvable.');
   if (!cur.members.includes(email)) return err(403, 'Accès refusé.');

@@ -211,13 +211,16 @@ async function persistFamily() {
   dirty = true;
   if (saving) return;
   saving = true;
+  const persistId = Math.random().toString(36).substring(7);
+  const persistTime = new Date().toISOString();
+  console.log(`[PERSIST-START-${persistId}] ${persistTime} Starting persistFamily`);
   while (dirty) {
     dirty = false;
     try {
       const payload = { family: stripUi(state) };
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
-      console.log(`[SAVE] Lucas in payload BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
-      console.log(`[SAVE] Token present:`, !!token);
+      console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
+      console.log(`[PERSIST-TOKEN-${persistId}] Token present:`, !!token);
       const res = await api('saveFamily', payload);
       if (res.family) {
         console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
@@ -1128,7 +1131,12 @@ function onAuthed(r) {
 const ACTIONS = {
   nav: el => { state.tab = el.dataset.tab; },
   'toggle-task': async (el) => {
+    const toggleId = Math.random().toString(36).substring(7);
+    const toggleTime = new Date().toISOString();
+    console.log(`[TOGGLE-START-${toggleId}] ${toggleTime} toggle-task started`);
     const c = child(), i = +el.dataset.i, t = c.tasks[i];
+    const oldDone = t.done;
+    console.log(`[TOGGLE-BEFORE-${toggleId}] ${toggleTime} Task "${t.name}": done=${oldDone} -> will be ${!oldDone}`);
     if (!t.done) {
       // Enfant coche la tâche → créer une demande de validation
       state.taskRequests = state.taskRequests || [];
@@ -1146,10 +1154,14 @@ const ACTIONS = {
     } else {
       t.completedAt = null;
     }
+    console.log(`[TOGGLE-STATE-${toggleId}] ${toggleTime} State updated: done=${t.done}, completedAt=${t.completedAt}`);
     // MUST await save() before render() to prevent render() from resetting state
     // with stale backend data before the save completes
+    console.log(`[TOGGLE-BEFORE-SAVE-${toggleId}] ${toggleTime} About to call await save()`);
     await save();
+    console.log(`[TOGGLE-AFTER-SAVE-${toggleId}] ${toggleTime} save() completed, calling render()`);
     render();
+    console.log(`[TOGGLE-END-${toggleId}] ${toggleTime} toggle-task completed`);
   },
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
   'add-task': () => {
