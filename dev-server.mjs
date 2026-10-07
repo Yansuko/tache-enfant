@@ -28,8 +28,27 @@ let mem = {};
 try { mem = JSON.parse(fs.readFileSync(DATA, 'utf8')); } catch { mem = {}; }
 const flush = () => fs.writeFileSync(DATA, JSON.stringify(mem));
 const store = {
-  get: async (k) => (k in mem ? structuredClone(mem[k]) : null),
-  set: async (k, v) => { mem[k] = structuredClone(v); flush(); },
+  get: async (k) => {
+    const result = k in mem ? structuredClone(mem[k]) : null;
+    if (k.includes('demo')) {
+      const lucas = result?.children?.find(c => c.name === 'Lucas');
+      console.log(`[STORE.GET] ${k} - Lucas tasks:`, JSON.stringify(lucas?.tasks?.slice(0, 1).map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
+    }
+    return result;
+  },
+  set: async (k, v) => {
+    mem[k] = structuredClone(v);
+    if (k.includes('demo')) {
+      const lucas = v?.children?.find(c => c.name === 'Lucas');
+      console.log(`[STORE.SET] ${k} - Saving Lucas tasks:`, JSON.stringify(lucas?.tasks?.slice(0, 1).map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
+    }
+    flush();
+    if (k.includes('demo')) {
+      const verify = mem[k];
+      const lucas = verify?.children?.find(c => c.name === 'Lucas');
+      console.log(`[STORE.SET-VERIFY] ${k} - After flush Lucas tasks:`, JSON.stringify(lucas?.tasks?.slice(0, 1).map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
+    }
+  },
   del: async (k) => { delete mem[k]; flush(); },
 };
 
