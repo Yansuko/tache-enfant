@@ -1194,7 +1194,7 @@ const ACTIONS = {
       statsChildIndex = childIndex;
       localStorage.setItem('statsChildIndex', statsChildIndex);
     }
-    save(); render();
+    // Note: don't call save() here — the event handler will call it after this handler returns
   },
   'reject-task': el => {
     const idx = +el.dataset.i;
