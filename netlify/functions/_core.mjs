@@ -328,9 +328,16 @@ async function removeAdult(store, email, b) {
 
 async function updateFamilyNameIndex(store, name, familyId) {
   const idx = (await store.get('family-names-index')) || {};
-  const key = name.toLowerCase();
-  if (!idx[key]) idx[key] = [];
-  if (!idx[key].includes(familyId)) idx[key].push(familyId);
+  // Index both full name and last word (for child login UX)
+  // "Famille Démo" → ["famille démo", "démo"]
+  const keys = new Set();
+  keys.add(name.toLowerCase());
+  const lastWord = name.trim().split(/\s+/).pop();
+  if (lastWord) keys.add(lastWord.toLowerCase());
+  for (const key of keys) {
+    if (!idx[key]) idx[key] = [];
+    if (!idx[key].includes(familyId)) idx[key].push(familyId);
+  }
   await store.set('family-names-index', idx);
 }
 async function unlockChildDirect(store, b) {
