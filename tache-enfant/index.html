@@ -1137,7 +1137,9 @@ const ACTIONS = {
     const c = state.children.find(ch => ch.name === req.child);
     if (!c) return;
     const task = c.tasks[req.taskIndex];
+    console.log(`[APPROVE] Child: ${c.name}, TaskIndex: ${req.taskIndex}, Task:`, task);
     if (task) { task.done = true; task.completedAt = Date.now(); c.xp = (c.xp || 0) + req.xp; c.gold = (c.gold || 0) + req.gold; }
+    console.log(`[APPROVE] After update:`, task);
     req.status = 'approved';
     save(); render();
   },
