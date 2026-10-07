@@ -68,6 +68,11 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       let payload = {};
       try { payload = JSON.parse(raw || '{}'); } catch {}
+      if (payload.action === 'saveFamily') {
+        const lucas = payload.family?.children?.find(c => c.name === 'Lucas');
+        console.log(`[SERVER-RECV] saveFamily: Lucas=${lucas ? 'found' : 'NOT FOUND'}, children=${payload.family?.children?.length || 0}`);
+        if (lucas) console.log(`[SERVER-RECV] Lucas tasks:`, lucas.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })));
+      }
       const auth = req.headers['authorization'] || '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
       const { action, ...bodyData } = payload;

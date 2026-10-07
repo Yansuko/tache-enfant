@@ -172,6 +172,8 @@ const frDate = () => {
 
 // ── réseau ──
 async function api(action, body = {}) {
+  const url = new URL('/api', window.location.origin).toString();
+  if (action === 'saveFamily') console.log(`[API] Calling: ${url} with action=${action}`);
   const res = await fetch('/api', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
@@ -179,6 +181,7 @@ async function api(action, body = {}) {
   });
   let json = {};
   try { json = await res.json(); } catch {}
+  if (action === 'saveFamily') console.log(`[API] Response status: ${res.status}, ok: ${res.ok}`);
   if (!res.ok) throw (json.error || `Erreur ${res.status}`);
   return json;
 }
