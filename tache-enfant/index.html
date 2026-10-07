@@ -221,7 +221,9 @@ async function persistFamily() {
       const res = await api('saveFamily', payload);
       if (res.family) {
         console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
-        Object.assign(state, res.family);
+        // Don't use backend response to overwrite state for tasks - keep local approved tasks
+        // Only update server-managed fields (id, owner, members)
+        Object.assign(state, { id: res.family.id, owner: res.family.owner, members: res.family.members, memberInfo: res.family.memberInfo });
       }
       console.log(`[SAVE] Success`);
       toast(false);

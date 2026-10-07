@@ -519,8 +519,6 @@ export async function handleApi({ action, token, body = {} }, store) {
       if (!family) return err(404, 'Famille non trouvée.');
       const child = family.children.find(c => c.id === childId);
       if (!child) return err(404, 'Enfant non trouvé.');
-      console.log(`[GETSTATS] Loading child: ${child.name}, childId: ${childId}, tasks: ${child.tasks?.length || 0}`);
-      console.log(`[GETSTATS] First task:`, JSON.stringify(child.tasks?.[0]));
       const stats = aggregateTaskStats(child, period);
       const childrenStats = family.children.map(c => ({ tasks: aggregateTaskStats(c, period).tasksCount || 0, xp: aggregateTaskStats(c, period).xpGained || 0, gold: aggregateTaskStats(c, period).goldGained || 0 }));
       return { status: 200, body: { ...stats, childrenStats } };
