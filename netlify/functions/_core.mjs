@@ -278,6 +278,14 @@ async function saveFamily(store, email, b) {
   const lucas_verify = verify?.children?.find(c => c.name === 'Lucas');
   console.log(`[SAVE-AFTER-STORE] Lucas tasks (read back):`, JSON.stringify(lucas_verify?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
   console.log(`[SAVE-VERIFY-TIMESTAMP] Read back at ${new Date().toISOString()}`);
+  // Index children by ID for fast lookup
+  for (const child of merged.children || []) {
+    if (child.id) {
+      const childIdx = (await store.get('child-id-index')) || {};
+      childIdx[child.id] = inc.id;
+      await store.set('child-id-index', childIdx);
+    }
+  }
   // Return the merged data directly without reloading from storage
   // (avoids stale data if storage didn't persist the changes yet)
   merged.memberInfo = {};

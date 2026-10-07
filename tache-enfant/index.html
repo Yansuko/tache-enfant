@@ -1369,7 +1369,10 @@ const ACTIONS = {
     const name = val('new-child-name');
     if (!name) return alert('Prénom requis.');
     if (state.children.some(c => c.name.toLowerCase() === name.toLowerCase())) return alert('Ce prénom existe déjà.');
-    state.children.push({ name, xp: 0, gold: 0, tasks: [], grades: [], sanctions: [] });
+    const id = 'child-' + Math.random().toString(36).substring(2, 10);
+    state.children.push({ id, name, xp: 0, gold: 0, tasks: [], grades: [], sanctions: [] });
+    document.getElementById('new-child-name').value = '';
+    save(); render();
   },
   'del-child': el => {
     const c = state.children[+el.dataset.i];
