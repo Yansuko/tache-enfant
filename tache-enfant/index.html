@@ -1194,7 +1194,8 @@ const ACTIONS = {
       statsChildIndex = childIndex;
       localStorage.setItem('statsChildIndex', statsChildIndex);
     }
-    // Note: don't call save() here — the event handler will call it after this handler returns
+    // Call save() here directly since this is a server action, not a UI action
+    save();
   },
   'reject-task': el => {
     const idx = +el.dataset.i;
