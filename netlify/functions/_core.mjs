@@ -427,9 +427,15 @@ function getDateRange(period, endDate = Date.now()) {
 
 function aggregateTaskStats(child, period = 'week') {
   const { start, end } = getDateRange(period);
-  console.log(`[STATS] Child: ${child.name}, Period: ${period}, Start: ${new Date(start).toISOString()}, End: ${new Date(end).toISOString()}`);
-  console.log(`[STATS] ALL tasks:`, JSON.stringify(child.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
-  console.log(`[STATS] Tasks with completedAt:`, child.tasks.filter(t => t.completedAt).map(t => ({ name: t.name, done: t.done, completedAt: new Date(t.completedAt).toISOString() })));
+  console.log(`[STATS] Child: ${child.name}, Period: ${period}, Range: ${new Date(start).toISOString()} to ${new Date(end).toISOString()}`);
+
+  // Ensure tasks array exists and all have completedAt field
+  const tasks = (child.tasks || []).map(t => ({
+    ...t,
+    completedAt: t.completedAt ? Number(t.completedAt) : null
+  }));
+
+  console.log(`[STATS] All ${tasks.length} tasks:`, JSON.stringify(tasks.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
 
   const dailyBreakdown = {};
   let tasksCount = 0;
@@ -438,7 +444,7 @@ function aggregateTaskStats(child, period = 'week') {
   const taskNameCounts = {};  // { "Ranger sa chambre": 3, ... }
   let bestDay = { date: '', tasksCount: 0, xp: 0, gold: 0 };
 
-  for (const task of child.tasks) {
+  for (const task of tasks) {
     if (task.completedAt && task.completedAt >= start && task.completedAt <= end) {
       const iso = dateToISO(task.completedAt);
 
@@ -468,14 +474,14 @@ function aggregateTaskStats(child, period = 'week') {
   }
 
   // Count total attempted tasks (heuristic: all tasks are "attempted")
-  const tasksAttempted = child.tasks.length;
+  const tasksAttempted = tasks.length;
 
   // Top 5 tasks
   const topTasks = Object.entries(taskNameCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([name, count]) => {
-      const task = child.tasks.find(t => t.name === name);
+      const task = tasks.find(t => t.name === name);
       return { name, count, icon: task?.icon || '⭐' };
     });
 
