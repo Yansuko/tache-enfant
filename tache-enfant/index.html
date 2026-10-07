@@ -1625,6 +1625,25 @@ async function boot() {
         statsPeriod = localStorage.getItem('statsPeriod');
       }
       render();
+
+      // CRITICAL: Restore approved tasks AFTER render() since setActiveFamily and render()
+      // may have reset state with backend data. Re-apply all approved tasks to ensure they
+      // survive the full boot sequence
+      if (state && state.children) {
+        for (const family of families) {
+          for (const child of family.children || []) {
+            for (let k = 0; k < (child.tasks || []).length; k++) {
+              const key = `${child.id}:${child.tasks[k].name}`;
+              if (approvedTasks[key]) {
+                const idx = state.children.findIndex(c => c.id === child.id);
+                if (idx >= 0 && state.children[idx].tasks && state.children[idx].tasks[k]) {
+                  state.children[idx].tasks[k] = approvedTasks[key];
+                }
+              }
+            }
+          }
+        }
+      }
       return;
     } catch { token = null; localStorage.removeItem(TOKEN_KEY); }
   }
