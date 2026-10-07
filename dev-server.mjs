@@ -68,6 +68,7 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       let payload = {};
       try { payload = JSON.parse(raw || '{}'); } catch {}
+      console.log(`[SERVER] Received action: ${payload.action}, has family: ${!!payload.family}, children count: ${payload.family?.children?.length || 0}`);
       if (payload.action === 'saveFamily') {
         const lucas = payload.family?.children?.find(c => c.name === 'Lucas');
         console.log(`[SERVER-RECV] saveFamily: Lucas=${lucas ? 'found' : 'NOT FOUND'}, children=${payload.family?.children?.length || 0}`);

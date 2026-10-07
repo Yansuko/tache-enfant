@@ -274,7 +274,11 @@ async function saveFamily(store, email, b) {
     }
   }
   await store.set('family:' + inc.id, merged);
-  return { status: 200, body: { family: await withNames(store, merged) } };
+  // Return the merged data directly without reloading from storage
+  // (avoids stale data if storage didn't persist the changes yet)
+  merged.memberInfo = {};
+  for (const m of merged.members) { const a = await store.get('account:' + m); merged.memberInfo[m] = a ? a.name : null; }
+  return { status: 200, body: { family: merged } };
 }
 async function createFamily(store, email, b) {
   const name = (b.name || '').trim();
