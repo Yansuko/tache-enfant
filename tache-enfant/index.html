@@ -1153,7 +1153,9 @@ const ACTIONS = {
     if (!req) return;
     // Find the child and mark task as done
     let found = false;
-    for (const c of state.children || []) {
+    let childIndex = -1;
+    for (let i = 0; i < (state.children || []).length; i++) {
+      const c = state.children[i];
       if (c.name === req.child && c.tasks && c.tasks[req.taskIndex]) {
         console.log(`[APPROVE] Found child ${c.name}, task at index ${req.taskIndex}`);
         const task = c.tasks[req.taskIndex];
@@ -1164,11 +1166,17 @@ const ACTIONS = {
         c.gold = (c.gold || 0) + req.gold;
         console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
         found = true;
+        childIndex = i;
         break;
       }
     }
     if (!found) { console.log(`[APPROVE] FAILED: req.child=${req.child}, children=${state.children?.map(c => c.name).join(',')}, taskIndex=${req.taskIndex}`); }
     req.status = 'approved';
+    // Set stats child index so parent will see this child's stats next
+    if (found && childIndex >= 0) {
+      statsChildIndex = childIndex;
+      localStorage.setItem('statsChildIndex', statsChildIndex);
+    }
     save(); render();
   },
   'reject-task': el => {
