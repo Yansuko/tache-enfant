@@ -1112,7 +1112,7 @@ const ACTIONS = {
     } else {
       t.completedAt = null;
     }
-    save();
+    save(); render();
   },
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
   'add-task': () => {
@@ -1450,11 +1450,13 @@ document.body.addEventListener('change', e => {
   if (e.target.id === 'stats-child-select') {
     statsChildIndex = +e.target.value;
     localStorage.setItem('statsChildIndex', statsChildIndex);
+    document.getElementById('main').innerHTML = screenStats();
     api('getTaskStats', {
       childId: state.children[statsChildIndex]?.id,
       period: statsPeriod
     }).then(r => {
       statsData = r;
+      document.getElementById('main').innerHTML = screenStats();
       renderStatsCharts();
     }).catch(err => {
       console.error('Erreur statistiques:', err);
