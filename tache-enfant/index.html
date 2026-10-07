@@ -261,13 +261,14 @@ async function save() { return await persistFamily(); }
 
 function taskRow(t, i, small) {
   const sz = small ? 22 : 26;
+  const freqLabel = { daily: '🎯', weekly: '📅', monthly: '🗓️' }[t.frequency || 'daily'];
   return `
   <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px${t.done ? ';opacity:0.6' : ''}">
     ${small ? '' : `<div class="task-icon">${t.icon || '⭐'}</div>`}
     <button class="check${t.done ? ' done' : ''}" style="width:${sz}px;height:${sz}px" data-action="toggle-task" data-i="${i}" aria-label="${t.done ? 'Fait' : 'À faire'}">${t.done ? '✓' : ''}</button>
     <div style="flex:1">
       <div class="card-title" style="font-size:${small ? 14 : 15}px${t.done ? ';text-decoration:line-through' : ''}">${esc(t.name)}</div>
-      ${loot(t.xp, t.gold)}${t.daily ? ' <span class="tag tag-neutral" style="margin-top:4px">🎯</span>' : ''}
+      ${loot(t.xp, t.gold)}${t.frequency ? ` <span class="tag tag-neutral" style="margin-top:4px">${freqLabel}</span>` : ''}
     </div>
     ${small ? `<button class="btn btn-icon btn-ghost" data-action="del-task" data-i="${i}" aria-label="Supprimer">✕</button>` : ''}
   </div>`;
@@ -469,12 +470,17 @@ function screenTaches() {
   <div style="padding:0 20px 10px">
     ${pending.map((req) => {
       const realIdx = (state.taskRequests || []).findIndex(r => r === req);
+      const task = child().tasks[req.taskIndex];
+      const freq = task?.frequency || 'daily';
+      const freqLabel = { daily: '🎯', weekly: '📅', monthly: '🗓️' }[freq];
+      const date = new Date(req.submittedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
       return `
     <div class="card elev-sm" style="gap:8px;margin-bottom:10px">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <span class="card-title" style="font-size:15px">${esc(req.taskName)}</span>
         ${loot(req.xp, req.gold)}
       </div>
+      <div style="font-size:12px;color:var(--color-neutral-600)"><span class="tag tag-neutral">${freqLabel}</span> ${date}</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1" data-action="approve-task" data-i="${realIdx}">Valider</button>
         <button class="btn btn-secondary" style="flex:1" data-action="reject-task" data-i="${realIdx}">Refuser</button>
@@ -494,7 +500,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="new-task-xp" type="number" min="1" placeholder="Ex : 20"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="new-task-gold" type="number" min="0" placeholder="Ex : 10"></div>
       </div>
-      <label class="radio" style="font-size:13px"><input type="checkbox" id="new-task-daily"><span class="dot"></span>Quête quotidienne 🎯</label>
+      <div style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="daily">Quotidienne 🎯</option><option value="weekly">Hebdomadaire 📅</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-primary btn-block" data-action="add-task">Ajouter la quête</button>
     </div>
 
@@ -518,7 +524,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="qd-xp" type="number" min="1" placeholder="Ex : 15"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="qd-gold" type="number" min="0" placeholder="Ex : 7"></div>
       </div>
-      <label class="radio" style="font-size:13px"><input type="checkbox" id="qd-daily"><span class="dot"></span>Quotidienne 🎯</label>
+      <div style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="daily">Quotidienne 🎯</option><option value="weekly">Hebdomadaire 📅</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-secondary btn-block" data-action="add-quest-def">Enregistrer le modèle</button>
     </div>
   </div>`;
@@ -1124,7 +1130,7 @@ function childAuth(c) {
 /* ── actions ── */
 
 const val = id => document.getElementById(id).value.trim();
-function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, daily: !!t.daily }); }
+function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, frequency: t.frequency || 'daily' }); }
 function replaceFamily(f) {
   const i = families.findIndex(x => x.id === f.id);
   if (i < 0) return;
@@ -1177,18 +1183,28 @@ const ACTIONS = {
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
   'add-task': () => {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
-    const daily = document.getElementById('new-task-daily').checked;
+    const frequency = document.getElementById('new-task-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, daily });
+    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, frequency });
+    document.getElementById('new-task-name').value = '';
+    document.getElementById('new-task-xp').value = '';
+    document.getElementById('new-task-gold').value = '';
+    document.getElementById('new-task-freq').value = 'daily';
+    save(); render();
   },
   'assign-quest': el => addQuestTo(child(), state.questList[+el.dataset.i]),
   'assign-quest-all': el => { const t = state.questList[+el.dataset.i]; state.children.forEach(c => addQuestTo(c, t)); },
   'del-quest-def': el => { state.questList.splice(+el.dataset.i, 1); },
   'add-quest-def': () => {
     const name = val('qd-name'), xp = parseInt(val('qd-xp'), 10), gold = parseInt(val('qd-gold') || '0', 10);
-    const daily = document.getElementById('qd-daily').checked;
+    const frequency = document.getElementById('qd-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    state.questList.push({ icon: '⭐', name, xp, gold, daily });
+    state.questList.push({ icon: '⭐', name, xp, gold, frequency });
+    document.getElementById('qd-name').value = '';
+    document.getElementById('qd-xp').value = '';
+    document.getElementById('qd-gold').value = '';
+    document.getElementById('qd-freq').value = 'daily';
+    save(); render();
   },
   'approve-task': el => {
     const idx = +el.dataset.i;
@@ -1207,8 +1223,14 @@ const ACTIONS = {
         console.log(`[APPROVE] Before: task.done=${task.done}, completedAt=${task.completedAt}`);
         task.done = true;
         task.completedAt = Date.now();
+        const oldLevel = level(c.xp || 0);
         c.xp = (c.xp || 0) + req.xp;
-        c.gold = (c.gold || 0) + req.gold;
+        const newLevel = level(c.xp);
+        if (newLevel > oldLevel) {
+          c.gold = (c.gold || 0) + req.gold + (newLevel - oldLevel) * 50;
+        } else {
+          c.gold = (c.gold || 0) + req.gold;
+        }
         console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
         found = true;
         childIndex = i;
