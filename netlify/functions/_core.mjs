@@ -400,26 +400,38 @@ function dateToISO(ms) {
 }
 
 function getDateRange(period, endDate = Date.now()) {
+  // Use UTC to avoid timezone issues with completedAt timestamps
   const end = new Date(endDate);
   const start = new Date(end);
 
+  // Get UTC date components
+  const y = end.getUTCFullYear();
+  const m = end.getUTCMonth();
+  const d = end.getUTCDate();
+  const dayOfWeek = end.getUTCDay();
+
   if (period === 'day') {
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+    // Today 00:00 UTC to 23:59:59.999 UTC
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(23, 59, 59, 999);
   } else if (period === 'week') {
-    const day = end.getDay();
-    start.setDate(end.getDate() - day);  // Sunday
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+    // Sunday to Saturday of current week (UTC)
+    const sundayDate = d - dayOfWeek;
+    start.setUTCFullYear(y, m, sundayDate);
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(23, 59, 59, 999);
   } else if (period === 'month') {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
+    // 1st to last day of month (UTC)
+    start.setUTCFullYear(y, m, 1);
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCFullYear(y, m, new Date(y, m + 1, 0).getUTCDate());
+    end.setUTCHours(23, 59, 59, 999);
   } else if (period === 'year') {
-    start.setMonth(0, 1);
-    start.setHours(0, 0, 0, 0);
-    end.setMonth(11, 31);
-    end.setHours(23, 59, 59, 999);
+    // Jan 1 to Dec 31 (UTC)
+    start.setUTCFullYear(y, 0, 1);
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCFullYear(y, 11, 31);
+    end.setUTCHours(23, 59, 59, 999);
   }
 
   return { start: start.getTime(), end: end.getTime() };
