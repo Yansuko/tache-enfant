@@ -33,6 +33,18 @@ const loadMem = () => {
   }
 };
 loadMem();
+// Initialize admin metadata if not present (scan existing families/accounts)
+if (!mem._admin_metadata) {
+  const familyIds = [];
+  const accountEmails = [];
+  for (const key in mem) {
+    if (key.startsWith('family:')) familyIds.push(key.slice(7));
+    if (key.startsWith('account:')) accountEmails.push(key.slice(8));
+  }
+  if (familyIds.length > 0 || accountEmails.length > 0) {
+    mem._admin_metadata = { familyIds, accountEmails };
+  }
+}
 const flush = () => {
   const data = JSON.stringify(mem);
   fs.writeFileSync(DATA, data);
