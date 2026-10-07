@@ -107,7 +107,7 @@
         const res = await fetch('/api', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'getAdminStats', body: { adminKey } })
+          body: JSON.stringify({ action: 'getAdminStats', adminKey })
         });
         const data = await res.json();
         if (data.status === 200) {
