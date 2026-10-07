@@ -213,11 +213,13 @@ async function persistFamily() {
     try {
       const payload = { family: stripUi(state) };
       console.log(`[SAVE] Sending Lucas tasks:`, payload.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })));
+      console.log(`[SAVE] Token present:`, !!token);
       const res = await api('saveFamily', payload);
       if (res.family) Object.assign(state, res.family);
+      console.log(`[SAVE] Success`);
       toast(false);
     }
-    catch { toast(true); break; }
+    catch (e) { console.log(`[SAVE] Error:`, e); toast(true); break; }
   }
   saving = false;
   localStorage.setItem('statsChildIndex', statsChildIndex);
