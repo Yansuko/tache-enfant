@@ -468,9 +468,9 @@ function aggregateTaskStats(child, period = 'week') {
   let bestDay = { date: '', tasksCount: 0, xp: 0, gold: 0 };
 
   for (const task of tasks) {
-    const inRange = task.completedAt && task.completedAt >= start && task.completedAt <= end;
+    const inRange = task.done === true && task.completedAt && task.completedAt >= start && task.completedAt <= end;
     console.log(`[STATS-CHECK] "${task.name}": done=${task.done}, completedAt=${task.completedAt}, start=${start}, end=${end}, inRange=${inRange}`);
-    if (task.completedAt && task.completedAt >= start && task.completedAt <= end) {
+    if (task.done === true && task.completedAt && task.completedAt >= start && task.completedAt <= end) {
       const iso = dateToISO(task.completedAt);
 
       // Update global counters
