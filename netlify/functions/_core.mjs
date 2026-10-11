@@ -571,7 +571,7 @@ function aggregateTaskStats(child, period = 'week') {
   };
 }
 
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin']);
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily']);
 
 // point d'entrée unique. payload = { action, token, body }
 async function logActivity(store, type, subject, target, details) {
@@ -844,6 +844,39 @@ export async function handleApi({ action, token, body = {} }, store) {
       await logAdminAction(store, 'resetPin', `${fam.name} - ${child.name}`, `Ancien PIN: ${oldPin}, Nouveau PIN: ${newPin}`);
 
       return { status: 200, body: { message: `PIN de ${child.name} réinitialisé: ${newPin}` } };
+    }
+    case 'adminDeleteFamily': {
+      // Verify admin key
+      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+        return err(403, 'Clé admin invalide.');
+      }
+      const famId = body.familyId;
+      if (!famId) return err(400, 'Family ID requis.');
+
+      const fam = await store.get('family:' + famId);
+      if (!fam) return err(404, 'Famille non trouvée.');
+
+      // Delete family
+      await store.del('family:' + famId);
+
+      // Remove from account's familyIds
+      for (const email of fam.members || []) {
+        const acc = await store.get('account:' + email);
+        if (acc) {
+          acc.familyIds = (acc.familyIds || []).filter(id => id !== famId);
+          await store.set('account:' + email, acc);
+        }
+      }
+
+      // Remove from metadata
+      const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+      metadata.familyIds = metadata.familyIds?.filter(id => id !== famId) || [];
+      await store.set('_admin_metadata', metadata);
+
+      // Log action
+      await logAdminAction(store, 'deleteFamily', fam.name, `Supprimée avec ${fam.children?.length || 0} enfants`);
+
+      return { status: 200, body: { message: `Famille ${fam.name} supprimée` } };
     }
     default: return err(400, 'Action inconnue : ' + action);
   }

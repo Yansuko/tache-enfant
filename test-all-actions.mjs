@@ -252,6 +252,22 @@ r = await call(s, 'adminDeleteAccount', {
 });
 assert.equal(r.status, 200, '    ✓ Compte supprimé par admin');
 
+// adminDeleteFamily
+console.log('\n  adminDeleteFamily:');
+// Create a test family to delete
+r = await call(s, 'signup', {
+  email: 'delete-fam@test.fr',
+  password: 'delfam123',
+  name: 'Delete Family Test',
+  familyName: 'Family to Delete'
+});
+const famToDelete = r.body.families[0].id;
+r = await call(s, 'adminDeleteFamily', {
+  adminKey: 'demo-admin-key',
+  familyId: famToDelete
+});
+assert.equal(r.status, 200, '    ✓ Famille supprimée par admin');
+
 // ══════════════════════════════════════════════════════════════
 // 6. ERREURS & SÉCURITÉ
 // ══════════════════════════════════════════════════════════════
@@ -312,7 +328,7 @@ console.log('    • unlockChildDirect');
 console.log('  Données:');
 console.log('    • getFamilyData');
 console.log('  Administration:');
-console.log('    • getAdminStats, adminResetPassword, adminResetPin, adminDeleteAccount');
+console.log('    • getAdminStats, adminResetPassword, adminResetPin, adminDeleteAccount, adminDeleteFamily');
 console.log('  Sécurité & Erreurs:');
 console.log('    • Validation des credentials');
 console.log('    • Validation des tokens');

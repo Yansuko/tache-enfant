@@ -84,6 +84,7 @@
               <th>Propriétaire</th>
               <th>Enfants & PIN</th>
               <th>Tâches complétées</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="families-body">
@@ -199,6 +200,9 @@
             </div>
           </td>
           <td>${f.tasksCompleted}</td>
+          <td>
+            <button class="action-btn btn-delete" onclick="deleteFamily('${f.id}', '${f.name}')">Supprimer</button>
+          </td>
         </tr>
       `).join('');
 
@@ -289,6 +293,26 @@
           location.reload();
         } else {
           alert('Erreur: ' + (data.body?.error || data.error || 'Impossible de réinitialiser le PIN'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function deleteFamily(familyId, familyName) {
+      if (!confirm(`ATTENTION: Supprimer définitivement la famille "${familyName}" et toutes ses données ?`)) return;
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminDeleteFamily', adminKey, familyId })
+        });
+        const data = await res.json();
+        if (data.status === 200) {
+          alert(`Famille "${familyName}" supprimée`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.body?.error || data.error || 'Impossible de supprimer la famille'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);

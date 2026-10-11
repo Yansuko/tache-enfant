@@ -138,6 +138,32 @@ assert.equal(r.status, 403, '✓ Mauvaise clé admin retourne 403');
 r = await call(s, 'getAdminStats', { adminKey: 'invalid-key' });
 assert.equal(r.status, 403, '✓ getAdminStats avec clé invalide retourne 403');
 
+// ── Tests Delete Family ──
+console.log('\n🗑️ Delete Family:');
+
+// Create a test family to delete
+r = await call(s, 'signup', {
+  email: 'delete-family-test@test.fr',
+  password: 'deltest123',
+  name: 'Delete Test',
+  familyName: 'Family to Delete'
+});
+const testFamilyId = r.body.families[0].id;
+assert.ok(testFamilyId, '✓ Test family created');
+
+// Delete the family
+r = await call(s, 'adminDeleteFamily', {
+  adminKey: 'demo-admin-key',
+  familyId: testFamilyId
+});
+assert.equal(r.status, 200, '✓ Admin delete family réussit');
+assert.ok(r.body.message.includes('supprimée'), '✓ Message de confirmation');
+
+// Verify family is deleted
+r = await call(s, 'getAdminStats', { adminKey: 'demo-admin-key' });
+const deletedFamily = r.body.families.find(f => f.id === testFamilyId);
+assert.ok(!deletedFamily, '✓ Famille supprimée du dashboard');
+
 // ── Tests Unique Tasks ──
 console.log('\n🎯 Unique Tasks:');
 
@@ -158,6 +184,7 @@ console.log('═'.repeat(50));
 console.log('\nTests couverts:');
 console.log('  ✓ Admin password reset');
 console.log('  ✓ Admin account deletion');
+console.log('  ✓ Admin family deletion');
 console.log('  ✓ Admin PIN reset');
 console.log('  ✓ Task statistics (year & week)');
 console.log('  ✓ Admin dashboard stats');
