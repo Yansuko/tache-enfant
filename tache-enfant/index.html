@@ -193,12 +193,14 @@ function setActiveFamily(i) {
   if (state) {
     state.role ??= 'enfant'; state.tab ??= 'accueil'; state.activeChild ??= 0;
     // Generate missing child IDs (for children created before ID generation was implemented)
+    let needsSave = false;
     for (const child of state.children || []) {
       if (!child.id) {
         child.id = 'child-' + Math.random().toString(36).substring(2, 10);
+        needsSave = true;
       }
     }
-    if (rolloverDay(state, today())) save();
+    if (rolloverDay(state, today()) || needsSave) save();
   }
 }
 // reset des quêtes quotidiennes au chargement d'un nouveau jour (persisté)
@@ -1419,9 +1421,15 @@ const ACTIONS = {
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
     state.rewards.push({ icon: '🎁', name, cost, lvl });
   },
-  'set-stats-select-child': el => {
+  'set-stats-select-child': async el => {
     statsChildIndex = +el.dataset.index;
     localStorage.setItem('statsChildIndex', statsChildIndex);
+    // Ensure child has ID before loading stats
+    const child = state.children[statsChildIndex];
+    if (child && !child.id) {
+      child.id = 'child-' + Math.random().toString(36).substring(2, 10);
+      await save();
+    }
     document.getElementById('main').innerHTML = screenStats();
     api('getTaskStats', {
       childId: state.children[statsChildIndex]?.id,
@@ -1570,20 +1578,34 @@ document.body.addEventListener('change', e => {
   if (e.target.id === 'stats-child-select') {
     statsChildIndex = +e.target.value;
     localStorage.setItem('statsChildIndex', statsChildIndex);
-    document.getElementById('main').innerHTML = screenStats();
-    api('getTaskStats', {
-      childId: state.children[statsChildIndex]?.id,
-      period: statsPeriod
-    }).then(r => {
-      statsData = r;
-      document.getElementById('main').innerHTML = screenStats();
-      renderStatsCharts();
-    }).catch(err => {
-      console.error('Erreur statistiques:', err);
-      statsData = null;
-    });
+    // Ensure child has ID before loading stats
+    const child = state.children[statsChildIndex];
+    if (child && !child.id) {
+      child.id = 'child-' + Math.random().toString(36).substring(2, 10);
+      save().then(loadStatsForCurrentChild);
+      return;
+    }
+    loadStatsForCurrentChild();
     return;
   }
+});
+
+async function loadStatsForCurrentChild() {
+  document.getElementById('main').innerHTML = screenStats();
+  api('getTaskStats', {
+    childId: state.children[statsChildIndex]?.id,
+    period: statsPeriod
+  }).then(r => {
+    statsData = r;
+    document.getElementById('main').innerHTML = screenStats();
+    renderStatsCharts();
+  }).catch(err => {
+    console.error('Erreur statistiques:', err);
+    statsData = null;
+  });
+}
+
+document.body.addEventListener('change', e => {
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
 
