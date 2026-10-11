@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node dev-server.mjs",
-    "test": "node test-backend.mjs"
+    "test": "node test-backend.mjs",
+    "test:extended": "node test-extended.mjs",
+    "test:all": "node test-backend.mjs && node test-extended.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0"
