@@ -556,7 +556,20 @@ function aggregateTaskStats(child, period = 'week') {
 const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats']);
 
 // point d'entrée unique. payload = { action, token, body }
-export async function handleApi({ action, token, body = {} }, store) {
+export async function logAdminAction(store, action, target, details) {
+  const history = (await store.get('_admin_history')) || [];
+  history.push({
+    timestamp: Date.now(),
+    action,
+    target,
+    details
+  });
+  // Keep last 1000 entries
+  if (history.length > 1000) history.shift();
+  await store.set('_admin_history', history);
+}
+
+async function handleApi({ action, token, body = {} }, store) {
   await ensureSeed(store);
   const secret = await getSecret(store);
   let email = null;
@@ -667,6 +680,9 @@ export async function handleApi({ action, token, body = {} }, store) {
         if (acc) accounts.push({ email: acc.email, name: acc.name });
       }
 
+      // Get history
+      const history = (await store.get('_admin_history')) || [];
+
       return {
         status: 200,
         body: {
@@ -678,9 +694,62 @@ export async function handleApi({ action, token, body = {} }, store) {
             averageTasksPerChild: totalChildren > 0 ? Math.round(totalTasksCompleted / totalChildren) : 0
           },
           families: families.slice(0, 50),
-          accounts: accounts.slice(0, 50)
+          accounts: accounts.slice(0, 50),
+          history: history.slice(-100)  // Last 100 entries
         }
       };
+    }
+    case 'adminResetPassword': {
+      // Verify admin key
+      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+        return err(403, 'Clé admin invalide.');
+      }
+      const targetEmail = body.email?.toLowerCase();
+      if (!targetEmail) return err(400, 'Email requis.');
+
+      const acc = await store.get('account:' + targetEmail);
+      if (!acc) return err(404, 'Compte non trouvé.');
+
+      // Generate new temporary password
+      const newPassword = Math.random().toString(36).substring(2, 10);
+      const { salt, hash } = hashPassword(newPassword);
+      acc.salt = salt;
+      acc.hash = hash;
+      await store.set('account:' + targetEmail, acc);
+
+      // Log action
+      await logAdminAction(store, 'resetPassword', targetEmail, `Mot de passe temporaire: ${newPassword}`);
+
+      return { status: 200, body: { message: `Mot de passe réinitialisé. Nouveau MDP temporaire: ${newPassword}` } };
+    }
+    case 'adminDeleteAccount': {
+      // Verify admin key
+      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+        return err(403, 'Clé admin invalide.');
+      }
+      const targetEmail = body.email?.toLowerCase();
+      if (!targetEmail) return err(400, 'Email requis.');
+
+      const acc = await store.get('account:' + targetEmail);
+      if (!acc) return err(404, 'Compte non trouvé.');
+
+      // Delete families owned by this account
+      for (const famId of acc.familyIds || []) {
+        await store.del('family:' + famId);
+      }
+
+      // Delete account
+      await store.del('account:' + targetEmail);
+
+      // Remove from metadata
+      const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+      metadata.accountEmails = metadata.accountEmails?.filter(e => e !== targetEmail) || [];
+      await store.set('_admin_metadata', metadata);
+
+      // Log action
+      await logAdminAction(store, 'deleteAccount', targetEmail, `Supprimer ${acc.familyIds?.length || 0} familles`);
+
+      return { status: 200, body: { message: `Compte ${targetEmail} et ses familles supprimés` } };
     }
     default: return err(400, 'Action inconnue : ' + action);
   }

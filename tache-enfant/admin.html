@@ -24,6 +24,11 @@
     .section { margin-bottom: 40px; }
     .section h2 { font-size: 20px; color: #333; margin-bottom: 20px; }
     .hidden { display: none; }
+    .action-btn { padding: 6px 12px; margin: 0 4px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .btn-reset { background: #ffc107; color: #333; }
+    .btn-reset:hover { background: #e0a800; }
+    .btn-delete { background: #dc3545; color: white; }
+    .btn-delete:hover { background: #c82333; }
   </style>
 </head>
 <body>
@@ -87,9 +92,26 @@
             <tr>
               <th>Email</th>
               <th>Nom</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="users-body">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>Historique des actions admin</h2>
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Date/Heure</th>
+              <th>Action</th>
+              <th>Cible</th>
+              <th>Détails</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
           </tbody>
         </table>
       </div>
@@ -130,7 +152,7 @@
     }
 
     function showDashboard(data) {
-      const { stats, families, accounts } = data;
+      const { stats, families, accounts, history } = data;
       document.getElementById('stat-users').textContent = stats.totalAccounts;
       document.getElementById('stat-families').textContent = stats.totalFamilies;
       document.getElementById('stat-children').textContent = stats.totalChildren;
@@ -152,8 +174,62 @@
         <tr>
           <td>${a.email}</td>
           <td>${a.name}</td>
+          <td>
+            <button class="action-btn btn-reset" onclick="resetPassword('${a.email}')">Réinit. MDP</button>
+            <button class="action-btn btn-delete" onclick="deleteAccount('${a.email}')">Supprimer</button>
+          </td>
         </tr>
       `).join('');
+
+      const hbody = document.getElementById('history-body');
+      hbody.innerHTML = (history || []).map(h => `
+        <tr>
+          <td>${new Date(h.timestamp).toLocaleString('fr-FR')}</td>
+          <td>${h.action}</td>
+          <td>${h.target}</td>
+          <td>${h.details || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function resetPassword(email) {
+      if (!confirm(`Réinitialiser le mot de passe de ${email} ?`)) return;
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminResetPassword', adminKey, email })
+        });
+        const data = await res.json();
+        if (data.status === 200) {
+          alert(`Mot de passe réinitialisé pour ${email}`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.body?.error || 'Impossible de réinitialiser'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function deleteAccount(email) {
+      if (!confirm(`ATTENTION: Supprimer définitivement le compte ${email} et toutes ses familles ?`)) return;
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminDeleteAccount', adminKey, email })
+        });
+        const data = await res.json();
+        if (data.status === 200) {
+          alert(`Compte ${email} supprimé`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.body?.error || 'Impossible de supprimer'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
     }
 
     // Try to load from localStorage if key exists
