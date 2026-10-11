@@ -29,6 +29,12 @@
     .btn-reset:hover { background: #e0a800; }
     .btn-delete { background: #dc3545; color: white; }
     .btn-delete:hover { background: #c82333; }
+    .btn-reset-pin { background: #28a745; color: white; font-size: 11px; padding: 4px 8px; }
+    .btn-reset-pin:hover { background: #218838; }
+    .children-list { font-size: 13px; color: #555; line-height: 1.6; }
+    .child-item { margin-bottom: 8px; }
+    .child-name { font-weight: 500; }
+    .child-pin { color: #007bff; font-family: monospace; margin-left: 8px; }
   </style>
 </head>
 <body>
@@ -76,7 +82,7 @@
             <tr>
               <th>Nom</th>
               <th>Propriétaire</th>
-              <th>Enfants</th>
+              <th>Enfants & PIN</th>
               <th>Tâches complétées</th>
             </tr>
           </thead>
@@ -164,7 +170,17 @@
         <tr>
           <td>${f.name}</td>
           <td>${f.owner}</td>
-          <td>${f.children}</td>
+          <td>
+            <div class="children-list">
+              ${f.children.map(c => `
+                <div class="child-item">
+                  <span class="child-name">${c.name}</span>
+                  <span class="child-pin">PIN: ${c.pin}</span>
+                  <button class="action-btn btn-reset-pin" onclick="resetChildPin('${f.id}', '${c.id}', '${c.name}')">Réinit. PIN</button>
+                </div>
+              `).join('')}
+            </div>
+          </td>
           <td>${f.tasksCompleted}</td>
         </tr>
       `).join('');
@@ -226,6 +242,25 @@
           location.reload();
         } else {
           alert('Erreur: ' + (data.body?.error || 'Impossible de supprimer'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function resetChildPin(familyId, childId, childName) {
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminResetPin', adminKey, familyId, childId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(data.message || `PIN de ${childName} réinitialisé`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.body?.error || data.error || 'Impossible de réinitialiser le PIN'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);

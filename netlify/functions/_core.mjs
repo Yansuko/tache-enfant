@@ -556,7 +556,7 @@ function aggregateTaskStats(child, period = 'week') {
 const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats']);
 
 // point d'entrée unique. payload = { action, token, body }
-export async function logAdminAction(store, action, target, details) {
+async function logAdminAction(store, action, target, details) {
   const history = (await store.get('_admin_history')) || [];
   history.push({
     timestamp: Date.now(),
@@ -569,7 +569,7 @@ export async function logAdminAction(store, action, target, details) {
   await store.set('_admin_history', history);
 }
 
-async function handleApi({ action, token, body = {} }, store) {
+export async function handleApi({ action, token, body = {} }, store) {
   await ensureSeed(store);
   const secret = await getSecret(store);
   let email = null;
@@ -660,15 +660,22 @@ async function handleApi({ action, token, body = {} }, store) {
         if (fam) {
           totalChildren += fam.children?.length || 0;
           let familyTasks = 0;
+          const children = [];
           for (const child of fam.children || []) {
             const childStats = aggregateTaskStats(child, 'year');
             familyTasks += childStats.tasksCount || 0;
+            children.push({
+              id: child.id,
+              name: child.name,
+              pin: child.pin
+            });
           }
           totalTasksCompleted += familyTasks;
           families.push({
+            id: famId,
             name: fam.name,
             owner: fam.owner,
-            children: fam.children?.length || 0,
+            children,
             tasksCompleted: familyTasks
           });
         }
@@ -750,6 +757,32 @@ async function handleApi({ action, token, body = {} }, store) {
       await logAdminAction(store, 'deleteAccount', targetEmail, `Supprimer ${acc.familyIds?.length || 0} familles`);
 
       return { status: 200, body: { message: `Compte ${targetEmail} et ses familles supprimés` } };
+    }
+    case 'adminResetPin': {
+      // Verify admin key
+      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+        return err(403, 'Clé admin invalide.');
+      }
+      const famId = body.familyId;
+      const childId = body.childId;
+      if (!famId || !childId) return err(400, 'Family ID et Child ID requis.');
+
+      const fam = await store.get('family:' + famId);
+      if (!fam) return err(404, 'Famille non trouvée.');
+
+      const child = fam.children?.find(c => c.id === childId);
+      if (!child) return err(404, 'Enfant non trouvé.');
+
+      // Generate new PIN
+      const newPin = Math.random().toString().slice(2, 6);
+      const oldPin = child.pin;
+      child.pin = newPin;
+      await store.set('family:' + famId, fam);
+
+      // Log action
+      await logAdminAction(store, 'resetPin', `${fam.name} - ${child.name}`, `Ancien PIN: ${oldPin}, Nouveau PIN: ${newPin}`);
+
+      return { status: 200, body: { message: `PIN de ${child.name} réinitialisé: ${newPin}` } };
     }
     default: return err(400, 'Action inconnue : ' + action);
   }
