@@ -442,9 +442,11 @@ function getDateRange(period, endDate = Date.now()) {
     end.setUTCHours(23, 59, 59, 999);
   } else if (period === 'week') {
     // Sunday to Saturday of current week (UTC)
-    const sundayDate = d - dayOfWeek;
-    start.setUTCFullYear(y, m, sundayDate);
+    const daysToSubtract = dayOfWeek;  // dayOfWeek: 0=Sun, 1=Mon, etc.
+    start.setUTCDate(d - daysToSubtract);
     start.setUTCHours(0, 0, 0, 0);
+    const daysToAdd = 6 - dayOfWeek;   // days until Saturday
+    end.setUTCDate(d + daysToAdd);
     end.setUTCHours(23, 59, 59, 999);
   } else if (period === 'month') {
     // 1st to last day of month (UTC)
