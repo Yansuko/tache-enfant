@@ -585,6 +585,7 @@ async function logActivity(store, type, subject, target, details) {
   });
   if (globalHistory.length > 5000) globalHistory.shift();
   await store.set('_activity_history', globalHistory);
+  console.log(`[ACTIVITY-LOG] Type: ${type}, Subject: ${subject}, Target: ${target}, Total entries: ${globalHistory.length}`);
 }
 
 async function logAdminAction(store, action, target, details) {
@@ -719,7 +720,35 @@ export async function handleApi({ action, token, body = {} }, store) {
 
       // Get history
       const history = (await store.get('_admin_history')) || [];
-      const activityHistory = (await store.get('_activity_history')) || [];
+      let activityHistory = (await store.get('_activity_history')) || [];
+
+      // If activity history is empty, generate from existing completed tasks
+      if (activityHistory.length === 0) {
+        const generatedActivities = [];
+        for (const famId of metadata.familyIds || []) {
+          const fam = await store.get('family:' + famId);
+          if (fam && fam.children) {
+            for (const child of fam.children) {
+              if (child.tasks && Array.isArray(child.tasks)) {
+                for (const task of child.tasks) {
+                  if (task.done === true && task.completedAt) {
+                    generatedActivities.push({
+                      timestamp: task.completedAt,
+                      type: 'completeTask',
+                      subject: child.name,
+                      target: fam.name,
+                      details: task.name + (task.xp ? ` (${task.xp} XP)` : '')
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+        // Sort by timestamp descending (most recent first)
+        generatedActivities.sort((a, b) => b.timestamp - a.timestamp);
+        activityHistory = generatedActivities.slice(0, 500);
+      }
 
       return {
         status: 200,
