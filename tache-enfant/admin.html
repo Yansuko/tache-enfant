@@ -121,6 +121,23 @@
           </tbody>
         </table>
       </div>
+
+      <div class="section">
+        <h2>Historique d'activité de l'application</h2>
+        <table id="activity-table">
+          <thead>
+            <tr>
+              <th>Date/Heure</th>
+              <th>Type</th>
+              <th>Sujet</th>
+              <th>Cible</th>
+              <th>Détails</th>
+            </tr>
+          </thead>
+          <tbody id="activity-body">
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -204,6 +221,17 @@
           <td>${h.action}</td>
           <td>${h.target}</td>
           <td>${h.details || '-'}</td>
+        </tr>
+      `).join('');
+
+      const abody = document.getElementById('activity-body');
+      abody.innerHTML = (data.activityHistory || []).map(a => `
+        <tr>
+          <td>${new Date(a.timestamp).toLocaleString('fr-FR')}</td>
+          <td>${a.type}</td>
+          <td>${a.subject}</td>
+          <td>${a.target}</td>
+          <td>${a.details || '-'}</td>
         </tr>
       `).join('');
     }

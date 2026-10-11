@@ -183,6 +183,7 @@ async function login(store, secret, b) {
   if (!acc) console.log(`[LOGIN] Account not found for ${email}`);
   if (acc && !pwCheck) console.log(`[LOGIN] Password mismatch for ${email}`);
   if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
+  await logActivity(store, 'login', email, acc.name, 'Parent login');
   return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
 }
 async function resetPassword(store, secret, b) {
@@ -299,6 +300,20 @@ async function saveFamily(store, email, b) {
       await store.set('child-id-index', childIdx);
     }
   }
+  // Log completed tasks
+  for (const mergedChild of merged.children || []) {
+    const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
+    if (curChild && mergedChild.tasks && curChild.tasks) {
+      for (let i = 0; i < mergedChild.tasks.length; i++) {
+        const newTask = mergedChild.tasks[i];
+        const oldTask = curChild.tasks[i];
+        if (newTask.done === true && (!oldTask || oldTask.done !== true)) {
+          await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
+        }
+      }
+    }
+  }
+
   // Return the merged data directly without reloading from storage
   // (avoids stale data if storage didn't persist the changes yet)
   merged.memberInfo = {};
@@ -394,6 +409,9 @@ async function submitGrade(store, famId, b) {
     child: childName, subject, grade, gold, status: 'pending', submittedAt: Date.now()
   });
   await store.set('family:' + famId, fam);
+
+  // Log activity
+  await logActivity(store, 'submitGrade', childName, `${fam.name}`, `Soumis: ${subject} (Note: ${grade}, Or: ${gold})`);
 
   // Envoyer un email au parent
   if (emailSender) {
@@ -556,6 +574,19 @@ function aggregateTaskStats(child, period = 'week') {
 const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats']);
 
 // point d'entrée unique. payload = { action, token, body }
+async function logActivity(store, type, subject, target, details) {
+  const globalHistory = (await store.get('_activity_history')) || [];
+  globalHistory.push({
+    timestamp: Date.now(),
+    type,
+    subject,
+    target,
+    details
+  });
+  if (globalHistory.length > 5000) globalHistory.shift();
+  await store.set('_activity_history', globalHistory);
+}
+
 async function logAdminAction(store, action, target, details) {
   const history = (await store.get('_admin_history')) || [];
   history.push({
@@ -564,7 +595,6 @@ async function logAdminAction(store, action, target, details) {
     target,
     details
   });
-  // Keep last 1000 entries
   if (history.length > 1000) history.shift();
   await store.set('_admin_history', history);
 }
@@ -689,6 +719,7 @@ export async function handleApi({ action, token, body = {} }, store) {
 
       // Get history
       const history = (await store.get('_admin_history')) || [];
+      const activityHistory = (await store.get('_activity_history')) || [];
 
       return {
         status: 200,
@@ -702,7 +733,8 @@ export async function handleApi({ action, token, body = {} }, store) {
           },
           families: families.slice(0, 50),
           accounts: accounts.slice(0, 50),
-          history: history.slice(-100)  // Last 100 entries
+          history: history.slice(-100),  // Last 100 admin actions
+          activityHistory: activityHistory.slice(-500)  // Last 500 app activities
         }
       };
     }
