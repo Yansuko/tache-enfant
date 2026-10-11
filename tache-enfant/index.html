@@ -207,7 +207,13 @@ function setActiveFamily(i) {
 function rolloverDay(f, day) {
   if (f.day === day) return false;
   f.day = day;
-  f.children.forEach(c => c.tasks.forEach(t => { if (t.daily) t.done = false; }));
+  f.children.forEach(c => {
+    c.tasks = c.tasks.filter(t => {
+      if ((t.frequency || 'daily') === 'unique' && t.done) return false;
+      if ((t.frequency || 'daily') === 'daily') t.done = false;
+      return true;
+    });
+  });
   return true;
 }
 
@@ -269,7 +275,7 @@ async function save() { return await persistFamily(); }
 
 function taskRow(t, i, small) {
   const sz = small ? 22 : 26;
-  const freqLabel = { daily: '🎯', weekly: '📅', monthly: '🗓️' }[t.frequency || 'daily'];
+  const freqLabel = { unique: '🎯', daily: '📅', weekly: '📆', monthly: '🗓️' }[t.frequency || 'daily'];
   return `
   <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px${t.done ? ';opacity:0.6' : ''}">
     ${small ? '' : `<div class="task-icon">${t.icon || '⭐'}</div>`}
@@ -302,7 +308,7 @@ function screenAccueil() {
     </div>
   </div>
   ${(() => {
-    const daily = c.tasks.filter(t => t.daily);
+    const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
     if (!daily.length) return '';
     const doneN = daily.filter(t => t.done).length;
     const got = c.dailyBonusDay === state.day;
@@ -329,6 +335,7 @@ function screenAccueil() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="propose-task-xp" type="number" min="1" placeholder="Ex : 25"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="propose-task-gold" type="number" min="0" placeholder="Ex : 15"></div>
       </div>
+      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="propose-task-frequency"><option value="unique">🎯 Tâche unique</option><option value="daily" selected>📅 Quotidienne</option><option value="weekly">📆 Hebdomadaire</option><option value="monthly">🗓️ Mensuelle</option></select></div>
       <button class="btn btn-primary btn-block" data-action="propose-task">Proposer</button>
     </div>
   </div>`;
@@ -480,7 +487,7 @@ function screenTaches() {
       const realIdx = (state.taskRequests || []).findIndex(r => r === req);
       const task = child().tasks[req.taskIndex];
       const freq = task?.frequency || 'daily';
-      const freqLabel = { daily: '🎯', weekly: '📅', monthly: '🗓️' }[freq];
+      const freqLabel = { unique: '🎯', daily: '📅', weekly: '📆', monthly: '🗓️' }[freq];
       const date = new Date(req.submittedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
       return `
     <div class="card elev-sm" style="gap:8px;margin-bottom:10px">
@@ -508,7 +515,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="new-task-xp" type="number" min="1" placeholder="Ex : 20"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="new-task-gold" type="number" min="0" placeholder="Ex : 10"></div>
       </div>
-      <div style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="daily">Quotidienne 🎯</option><option value="weekly">Hebdomadaire 📅</option><option value="monthly">Mensuelle 🗓️</option></select></div>
+      <div style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-primary btn-block" data-action="add-task">Ajouter la quête</button>
     </div>
 
@@ -517,7 +524,7 @@ function screenTaches() {
     <div class="card elev-sm" style="gap:8px">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:20px">${t.icon || '⭐'}</span>
-        <div style="flex:1"><div class="card-title" style="font-size:14px">${esc(t.name)}</div>${loot(t.xp, t.gold)}${t.daily ? ' <span class="tag tag-neutral">🎯</span>' : ''}</div>
+        <div style="flex:1"><div class="card-title" style="font-size:14px">${esc(t.name)}</div>${loot(t.xp, t.gold)}${ { unique: '🎯', daily: '📅', weekly: '📆', monthly: '🗓️' }[t.frequency] ? ` <span class="tag tag-neutral">${ { unique: '🎯', daily: '📅', weekly: '📆', monthly: '🗓️' }[t.frequency]}</span>` : ''}</div>
         <button class="btn btn-icon btn-ghost" data-action="del-quest-def" data-i="${i}" aria-label="Supprimer le modèle">✕</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -532,7 +539,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="qd-xp" type="number" min="1" placeholder="Ex : 15"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="qd-gold" type="number" min="0" placeholder="Ex : 7"></div>
       </div>
-      <div style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="daily">Quotidienne 🎯</option><option value="weekly">Hebdomadaire 📅</option><option value="monthly">Mensuelle 🗓️</option></select></div>
+      <div style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-secondary btn-block" data-action="add-quest-def">Enregistrer le modèle</button>
     </div>
   </div>`;
@@ -1266,13 +1273,14 @@ const ACTIONS = {
     save(); render();
   },
   'propose-task': () => {
-    const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10);
+    const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10), frequency = val('propose-task-frequency') || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
     state.proposals = state.proposals || [];
-    state.proposals.push({ icon: '⭐', name, xp, gold, child: child().name, status: 'pending', proposedAt: Date.now() });
+    state.proposals.push({ icon: '⭐', name, xp, gold, frequency, child: child().name, status: 'pending', proposedAt: Date.now() });
     document.getElementById('propose-task-name').value = '';
     document.getElementById('propose-task-xp').value = '';
     document.getElementById('propose-task-gold').value = '';
+    document.getElementById('propose-task-frequency').value = 'daily';
     save(); render();
   },
   'save-grades': () => {
@@ -1536,7 +1544,7 @@ function celebrate(text) {
 function maybeAwardDailyBonus() {
   const c = state && state.children[state.activeChild];
   if (!c) return;
-  const daily = c.tasks.filter(t => t.daily);
+  const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
   if (daily.length && daily.every(t => t.done) && c.dailyBonusDay !== state.day) {
     c.dailyBonusDay = state.day;
     c.xp += state.dailyBonus.xp;
