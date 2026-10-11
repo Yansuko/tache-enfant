@@ -564,8 +564,28 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'getTaskStats': {
       const { childId, period = 'week' } = body;
       if (!childId) return err(400, 'childId requis.');
-      const idx = (await store.get('child-id-index')) || {};
-      const familyId = idx[childId];
+      let idx = (await store.get('child-id-index')) || {};
+      let familyId = idx[childId];
+
+      // If not in index, build index from existing families (first access after migration)
+      if (!familyId && store.list) {
+        const keys = await store.list();
+        for (const key of keys) {
+          if (key.startsWith('family:')) {
+            const fam = await store.get(key);
+            if (fam && fam.children) {
+              for (const child of fam.children) {
+                if (child.id) {
+                  idx[child.id] = fam.id;
+                }
+              }
+            }
+          }
+        }
+        await store.set('child-id-index', idx);
+        familyId = idx[childId];
+      }
+
       if (!familyId) return err(404, 'Enfant non trouvé.');
       const family = await store.get('family:' + familyId);
       if (!family) return err(404, 'Famille non trouvée.');
