@@ -591,45 +591,52 @@ export async function handleApi({ action, token, body = {} }, store) {
       if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
         return err(403, 'Clé admin invalide.');
       }
-      // Collect all families and accounts from store
       const families = [];
       const accounts = [];
       let totalChildren = 0;
       let totalTasksCompleted = 0;
 
-      // Get all keys from store and scan for families and accounts
-      // ponytail: scanning store keys - could optimize with metadata index if needed
-      const storeKeys = [];
-      const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+      let metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
 
-      if (metadata.familyIds?.length > 0) {
-        // Use metadata if available
-        for (const famId of metadata.familyIds) {
-          const fam = await store.get('family:' + famId);
-          if (fam) {
-            totalChildren += fam.children?.length || 0;
-            let familyTasks = 0;
-            for (const child of fam.children || []) {
-              const childStats = aggregateTaskStats(child, 'year');
-              familyTasks += childStats.tasksCount || 0;
-            }
-            totalTasksCompleted += familyTasks;
-            families.push({
-              name: fam.name,
-              owner: fam.owner,
-              children: fam.children?.length || 0,
-              tasksCompleted: familyTasks
-            });
-          }
+      // If metadata empty, scan store to populate it (first access after migration)
+      if ((!metadata.familyIds || metadata.familyIds.length === 0) && store.list) {
+        const keys = await store.list();
+        const scannedFamilyIds = [];
+        const scannedEmails = [];
+        for (const key of keys) {
+          if (key.startsWith('family:')) scannedFamilyIds.push(key.slice(7));
+          if (key.startsWith('account:')) scannedEmails.push(key.slice(8));
+        }
+        if (scannedFamilyIds.length > 0 || scannedEmails.length > 0) {
+          metadata = { familyIds: scannedFamilyIds, accountEmails: scannedEmails };
+          await store.set('_admin_metadata', metadata);
         }
       }
 
-      if (metadata.accountEmails?.length > 0) {
-        // Use metadata if available
-        for (const email of metadata.accountEmails) {
-          const acc = await store.get('account:' + email);
-          if (acc) accounts.push({ email: acc.email, name: acc.name });
+      // Load families
+      for (const famId of metadata.familyIds || []) {
+        const fam = await store.get('family:' + famId);
+        if (fam) {
+          totalChildren += fam.children?.length || 0;
+          let familyTasks = 0;
+          for (const child of fam.children || []) {
+            const childStats = aggregateTaskStats(child, 'year');
+            familyTasks += childStats.tasksCount || 0;
+          }
+          totalTasksCompleted += familyTasks;
+          families.push({
+            name: fam.name,
+            owner: fam.owner,
+            children: fam.children?.length || 0,
+            tasksCompleted: familyTasks
+          });
         }
+      }
+
+      // Load accounts
+      for (const email of metadata.accountEmails || []) {
+        const acc = await store.get('account:' + email);
+        if (acc) accounts.push({ email: acc.email, name: acc.name });
       }
 
       return {

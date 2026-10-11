@@ -4,13 +4,23 @@ import { handleApi, setEmailSender } from './_core.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-// adapte Netlify Blobs à l'interface { get, set, del } attendue par le cœur
+// adapte Netlify Blobs à l'interface { get, set, del, list } attendue par le cœur
 function blobStore() {
   const s = getStore('tache-enfant');
   return {
     get: (k) => s.get(k, { type: 'json' }),
     set: (k, v) => s.setJSON(k, v),
     del: (k) => s.delete(k),
+    list: async () => {
+      const keys = [];
+      let cursor = null;
+      do {
+        const batch = await s.list({ cursor });
+        keys.push(...batch.blobs.map(b => b.key));
+        cursor = batch.cursor;
+      } while (cursor);
+      return keys;
+    },
   };
 }
 
