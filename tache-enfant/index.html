@@ -356,12 +356,14 @@ async function persistFamily() {
       }
       // Update server-managed fields from response - MUST include all array fields
       // to prevent stale data (gradeRequests, sanctionsList, proposals, etc.)
+      // CRITICAL: Include children to prevent loss of child data during persistence
       const serverFields = {
         id: res.family.id,
         name: res.family.name,
         owner: res.family.owner,
         members: res.family.members,
         memberInfo: res.family.memberInfo,
+        children: res.family.children,  // MUST include - don't lose children!
         requests: res.family.requests,
         gradeRequests: res.family.gradeRequests,
         sanctionsList: res.family.sanctionsList,
