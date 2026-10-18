@@ -1,9 +1,13 @@
+// This file is generated at build time from environment variables
+// See build-firebase-config.mjs for details
+// DO NOT EDIT MANUALLY
+
 export const firebaseConfig = {
-  apiKey: "AIzaSyCHKb-XW9C_fZjjIz7tyIR0LL0WzZdNjVg",
-  authDomain: "dailykidsquest-20c85.firebaseapp.com",
-  databaseURL: "https://dailykidsquest-20c85-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "dailykidsquest-20c85",
-  storageBucket: "dailykidsquest-20c85.firebasestorage.app",
-  messagingSenderId: "505406678744",
-  appId: "1:505406678744:web:7d6190678aef2cda2999ad"
+  apiKey: "GENERATED_AT_BUILD_TIME",
+  authDomain: "GENERATED_AT_BUILD_TIME",
+  databaseURL: "GENERATED_AT_BUILD_TIME",
+  projectId: "GENERATED_AT_BUILD_TIME",
+  storageBucket: "GENERATED_AT_BUILD_TIME",
+  messagingSenderId: "GENERATED_AT_BUILD_TIME",
+  appId: "GENERATED_AT_BUILD_TIME"
 };

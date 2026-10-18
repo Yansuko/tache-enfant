@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node dev-server.mjs",
+    "build:config": "node build-firebase-config.mjs",
     "test": "node test-backend.mjs",
     "test:extended": "node test-extended.mjs",
     "test:actions": "node test-all-actions.mjs",
