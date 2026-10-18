@@ -1,6 +1,22 @@
 import admin from 'firebase-admin';
-import { BlobsStorage } from '@netlify/blobs';
+import { getStore } from '@netlify/blobs';
 import { writeFileSync } from 'fs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Load .env file
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split('\n').forEach(line => {
+    const [key, value] = line.split('=');
+    if (key && !key.startsWith('#') && value) {
+      process.env[key.trim()] = value.trim();
+    }
+  });
+}
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
@@ -10,7 +26,10 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-const store = new BlobsStorage({ token: process.env.NETLIFY_BLOBS_TOKEN });
+const store = getStore('migration', {
+  token: process.env.NETLIFY_BLOBS_TOKEN,
+  siteID: process.env.NETLIFY_SITE_ID
+});
 
 async function migrate() {
   const report = {
