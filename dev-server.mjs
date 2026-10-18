@@ -1,11 +1,10 @@
 // Serveur de dev local — sert les fichiers statiques de tache-enfant/ et l'API /api,
-// avec un store persistant sur fichier (.data/store.json). Zéro dépendance.
-// Reproduit le contrat de la fonction Netlify (même cœur _core.mjs), pour développer
-// sans `netlify dev`. En prod c'est netlify/functions/api.mjs (Blobs) qui répond.
+// utilise Firebase Realtime Database comme store. Reproduit netlify/functions/api.mjs.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import admin from 'firebase-admin';
 import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
 
 // Load .env file if present
@@ -19,80 +18,83 @@ try {
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.join(DIR, 'tache-enfant');
-const DATA = path.join(DIR, '.data', 'store.json');
 const PORT = process.env.PORT || 8123;
 
-// store fichier : une map { key: value } chargée en mémoire, réécrite à chaque set/del
-fs.mkdirSync(path.dirname(DATA), { recursive: true });
-let mem = {};
-const loadMem = () => {
+// Initialize Firebase
+let db = null;
+function initFirebase() {
+  if (db) return;
   try {
-    mem = JSON.parse(fs.readFileSync(DATA, 'utf8'));
-  } catch {
-    mem = {};
-  }
-};
-loadMem();
-// Initialize admin metadata if not present (scan existing families/accounts)
-if (!mem._admin_metadata) {
-  const familyIds = [];
-  const accountEmails = [];
-  for (const key in mem) {
-    if (key.startsWith('family:')) familyIds.push(key.slice(7));
-    if (key.startsWith('account:')) accountEmails.push(key.slice(8));
-  }
-  if (familyIds.length > 0 || accountEmails.length > 0) {
-    mem._admin_metadata = { familyIds, accountEmails };
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    if (!serviceAccount.project_id) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+    db = admin.database();
+    console.log('[FIREBASE] Initialized for dev server');
+  } catch (e) {
+    console.error('[FIREBASE-INIT] Error:', e.message);
+    throw e;
   }
 }
-const flush = () => {
-  const data = JSON.stringify(mem);
-  fs.writeFileSync(DATA, data);
-  // After writing, reload to ensure mem is always synced with disk
-  loadMem();
-  // Verify reload succeeded
-  const reloadedData = JSON.stringify(mem);
-  if (data !== reloadedData) {
-    console.log('[FLUSH-DESYNC] Data mismatch after reload!');
-    console.log('[FLUSH-DESYNC] Before:', data.substring(0, 200));
-    console.log('[FLUSH-DESYNC] After:', reloadedData.substring(0, 200));
-  }
-};
+
+// Firebase store - same interface as netlify/functions/api.mjs
 const store = {
   get: async (k) => {
-    const result = k in mem ? structuredClone(mem[k]) : null;
-    if (k.startsWith('family:')) {
-      const lucas = result?.children?.find(c => c.name === 'Lucas');
-      const done = lucas?.tasks?.[0]?.done;
-      console.log(`[STORE.GET] ${k} - Lucas first task done=${done}:`, JSON.stringify(lucas?.tasks?.[0]));
-    }
-    return result;
+    initFirebase();
+    let path = '';
+    if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
+    else if (k.startsWith('account:')) path = `users/email-${k.replace(/[^a-z0-9]/gi, '_')}`;
+    else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
+    else path = `_other/${k}`;
+
+    const snap = await db.ref(path).once('value');
+    return snap.val();
   },
+
   set: async (k, v) => {
-    const setId = Math.random().toString(36).substring(7);
-    const setTime = new Date().toISOString();
-    if (k.startsWith('family:')) {
-      const lukas_input = v?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET-INPUT-${setId}] ${setTime} ${k} - Input Lucas done=${lukas_input?.tasks?.[0]?.done}:`, JSON.stringify(lukas_input?.tasks?.[0]));
-      if (lukas_input?.tasks?.[0]?.done === false) {
-        // Show stack trace for the mystery done=false calls
-        console.log(`[STORE.SET-STACK-${setId}] Stack:`, new Error().stack?.split('\n').slice(1,6).join(' | '));
-      }
-    }
-    mem[k] = structuredClone(v);
-    if (k.startsWith('family:')) {
-      const lucas_mem = mem[k]?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET-MEM-${setId}] ${setTime} After clone, Lucas done=${lucas_mem?.tasks?.[0]?.done}:`, JSON.stringify(lucas_mem?.tasks?.[0]));
-    }
-    // IMPORTANT: flush() is synchronous, which is good for immediate consistency
-    // But loadMem() reads from disk, creating a race if reads happen concurrently
-    flush();
-    if (k.startsWith('family:')) {
-      const lucas_mem_after = mem[k]?.children?.find(c => c.name === 'Lucas');
-      console.log(`[STORE.SET-FINAL-${setId}] ${setTime} Final mem Lucas done=${lucas_mem_after?.tasks?.[0]?.done}:`, JSON.stringify(lucas_mem_after?.tasks?.[0]));
-    }
+    initFirebase();
+    let path = '';
+    if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
+    else if (k.startsWith('account:')) path = `users/email-${k.replace(/[^a-z0-9]/gi, '_')}`;
+    else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
+    else path = `_other/${k}`;
+
+    await db.ref(path).set(v);
   },
-  del: async (k) => { delete mem[k]; flush(); },
+
+  del: async (k) => {
+    initFirebase();
+    let path = '';
+    if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
+    else if (k.startsWith('account:')) path = `users/email-${k.replace(/[^a-z0-9]/gi, '_')}`;
+    else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
+    else path = `_other/${k}`;
+
+    await db.ref(path).remove();
+  },
+
+  list: async () => {
+    initFirebase();
+    const keys = [];
+
+    // List all families
+    const famsSnap = await db.ref('families').once('value');
+    const families = famsSnap.val() || {};
+    Object.keys(families).forEach(id => keys.push(`family:${id}`));
+
+    // List users
+    const usersSnap = await db.ref('users').once('value');
+    const users = usersSnap.val() || {};
+    Object.values(users).forEach(u => {
+      if (u.email) keys.push(`account:${u.email}`);
+    });
+
+    return keys;
+  }
 };
 
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
