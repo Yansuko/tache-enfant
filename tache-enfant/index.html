@@ -107,41 +107,50 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script type="module">
-import { initializeApp } from '/node_modules/firebase/app/dist/esm/index.esm.js';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from '/node_modules/firebase/auth/dist/esm/index.esm.js';
-import { firebaseConfig } from '../firebase-config.js';
-
-// Initialize Firebase at app startup
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-
-// Make auth functions available globally for the rest of the app
-window.firebaseAuth = auth;
-window.firebaseOnAuthStateChanged = onAuthStateChanged;
-window.firebaseSignIn = signInWithEmailAndPassword;
-window.firebaseSignUp = createUserWithEmailAndPassword;
-window.firebaseSignOut = signOut;
-window.getFirebaseIdToken = async (user) => {
-  if (user) return await user.getIdToken();
-  return null;
-};
-
-// Set up auth state listener for token management
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    // Auto-update token when user changes
-    const idToken = await user.getIdToken();
-    window.firebaseToken = idToken;
-    localStorage.setItem('te-firebase-user-uid', user.uid);
-  } else {
-    window.firebaseToken = null;
-    localStorage.removeItem('te-firebase-user-uid');
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="/firebase-config.js"></script>
+<script>
+// Wait for Firebase to be defined, then initialize
+function initFirebase() {
+  if (typeof firebase === 'undefined' || !window.firebaseConfig) {
+    setTimeout(initFirebase, 50);
+    return;
   }
-});
 
-// Signal that Firebase is ready
-window.firebaseReady = true;
+  // Initialize Firebase at app startup
+  const app = firebase.initializeApp(window.firebaseConfig);
+  const auth = firebase.auth();
+
+  // Make auth functions available globally for the rest of the app
+  window.firebaseAuth = auth;
+  window.firebaseOnAuthStateChanged = (cb) => auth.onAuthStateChanged(cb);
+  window.firebaseSignIn = (_auth, email, pass) => auth.signInWithEmailAndPassword(email, pass);
+  window.firebaseSignUp = (_auth, email, pass) => auth.createUserWithEmailAndPassword(email, pass);
+  window.firebaseSignOut = () => auth.signOut();
+  window.getFirebaseIdToken = async (user) => {
+    if (user) return await user.getIdToken();
+    return null;
+  };
+
+  // Set up auth state listener for token management
+  auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      // Auto-update token when user changes
+      const idToken = await user.getIdToken();
+      window.firebaseToken = idToken;
+      localStorage.setItem('te-firebase-user-uid', user.uid);
+    } else {
+      window.firebaseToken = null;
+      localStorage.removeItem('te-firebase-user-uid');
+    }
+  });
+
+  // Signal that Firebase is ready
+  window.firebaseReady = true;
+}
+initFirebase();
 </script>
 </head>
 <body>
@@ -236,6 +245,7 @@ function setActiveFamily(i) {
   activeFamily = Math.max(0, Math.min(i, families.length - 1));
   state = families[activeFamily] || null;
   if (state) {
+    normalizeFamilyData(state);
     state.role ??= 'enfant'; state.tab ??= 'accueil'; state.activeChild ??= 0;
     // Generate missing child IDs (for children created before ID generation was implemented)
     let needsSave = false;
@@ -248,12 +258,44 @@ function setActiveFamily(i) {
     if (rolloverDay(state, today()) || needsSave) save();
   }
 }
+// Normaliser la structure de la famille (assurer que children et tasks sont des arrays)
+function normalizeFamilyData(f) {
+  if (!f) return f;
+  // Convert all OBJECT-stored arrays to actual arrays
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'proposals'];
+  for (const field of arrayFields) {
+    if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
+      const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
+      f[field] = arr;
+    }
+    if (!f[field] || !Array.isArray(f[field])) f[field] = [];
+  }
+  // Assurer que chaque enfant a un array de tasks
+  if (f.children && Array.isArray(f.children)) {
+    for (const child of f.children) {
+      if (child && typeof child === 'object') {
+        if (child.tasks && typeof child.tasks === 'object' && !Array.isArray(child.tasks)) {
+          child.tasks = Object.values(child.tasks).filter(v => v !== null && v !== undefined);
+        }
+        if (!child.tasks || !Array.isArray(child.tasks)) child.tasks = [];
+      }
+    }
+  }
+  return f;
+}
+
 // reset des quêtes quotidiennes au chargement d'un nouveau jour (persisté)
 function rolloverDay(f, day) {
+  normalizeFamilyData(f);
   if (f.day === day) return false;
   f.day = day;
   f.children.forEach(c => {
-    c.tasks = c.tasks.filter(t => {
+    if (!c.tasks) c.tasks = [];
+    // Ensure tasks is an array
+    if (c.tasks && typeof c.tasks === 'object' && !Array.isArray(c.tasks)) {
+      c.tasks = Object.values(c.tasks).filter(v => v != null);
+    }
+    c.tasks = (c.tasks || []).filter(t => {
       if ((t.frequency || 'daily') === 'unique' && t.done) return false;
       if ((t.frequency || 'daily') === 'daily') t.done = false;
       return true;
@@ -277,37 +319,38 @@ async function persistFamily() {
     dirty = false;
     try {
       const payload = { family: stripUi(state) };
+      normalizeFamilyData(payload.family);
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
       console.log(`[PERSIST-TOKEN-${persistId}] Token present:`, !!token);
       const res = await api('saveFamily', payload);
-      if (res.family) {
-        console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
-        // Merge backend response with local state, preserving approved tasks (done=true with completedAt)
-        for (let i = 0; i < (res.family.children || []).length; i++) {
-          if (state.children && state.children[i]) {
-            const remoteChild = res.family.children[i];
-            const localChild = state.children[i];
-            for (let j = 0; j < (remoteChild.tasks || []).length; j++) {
-              // Preserve local approved tasks even if server returns them as unapproved
-              // Only accept server version if task is NOT approved locally (done=false or no completedAt)
-              if (!localChild.tasks[j].done || !localChild.tasks[j].completedAt) {
-                localChild.tasks[j] = remoteChild.tasks[j];
-              } else {
-                // Task is approved locally (done=true with completedAt): ensure it stays approved
-                // even if server sent back an old version without approval
-                localChild.tasks[j] = { ...remoteChild.tasks[j], done: true, completedAt: localChild.tasks[j].completedAt };
-              }
+      if (!res.family) throw new Error('saveFamily returned no family: ' + JSON.stringify(res));
+      normalizeFamilyData(res.family);
+      console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
+      // Merge backend response with local state, preserving approved tasks (done=true with completedAt)
+      for (let i = 0; i < (res.family.children || []).length; i++) {
+        if (state.children && state.children[i]) {
+          const remoteChild = res.family.children[i];
+          const localChild = state.children[i];
+          for (let j = 0; j < (remoteChild.tasks || []).length; j++) {
+            // Preserve local approved tasks even if server returns them as unapproved
+            // Only accept server version if task is NOT approved locally (done=false or no completedAt)
+            if (!localChild.tasks[j].done || !localChild.tasks[j].completedAt) {
+              localChild.tasks[j] = remoteChild.tasks[j];
+            } else {
+              // Task is approved locally (done=true with completedAt): ensure it stays approved
+              // even if server sent back an old version without approval
+              localChild.tasks[j] = { ...remoteChild.tasks[j], done: true, completedAt: localChild.tasks[j].completedAt };
             }
           }
         }
-        // Update only server-managed fields
-        Object.assign(state, { id: res.family.id, owner: res.family.owner, members: res.family.members, memberInfo: res.family.memberInfo, requests: res.family.requests });
       }
+      // Update only server-managed fields
+      Object.assign(state, { id: res.family.id, owner: res.family.owner, members: res.family.members, memberInfo: res.family.memberInfo, requests: res.family.requests });
       console.log(`[SAVE] Success`);
       toast(false);
     }
-    catch (e) { console.log(`[SAVE] Error:`, e); toast(true); break; }
+    catch (e) { console.error(`[SAVE] Error:`, e.message || String(e), e); toast(true); break; }
   }
   saving = false;
   localStorage.setItem('statsChildIndex', statsChildIndex);
@@ -388,8 +431,14 @@ function screenAccueil() {
 
 function screenNotes() {
   const c = child();
-  const pending = (state.gradeRequests || []).filter(r => r.child === c.name && r.status === 'pending');
-  const approved = (state.gradeRequests || []).filter(r => r.child === c.name && r.status === 'approved');
+  // Defensive: ensure gradeRequests is an array
+  let grades = state.gradeRequests;
+  if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
+    grades = Object.values(grades).filter(v => v != null);
+  }
+  grades = grades || [];
+  const pending = grades.filter(r => r && r.child === c.name && r.status === 'pending');
+  const approved = grades.filter(r => r && r.child === c.name && r.status === 'approved');
 
   return `
   <div style="padding:22px 20px 4px">
@@ -451,9 +500,16 @@ function screenNotes() {
 function screenRecompenses() {
   const c = child();
   const lv = level(c.xp);
+  // Defensive: ensure requests is an array
+  let requests = state.requests;
+  if (requests && typeof requests === 'object' && !Array.isArray(requests)) {
+    requests = Object.values(requests).filter(v => v != null);
+    state.requests = requests;
+  }
+  requests = requests || [];
   const next = nextReward(c.gold, state.rewards.filter(r => r.lvl <= lv));
   const pct = next ? Math.min(100, Math.round(c.gold / next.cost * 100)) : 100;
-  const hist = state.requests.filter(r => r.child === c.name);
+  const hist = requests.filter(r => r.child === c.name);
   const statusTag = { approved: '<span class="tag tag-accent-2">Achetée ✅</span>', pending: '<span class="tag tag-neutral">En attente</span>', refused: '<span class="tag tag-accent">Refusée</span>' };
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:24px">Boutique 🛒</h2></div>
@@ -470,7 +526,7 @@ function screenRecompenses() {
     ${state.rewards.map((r, i) => {
       const locked = r.lvl > lv;
       const manque = r.cost - c.gold;
-      const pending = state.requests.some(q => q.child === c.name && q.name === r.name && q.status === 'pending');
+      const pending = requests.some(q => q.child === c.name && q.name === r.name && q.status === 'pending');
       return `
       <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px${locked || manque > 0 ? ';opacity:0.55' : ''}">
         <div style="font-size:24px">${locked ? '🔒' : r.icon}</div>
@@ -591,11 +647,18 @@ function screenTaches() {
 }
 
 function screenSanctions() {
-  const pending = state.requests.filter(r => r.status === 'pending');
+  // Defensive: ensure requests is an array
+  let requests = state.requests;
+  if (requests && typeof requests === 'object' && !Array.isArray(requests)) {
+    requests = Object.values(requests).filter(v => v != null);
+  }
+  requests = requests || [];
+
+  const pending = requests.filter(r => r && r.status === 'pending');
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Boutique &amp; sanctions</h2></div>
   ${pending.map(r => {
-    const qi = state.requests.indexOf(r);
+    const qi = requests.indexOf(r);
     return `
     <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-accent-100);display:flex;align-items:center;gap:10px">
       <span style="font-size:18px">🛒</span>
@@ -659,8 +722,15 @@ function screenSanctions() {
 }
 
 function screenGrades() {
-  const pending = (state.gradeRequests || []).filter(r => r.status === 'pending');
-  const approved = (state.gradeRequests || []).filter(r => r.status === 'approved');
+  // Defensive: ensure gradeRequests is an array
+  let grades = state.gradeRequests;
+  if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
+    grades = Object.values(grades).filter(v => v != null);
+  }
+  grades = grades || [];
+
+  const pending = grades.filter(r => r && r.status === 'pending');
+  const approved = grades.filter(r => r && r.status === 'approved');
 
   return `
   <div style="padding:22px 20px 4px">
@@ -778,6 +848,15 @@ function screenFamille() {
       <button class="btn btn-primary btn-block" data-action="invite-adult">Inviter</button>
       <p class="text-muted" style="font-size:11px;margin:0">S'il n'a pas encore de compte, il en crée un avec cet email et rejoint automatiquement la famille.</p>
     </div>` : '<p class="text-muted" style="font-size:12px">Seul le propriétaire peut inviter ou retirer des adultes.</p>'}
+  </div>
+  <div style="padding:18px 20px 4px" class="kicker">Sécurité</div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+    <div class="card elev-sm" style="gap:8px">
+      <div class="card-title" style="font-size:14px">Changer mon mot de passe</div>
+      <div class="field" style="margin:0"><label>Nouveau mot de passe</label><input class="input" id="change-password-new" type="password" placeholder="••••••"></div>
+      <div class="field" style="margin:0"><label>Confirmer le mot de passe</label><input class="input" id="change-password-confirm" type="password" placeholder="••••••"></div>
+      <button class="btn btn-primary btn-block" data-action="change-password">Mettre à jour</button>
+    </div>
   </div>
   <div style="padding:20px 20px 28px"><button class="btn btn-secondary btn-block" data-action="logout">Se déconnecter</button></div>`;
 }
@@ -1086,6 +1165,8 @@ function setNav(html) {
 }
 
 function render() {
+  // Always normalize state before rendering to ensure all arrays are properly formatted
+  if (state) normalizeFamilyData(state);
   const role = state ? state.role : 'enfant';
   document.querySelector('.topbar > span').textContent =
     (state && role === 'parent' && me && parentUnlocked) ? '👪 ' + state.name : 'DailyKids Quest IV';
@@ -1127,10 +1208,13 @@ function render() {
     document.getElementById('main').innerHTML = screenStats();
     setNav(TABS[state.role].map(([id, ico, label]) =>
       `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
+    const childId = state.children[statsChildIndex]?.id;
+    console.log('[SCREEN-STATS] Calling getTaskStats - childId:', childId, 'period:', statsPeriod, 'children:', state.children?.map(c => ({ name: c.name, id: c.id })));
     api('getTaskStats', {
-      childId: state.children[statsChildIndex]?.id,
+      childId,
       period: statsPeriod
     }).then(r => {
+      console.log('[SCREEN-STATS] Response:', r);
       statsData = r;
       document.getElementById('main').innerHTML = screenStats();
       renderStatsCharts();
@@ -1201,7 +1285,7 @@ function replaceFamily(f) {
 }
 function onAuthed(r) {
   token = r.token; localStorage.setItem(TOKEN_KEY, token);
-  me = r.me; families = r.families || []; parentUnlocked = true; authMsg = '';
+  me = r.me; families = (r.families || []).map(f => { normalizeFamilyData(f); return f; }); parentUnlocked = true; authMsg = '';
   if (families.length) { setActiveFamily(0); state.role = 'parent'; }
 }
 
@@ -1404,7 +1488,14 @@ const ACTIONS = {
   'refuse-proposal': el => { state.proposals[+el.dataset.i].status = 'refused'; },
   'approve-grade': async el => {
     const i = +el.dataset.i;
-    const pending = (state.gradeRequests || []).filter(r => r.status === 'pending');
+    // Defensive: ensure gradeRequests is an array
+    let grades = state.gradeRequests;
+    if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
+      grades = Object.values(grades).filter(v => v != null);
+      state.gradeRequests = grades;
+    }
+    grades = grades || [];
+    const pending = grades.filter(r => r.status === 'pending');
     if (i < pending.length) {
       const gi = state.gradeRequests.indexOf(pending[i]);
       const newGold = parseInt(document.getElementById(`grade-gold-${i}`).value, 10) || 0;
@@ -1419,7 +1510,14 @@ const ACTIONS = {
   },
   'refuse-grade': el => {
     const i = +el.dataset.i;
-    const pending = (state.gradeRequests || []).filter(r => r.status === 'pending');
+    // Defensive: ensure gradeRequests is an array
+    let grades = state.gradeRequests;
+    if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
+      grades = Object.values(grades).filter(v => v != null);
+      state.gradeRequests = grades;
+    }
+    grades = grades || [];
+    const pending = grades.filter(r => r.status === 'pending');
     if (i < pending.length) {
       const gi = state.gradeRequests.indexOf(pending[i]);
       state.gradeRequests[gi].status = 'refused';
@@ -1439,9 +1537,18 @@ const ACTIONS = {
     const c = state.children[+el.dataset.i];
     if (!confirm(`Supprimer ${c.name} et toutes ses données ?`)) return;
     state.children.splice(+el.dataset.i, 1);
-    state.requests = state.requests.filter(r => r.child !== c.name);
+    // Defensive: ensure arrays before filtering
+    let requests = state.requests;
+    if (requests && typeof requests === 'object' && !Array.isArray(requests)) {
+      requests = Object.values(requests).filter(v => v != null);
+    }
+    state.requests = (requests || []).filter(r => r.child !== c.name);
+    let grades = state.gradeRequests;
+    if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
+      grades = Object.values(grades).filter(v => v != null);
+    }
+    state.gradeRequests = (grades || []).filter(r => r.child !== c.name);
     state.proposals = state.proposals.filter(p => p.child !== c.name);
-    state.gradeRequests = (state.gradeRequests || []).filter(r => r.child !== c.name);
     unlocked.delete(c.name);
   },
   'reset-child-pin': el => {
@@ -1462,7 +1569,7 @@ const ACTIONS = {
     const r = await api('unlockChildDirect', { familyName: famname, childName: name, pin });
     if (!r || !r.families || !r.families.length) { authMsg = 'Famille ou enfant introuvable, ou PIN incorrect.'; return; }
     me = { email: name + '@enfant.local', name };
-    families = r.families;
+    families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
     state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
     // Find the correct child by name and set activeChild to their index
     state.activeChild = state.children.findIndex(c => c.name === name);
@@ -1522,10 +1629,11 @@ const ACTIONS = {
       window.firebaseToken = idToken;
 
       // Call backend to get user data (verify token + fetch user/families)
-      const r = await api('me');
+      // Pass email so backend can create user if needed
+      const r = await api('me', { email });
       onAuthed({ ...r, token: idToken });
     } catch (error) {
-      authMsg = 'Erreur: ' + error.message;
+      authMsg = typeof error === 'string' ? 'Erreur: ' + error : 'Erreur: ' + (error?.message || String(error));
     }
   },
   signup: async () => {
@@ -1541,12 +1649,12 @@ const ACTIONS = {
       const r = await api('signup', { name, email, familyName });
       onAuthed({ ...r, token: idToken });
     } catch (error) {
-      authMsg = 'Erreur: ' + error.message;
+      authMsg = typeof error === 'string' ? 'Erreur: ' + error : 'Erreur: ' + (error?.message || String(error));
     }
   },
   unlockParent: async () => {
     const password = document.getElementById('pu-pass').value;
-    const r = await api('verifyPassword', { password });
+    const r = await api('verifyPassword', { password, firebaseToken: window.firebaseToken });
     if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
   },
   'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
@@ -1597,8 +1705,30 @@ const ACTIONS = {
     const r = await api('removeAdult', { familyId: state.id, email });
     replaceFamily(r.family);
   },
+  'change-password': async () => {
+    const newPass = val('change-password-new');
+    const confirmPass = val('change-password-confirm');
+    if (!newPass || !confirmPass) { authMsg = 'Tous les champs requis.'; render(); return; }
+    if (newPass !== confirmPass) { authMsg = 'Les mots de passe ne correspondent pas.'; render(); return; }
+    if (newPass.length < 6) { authMsg = 'Le mot de passe doit faire au moins 6 caractères.'; render(); return; }
+    try {
+      const r = await api('changePassword', { newPassword: newPass });
+      if (r.ok) {
+        authMsg = 'Mot de passe mis à jour avec succès!';
+        document.getElementById('change-password-new').value = '';
+        document.getElementById('change-password-confirm').value = '';
+        setTimeout(() => { authMsg = ''; render(); }, 2000);
+      } else {
+        authMsg = 'Erreur: ' + (r.error || 'Impossible de mettre à jour le mot de passe');
+      }
+      render();
+    } catch (e) {
+      authMsg = 'Erreur: ' + (typeof e === 'string' ? e : e?.message || String(e));
+      render();
+    }
+  },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -1700,9 +1830,14 @@ console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, 
 
 /* boot : restaure la session via Firebase onAuthStateChanged */
 async function boot() {
+  // Wait for Firebase to be initialized
+  while (!window.firebaseReady) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+
   // Wait for Firebase auth state to be ready
   await new Promise((resolve) => {
-    const unsubscribe = window.firebaseOnAuthStateChanged(window.firebaseAuth, async (user) => {
+    const unsubscribe = window.firebaseOnAuthStateChanged(async (user) => {
       unsubscribe(); // Unsubscribe from initial check
 
       if (user) {
@@ -1732,10 +1867,11 @@ async function boot() {
       // Load new families from backend
       const oldFamilies = families;
       const savedState = state ? JSON.parse(JSON.stringify(state)) : null;
-      families = r.families || [];
+      families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
 
       // Restore ALL previously approved tasks to the new families
       for (const family of families) {
+        normalizeFamilyData(family);
         for (const child of family.children || []) {
           for (let k = 0; k < (child.tasks || []).length; k++) {
             const key = `${child.id}:${child.tasks[k].name}`;

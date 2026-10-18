@@ -43,15 +43,42 @@ async function getSecret(store) {
   return s.key;
 }
 
+// Normalize family data: convert Firebase object-stored arrays to actual arrays
+function normalizeFamilyData(f) {
+  if (!f || typeof f !== 'object') return f;
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList'];
+  for (const field of arrayFields) {
+    if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
+      const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
+      f[field] = arr;
+    }
+    if (!f[field] || !Array.isArray(f[field])) f[field] = [];
+  }
+  // Ensure each child has an array of tasks
+  if (f.children && Array.isArray(f.children)) {
+    for (const child of f.children) {
+      if (child && typeof child === 'object') {
+        if (child.tasks && typeof child.tasks === 'object' && !Array.isArray(child.tasks)) {
+          child.tasks = Object.values(child.tasks).filter(v => v !== null && v !== undefined);
+        }
+        if (!child.tasks || !Array.isArray(child.tasks)) child.tasks = [];
+      }
+    }
+  }
+  return f;
+}
+
 /* ── Firebase authentication ── */
 
 async function verifyFirebaseToken(token) {
   if (!token) return null;
   try {
     const decodedToken = await auth.verifyIdToken(token);
+    console.log('[VERIFY-TOKEN] SUCCESS: uid=', decodedToken.uid);
     return decodedToken.uid;
   } catch (error) {
-    throw new Error(`Invalid token: ${error.message}`);
+    console.error('[VERIFY-TOKEN] FAILED:', error.code, error.message);
+    throw error;
   }
 }
 
@@ -374,8 +401,10 @@ async function resetPassword(store, secret, b) {
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
   const saveTime = new Date().toISOString();
-  const inc = b.family;
+  let inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
+  // Normalize incoming family data
+  normalizeFamilyData(inc);
   const lucas = inc.children?.find(c => c.name === 'Lucas');
   const cur = await store.get('family:' + inc.id);
   if (!cur) return err(404, 'Famille introuvable.');
@@ -501,16 +530,30 @@ async function saveFamily(store, email, b) {
   for (const m of merged.members) { const a = await store.get('account:' + m); merged.memberInfo[m] = a ? a.name : null; }
   return { status: 200, body: { family: merged } };
 }
-async function createFamily(store, email, b) {
+async function createFamily(store, email, b, firebaseUid) {
   const name = (b.name || '').trim();
+  console.log('[CREATE-FAMILY] firebaseUid:', firebaseUid, 'email:', email);
   if (!name) return err(400, 'Nom de la famille requis.');
   const fam = newFamily(name, email);
   fam.createdAt = Date.now();
   await store.set('family:' + fam.id, fam);
   await updateFamilyNameIndex(store, fam.name, fam.id);
-  const acc = await store.get('account:' + email);
-  acc.familyIds.push(fam.id);
-  await store.set('account:' + email, acc);
+
+  // Update user record (Firebase or legacy)
+  if (firebaseUid) {
+    const userRef = db.ref(`users/${firebaseUid}`);
+    const snapshot = await userRef.once('value');
+    const userData = snapshot.val() || { email, familyIds: [], createdAt: Date.now() };
+    if (!userData.familyIds) userData.familyIds = [];
+    userData.familyIds.push(fam.id);
+    await userRef.set(userData);
+  } else {
+    const acc = await store.get('account:' + email);
+    if (acc) {
+      acc.familyIds.push(fam.id);
+      await store.set('account:' + email, acc);
+    }
+  }
   // Update admin metadata
   const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
   if (!metadata.familyIds.includes(fam.id)) metadata.familyIds.push(fam.id);
@@ -628,6 +671,8 @@ async function unlockChildDirect(store, b) {
   for (const fid of famIds) {
     const fam = await store.get('family:' + fid);
     if (!fam) continue;
+    // Normalize family data
+    normalizeFamilyData(fam);
     const child = fam.children.find(c => c.name === childName);
     if (!child || !child.pin || child.pin !== pin) continue;
     return { status: 200, body: { families: [await withNames(store, fam)] } };
@@ -681,6 +726,8 @@ async function approveGrade(store, email, b) {
   const fam = await store.get('family:' + familyId);
   if (!fam) return err(404, 'Famille introuvable.');
   if (!fam.members.includes(email)) return err(403, 'Accès refusé.');
+  // Normalize family data
+  normalizeFamilyData(fam);
   if (!fam.gradeRequests || !fam.gradeRequests[index]) return err(404, 'Note introuvable.');
   const req = fam.gradeRequests[index];
   if (req.status !== 'pending') return err(400, 'Seules les notes en attente peuvent être approuvées.');
@@ -903,9 +950,15 @@ function getDateRange(period, endDate = Date.now()) {
 
 function aggregateTaskStats(child, period = 'week') {
   const { start, end } = getDateRange(period);
+  console.log('[AGGREGATE-STATS] Period:', period, 'Range:', { start: new Date(start).toISOString(), end: new Date(end).toISOString() });
 
   // Ensure tasks array exists and all have completedAt field
-  const rawTasks = child.tasks || [];
+  let rawTasks = child.tasks || [];
+  // Convert tasks object to array if needed (from Firebase)
+  if (rawTasks && typeof rawTasks === 'object' && !Array.isArray(rawTasks)) {
+    rawTasks = Object.values(rawTasks);
+  }
+  console.log('[AGGREGATE-STATS] Total tasks:', rawTasks.length);
 
   const tasks = rawTasks.map(t => ({
     ...t,
@@ -921,8 +974,9 @@ function aggregateTaskStats(child, period = 'week') {
   let bestDay = { date: '', tasksCount: 0, xp: 0, gold: 0 };
 
   for (const task of tasks) {
-    const inRange = task.done === true && task.completedAt && task.completedAt >= start && task.completedAt <= end;
-    if (task.done === true && task.completedAt && task.completedAt >= start && task.completedAt <= end) {
+    // A task is considered completed if it has a completedAt timestamp in range (regardless of done flag)
+    const inRange = task.completedAt && task.completedAt >= start && task.completedAt <= end;
+    if (inRange) {
       const iso = dateToISO(task.completedAt);
 
       // Update global counters
@@ -1022,9 +1076,42 @@ export async function handleApi({ action, token, body = {} }, store) {
   await ensureSeed(store);
   const secret = await getSecret(store);
   let email = null;
+  let firebaseUid = null;
   if (!PUBLIC.has(action)) {
-    email = verifyToken(token, secret);
-    if (!email) return err(401, 'Non authentifié.');
+    console.log('[HANDLEAPI] action:', action, 'token exists:', !!token, 'token length:', token?.length);
+    // Try Firebase token first (Firebase tokens are JWTs)
+    if (token) {
+      try {
+        console.log('[HANDLEAPI] Attempting Firebase token verification...');
+        firebaseUid = await verifyFirebaseToken(token);
+        console.log('[HANDLEAPI] Firebase verification succeeded, uid:', firebaseUid);
+        // If we have a Firebase UID, fetch the email from Firebase (or prepare for user creation)
+        if (firebaseUid) {
+          const userSnapshot = await db.ref(`users/${firebaseUid}`).once('value');
+          if (userSnapshot.exists()) {
+            email = userSnapshot.val().email;
+            console.log('[HANDLEAPI] Found user email:', email);
+          } else {
+            console.log('[HANDLEAPI] User doc not found in Firebase, will be created by me endpoint');
+          }
+        }
+      } catch (e) {
+        console.log('[HANDLEAPI] Firebase verification failed:', e.message);
+        // Not a valid Firebase token or verification failed, fall through to legacy
+      }
+    }
+    // Fall back to legacy secret-based token verification
+    if (!email && !firebaseUid) {
+      console.log('[HANDLEAPI] Attempting legacy token verification...');
+      email = verifyToken(token, secret);
+      if (email) console.log('[HANDLEAPI] Legacy verification succeeded, email:', email);
+    }
+    // Require either email (from legacy auth) or firebaseUid (from Firebase auth)
+    if (!email && !firebaseUid) {
+      console.log('[HANDLEAPI] Authentication failed - no email or firebaseUid');
+      return err(401, 'Non authentifié.');
+    }
+    console.log('[HANDLEAPI] Authentication passed - email:', email, 'firebaseUid:', firebaseUid);
   }
   switch (action) {
     case 'signup': return signup(store, secret, body);
@@ -1033,7 +1120,11 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'unlockChildDirect': return unlockChildDirect(store, body);
     case 'getTaskStats': {
       const { childId, period = 'week' } = body;
-      if (!childId) return err(400, 'childId requis.');
+      console.log('[GET-TASK-STATS] childId:', childId, 'period:', period, 'familyId from me:', firebaseUid);
+      if (!childId) {
+        console.error('[GET-TASK-STATS] No childId provided');
+        return err(400, 'childId requis.');
+      }
       let idx = (await store.get('child-id-index')) || {};
       let familyId = idx[childId];
 
@@ -1044,6 +1135,8 @@ export async function handleApi({ action, token, body = {} }, store) {
           if (key.startsWith('family:')) {
             const fam = await store.get(key);
             if (fam && fam.children) {
+              // Normalize family data
+              normalizeFamilyData(fam);
               for (const child of fam.children) {
                 if (child.id) {
                   idx[child.id] = fam.id;
@@ -1062,23 +1155,41 @@ export async function handleApi({ action, token, body = {} }, store) {
       let child = null;
       let family = null;
       try {
-        const childSnapshot = await db.ref(`families/${familyId}/children/${childId}`).once('value');
-        if (childSnapshot.exists()) {
-          child = childSnapshot.val();
+        const familySnapshot = await db.ref(`families/${familyId}`).once('value');
+        if (familySnapshot.exists()) {
+          family = familySnapshot.val();
+          // Ensure children is always an array
+          if (family.children && typeof family.children === 'object' && !Array.isArray(family.children)) {
+            family.children = Object.values(family.children);
+          }
+          if (family && family.children) {
+            child = family.children.find(c => c.id === childId);
+          }
         }
       } catch (fbErr) {
+        console.error('[GET-TASK-STATS] Firebase read error:', fbErr.message);
       }
 
       // Fall back to store if Firebase unavailable
       if (!child) {
         family = await store.get('family:' + familyId);
         if (!family) return err(404, 'Famille non trouvée.');
+        // Ensure children is always an array
+        if (family.children && typeof family.children === 'object' && !Array.isArray(family.children)) {
+          family.children = Object.values(family.children);
+        }
+        if (!family.children) family.children = [];
         child = family.children.find(c => c.id === childId);
       }
 
-      if (!child) return err(404, 'Enfant non trouvé.');
+      if (!child) {
+        console.error('[GET-TASK-STATS] Child not found - childId:', childId, 'familyId:', familyId);
+        return err(404, 'Enfant non trouvé.');
+      }
 
+      console.log('[GET-TASK-STATS] Found child:', child.name, 'tasks:', child.tasks?.length || 0);
       const stats = aggregateTaskStats(child, period);
+      console.log('[GET-TASK-STATS] Stats result:', { tasksCount: stats.tasksCount, xpGained: stats.xpGained, period });
 
       // Get stats for all children in family
       let childrenStats = [];
@@ -1097,11 +1208,18 @@ export async function handleApi({ action, token, body = {} }, store) {
         // Fall back to store
         if (!family) family = await store.get('family:' + familyId);
         if (family) {
-          childrenStats = family.children.map(c => ({
-            tasks: aggregateTaskStats(c, period).tasksCount || 0,
-            xp: aggregateTaskStats(c, period).xpGained || 0,
-            gold: aggregateTaskStats(c, period).goldGained || 0
-          }));
+          // Ensure children is always an array
+          let children = family.children;
+          if (children && typeof children === 'object' && !Array.isArray(children)) {
+            children = Object.values(children);
+          }
+          if (children) {
+            childrenStats = children.map(c => ({
+              tasks: aggregateTaskStats(c, period).tasksCount || 0,
+              xp: aggregateTaskStats(c, period).xpGained || 0,
+              gold: aggregateTaskStats(c, period).goldGained || 0
+            }));
+          }
         }
       }
 
@@ -1110,11 +1228,11 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'me': {
       try {
         // For backward compatibility, support both Firebase and legacy auth
-        let userEmail = email;
-        let uid = null;
+        let userEmail = email || body.email; // Support email from body (Firebase login flow)
+        let uid = firebaseUid;
 
-        // Try Firebase token first if Authorization header present
-        if (body.firebaseToken) {
+        // Try Firebase token from body if Authorization header verification didn't work
+        if (!uid && body.firebaseToken) {
           uid = await verifyFirebaseToken(body.firebaseToken);
           if (uid) {
             const userSnapshot = await db.ref(`users/${uid}`).once('value');
@@ -1125,20 +1243,40 @@ export async function handleApi({ action, token, body = {} }, store) {
           }
         }
 
-        if (!userEmail) return err(401, 'Non authentifié.');
+        console.log('[ME-ENDPOINT] uid:', uid, 'userEmail:', userEmail);
+        if (!userEmail && !uid) return err(401, 'Non authentifié.');
 
         // Fetch user from Firebase if we have uid
         if (uid) {
           const userSnapshot = await db.ref(`users/${uid}`).once('value');
-          if (!userSnapshot.exists()) return err(404, 'User not found in Firebase');
-
-          const userData = userSnapshot.val();
+          let userData;
+          if (!userSnapshot.exists()) {
+            // Create new user record (first login with this Firebase account)
+            if (!userEmail) {
+              return err(401, 'Non authentifié - impossible de créer utilisateur.');
+            }
+            userData = {
+              email: userEmail,
+              name: userEmail.split('@')[0], // Use part of email as default name
+              familyIds: [],
+              createdAt: Date.now()
+            };
+            console.log('[ME-ENDPOINT] Creating new user:', userEmail);
+            await db.ref(`users/${uid}`).set(userData);
+          } else {
+            userData = userSnapshot.val();
+          }
           const families = [];
+          console.log('[ME-ENDPOINT] userData.familyIds:', userData.familyIds);
 
           for (const familyId of userData.familyIds || []) {
+            console.log('[ME-ENDPOINT] Fetching family:', familyId);
             const famSnapshot = await db.ref(`families/${familyId}`).once('value');
+            console.log('[ME-ENDPOINT] Family exists:', famSnapshot.exists());
             if (famSnapshot.exists()) {
               const famData = famSnapshot.val();
+              // Normalize all family data (convert objects to arrays)
+              normalizeFamilyData(famData);
               const memberInfo = {};
               for (const m of famData.members || []) {
                 const memberAcc = await store.get('account:' + m);
@@ -1165,11 +1303,42 @@ export async function handleApi({ action, token, body = {} }, store) {
       }
     }
     case 'verifyPassword': {
+      // For Firebase Auth: verify token passed in body
+      console.log('[VERIFY-PASSWORD] Attempting - has firebaseToken:', !!body.firebaseToken, 'email:', email);
+      if (body.firebaseToken) {
+        try {
+          const decodedToken = await auth.verifyIdToken(body.firebaseToken);
+          console.log('[VERIFY-PASSWORD] Firebase token valid, email:', decodedToken.email, 'matches:', decodedToken.email === email);
+          // Token verified and matches email
+          return { status: 200, body: { ok: decodedToken.email === email } };
+        } catch (e) {
+          console.error('[VERIFY-PASSWORD] Firebase token failed:', e.message);
+        }
+      }
+      // Fallback: legacy password verification from store
+      console.log('[VERIFY-PASSWORD] Falling back to legacy verification');
       const acc = await store.get('account:' + email);
-      return { status: 200, body: { ok: !!(acc && checkPassword(body.password, acc.salt, acc.hash)) } };
+      const ok = !!(acc && checkPassword(body.password, acc.salt, acc.hash));
+      console.log('[VERIFY-PASSWORD] Legacy result: ok=', ok, 'account found:', !!acc);
+      return { status: 200, body: { ok } };
+    }
+    case 'changePassword': {
+      if (!firebaseUid) return err(401, 'Non authentifié.');
+      const { newPassword } = body;
+      if (!newPassword || newPassword.length < 6) {
+        return err(400, 'Le mot de passe doit faire au moins 6 caractères.');
+      }
+      try {
+        await auth.updateUser(firebaseUid, { password: newPassword });
+        console.log('[CHANGE-PASSWORD] Password updated for UID:', firebaseUid);
+        return { status: 200, body: { ok: true } };
+      } catch (e) {
+        console.error('[CHANGE-PASSWORD] Error:', e.message);
+        return err(400, 'Erreur: ' + e.message);
+      }
     }
     case 'saveFamily': return saveFamily(store, email, body);
-    case 'createFamily': return createFamily(store, email, body);
+    case 'createFamily': return createFamily(store, email, body, firebaseUid);
     case 'invite': return invite(store, email, body);
     case 'removeAdult': return removeAdult(store, email, body);
     case 'submitGrade': return submitGrade(store, body.familyId, body);
