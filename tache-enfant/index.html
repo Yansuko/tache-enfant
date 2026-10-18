@@ -656,12 +656,18 @@ function screenTaches() {
 }
 
 function screenSanctions() {
-  // Defensive: ensure requests is an array
+  // Defensive: ensure requests and sanctionsList are arrays
   let requests = state.requests;
   if (requests && typeof requests === 'object' && !Array.isArray(requests)) {
     requests = Object.values(requests).filter(v => v != null);
   }
   requests = requests || [];
+
+  let sanctions = state.sanctionsList;
+  if (sanctions && typeof sanctions === 'object' && !Array.isArray(sanctions)) {
+    sanctions = Object.values(sanctions).filter(v => v != null);
+  }
+  sanctions = sanctions || [];
 
   const pending = requests.filter(r => r && r.status === 'pending');
   return `
@@ -682,7 +688,7 @@ function screenSanctions() {
   <div style="padding:0 20px 8px">
     ${childSeg()}
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-      ${state.sanctionsList.map((s, i) => `
+      ${sanctions.map((s, i) => `
       <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:10px;padding:10px 14px">
         <div style="flex:1;font-size:14px">${esc(s.name)} <span class="tag tag-accent">-${s.gold} 🪙</span></div>
         <button class="btn btn-primary" data-action="apply-sanction" data-i="${i}">Appliquer à ${esc(child().name)}</button>
@@ -1876,7 +1882,13 @@ async function boot() {
       // Load new families from backend
       const oldFamilies = families;
       const savedState = state ? JSON.parse(JSON.stringify(state)) : null;
-      families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
+      console.log('[BOOT] Received', r.families?.length, 'families from API');
+      console.log('[BOOT] First family gradeRequests type:', typeof r.families?.[0]?.gradeRequests, 'isArray:', Array.isArray(r.families?.[0]?.gradeRequests));
+      families = (r.families || []).map(f => {
+        normalizeFamilyData(f);
+        console.log('[BOOT-NORMALIZE]', f.name, 'gradeRequests type after normalize:', typeof f.gradeRequests, 'isArray:', Array.isArray(f.gradeRequests));
+        return f;
+      });
 
       // Restore ALL previously approved tasks to the new families
       for (const family of families) {
