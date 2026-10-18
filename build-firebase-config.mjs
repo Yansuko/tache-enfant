@@ -10,6 +10,18 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Load .env file if it exists (for local development)
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split('\n').forEach(line => {
+    const [key, value] = line.split('=');
+    if (key && !key.startsWith('#') && value) {
+      process.env[key.trim()] = value.trim();
+    }
+  });
+}
+
 // Read from environment variables
 const config = {
   apiKey: process.env.FIREBASE_API_KEY,

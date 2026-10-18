@@ -152,6 +152,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Serve config files from root (firebase-config.js)
+  if (req.url === '/firebase-config.js') {
+    const file = path.join(DIR, 'firebase-config.js');
+    fs.readFile(file, (e, data) => {
+      if (e) { res.writeHead(404); return res.end('Not found'); }
+      res.writeHead(200, { 'content-type': 'text/javascript' });
+      res.end(data);
+    });
+    return;
+  }
+
   // Serve node_modules (for Firebase SDK and other deps)
   if (req.url.startsWith('/node_modules/')) {
     const rel = decodeURIComponent(req.url.split('?')[0]);
