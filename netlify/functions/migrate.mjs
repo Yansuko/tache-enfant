@@ -49,7 +49,19 @@ export default async (req, context) => {
     // Get Netlify Blobs store
     const store = getStore('migration');
     const listResult = await store.list();
-    const keys = Array.isArray(listResult) ? listResult : (listResult?.blobs || []);
+    console.log('[MIGRATION] store.list() returned:', JSON.stringify(listResult));
+
+    // Handle different possible response formats
+    let keys = [];
+    if (Array.isArray(listResult)) {
+      keys = listResult;
+    } else if (listResult?.keys) {
+      keys = listResult.keys;
+    } else if (listResult?.blobs) {
+      keys = Object.keys(listResult.blobs);
+    } else if (typeof listResult === 'object') {
+      keys = Object.keys(listResult);
+    }
 
     console.log(`[MIGRATION] Found ${keys.length} items in Netlify Blobs`);
 
