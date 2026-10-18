@@ -354,8 +354,26 @@ async function persistFamily() {
           }
         }
       }
-      // Update only server-managed fields
-      Object.assign(state, { id: res.family.id, owner: res.family.owner, members: res.family.members, memberInfo: res.family.memberInfo, requests: res.family.requests });
+      // Update server-managed fields from response - MUST include all array fields
+      // to prevent stale data (gradeRequests, sanctionsList, proposals, etc.)
+      const serverFields = {
+        id: res.family.id,
+        name: res.family.name,
+        owner: res.family.owner,
+        members: res.family.members,
+        memberInfo: res.family.memberInfo,
+        requests: res.family.requests,
+        gradeRequests: res.family.gradeRequests,
+        sanctionsList: res.family.sanctionsList,
+        proposals: res.family.proposals,
+        rewards: res.family.rewards,
+        questList: res.family.questList,
+        taskRequests: res.family.taskRequests,
+        updatedAt: res.family.updatedAt,
+        day: res.family.day,
+        dailyBonus: res.family.dailyBonus
+      };
+      Object.assign(state, serverFields);
       console.log(`[SAVE] Success`);
       toast(false);
     }
