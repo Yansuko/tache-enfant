@@ -108,8 +108,8 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebaseapps/9.23.0/firebase-app.js';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebaseapps/9.23.0/firebase-auth.js';
+import { initializeApp } from '/node_modules/firebase/app/dist/esm/index.esm.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from '/node_modules/firebase/auth/dist/esm/index.esm.js';
 import { firebaseConfig } from '../firebase-config.js';
 
 // Initialize Firebase at app startup

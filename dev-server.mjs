@@ -151,6 +151,20 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+
+  // Serve node_modules (for Firebase SDK and other deps)
+  if (req.url.startsWith('/node_modules/')) {
+    const rel = decodeURIComponent(req.url.split('?')[0]);
+    const file = path.join(DIR, path.normalize(rel));
+    if (!file.startsWith(path.join(DIR, 'node_modules'))) { res.writeHead(403); return res.end(); }
+    fs.readFile(file, (e, data) => {
+      if (e) { res.writeHead(404); return res.end('Not found'); }
+      res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
+      res.end(data);
+    });
+    return;
+  }
+
   // statique
   const rel = req.url === '/' ? '/index.html' : decodeURIComponent(req.url.split('?')[0]);
   const file = path.join(STATIC, path.normalize(rel));
