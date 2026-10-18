@@ -1,9 +1,9 @@
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT.firebaseio.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyAIeKyjSdCjFh3Ya3wXT_4YSxMM70VUu8A",
+  authDomain: "dailykidsquest-20c85.firebaseapp.com",
+  databaseURL: "https://dailykidsquest-20c85-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "dailykidsquest-20c85",
+  storageBucket: "dailykidsquest-20c85.firebasestorage.app",
+  messagingSenderId: "505406678744",
+  appId: "1:505406678744:web:7d6190678aef2cda2999ad"
 };
