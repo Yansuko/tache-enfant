@@ -439,6 +439,7 @@ function screenAccueil() {
 }
 
 function screenNotes() {
+  if (state) normalizeFamilyData(state);
   const c = child();
   // Defensive: ensure gradeRequests is an array
   let grades = state.gradeRequests;
@@ -507,6 +508,7 @@ function screenNotes() {
 }
 
 function screenRecompenses() {
+  if (state) normalizeFamilyData(state);
   const c = child();
   const lv = level(c.xp);
   // Defensive: ensure requests is an array
@@ -583,6 +585,7 @@ function childSeg() {
 }
 
 function screenTaches() {
+  if (state) normalizeFamilyData(state);
   const c = child();
   const pending = (state.taskRequests || []).filter(t => t.child === c.name && t.status === 'pending');
   return `
@@ -656,6 +659,9 @@ function screenTaches() {
 }
 
 function screenSanctions() {
+  // Ensure state is fully normalized
+  if (state) normalizeFamilyData(state);
+
   // Defensive: ensure requests and sanctionsList are arrays
   let requests = state.requests;
   if (requests && typeof requests === 'object' && !Array.isArray(requests)) {
@@ -737,6 +743,9 @@ function screenSanctions() {
 }
 
 function screenGrades() {
+  // Ensure state is fully normalized
+  if (state) normalizeFamilyData(state);
+
   // Defensive: ensure gradeRequests is an array
   let grades = state.gradeRequests;
   if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
@@ -800,6 +809,7 @@ function screenGrades() {
 }
 
 function screenEnfants() {
+  if (state) normalizeFamilyData(state);
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Enfants</h2></div>
   <div class="deck deck-2" style="padding:14px 20px">
@@ -827,6 +837,7 @@ function screenEnfants() {
 }
 
 function screenFamille() {
+  if (state) normalizeFamilyData(state);
   const owner = state.owner === me.email;
   return `
   <div style="padding:22px 20px 4px">
@@ -1078,6 +1089,7 @@ function renderStatsCharts() {
 }
 
 function screenStats() {
+  if (state) normalizeFamilyData(state);
   const c = state.children[statsChildIndex] || {};
   const children = state.children || [];
   const data = statsData || { tasksCount: 0, xpGained: 0, goldGained: 0, bestDay: null };
