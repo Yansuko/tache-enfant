@@ -243,7 +243,6 @@ async function signup(store, secret, b) {
         return err(409, 'Un compte existe déjà avec cet email.');
       }
       // Firebase not configured - use legacy store only
-      console.log('[SIGNUP] Firebase not available, using legacy store only:', fbErr.message);
     }
   } catch (error) {
     console.error('[SIGNUP-ERROR]', error.message);
@@ -318,7 +317,6 @@ async function login(store, secret, b) {
       await store.set('account:' + email, acc);
     } catch (fbErr) {
       // Firebase not configured - use legacy store only
-      console.log('[LOGIN] Firebase not available:', fbErr.message);
     }
   } catch (error) {
     console.error('[LOGIN-ERROR]', error.message);
@@ -379,7 +377,6 @@ async function saveFamily(store, email, b) {
   const inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
   const lucas = inc.children?.find(c => c.name === 'Lucas');
-  console.log(`[SAVE-RECV-${saveId}] ${saveTime} Lucas from frontend:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
   const cur = await store.get('family:' + inc.id);
   if (!cur) return err(404, 'Famille introuvable.');
   if (!cur.members.includes(email)) return err(403, 'Accès refusé.');
@@ -392,16 +389,12 @@ async function saveFamily(store, email, b) {
   const serverOnlyChildren = cur.children?.filter(c => !inc.children?.some(ic => ic.id === c.id)) || [];
   merged.children = [...(inc.children || []), ...serverOnlyChildren];
 
-  console.log(`[SAVE] Inc children: ${inc.children?.length}, Merged children: ${merged.children?.length}, Server-only: ${serverOnlyChildren.length}`);
   merged.children?.forEach(c => {
-    console.log(`[SAVE] Child: ${c.name}`);
-    console.log(`[SAVE]  - Tasks: ${JSON.stringify(c.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || [])}`);
   });
   // Generate missing child IDs (for children created before ID generation was implemented)
   for (const child of merged.children || []) {
     if (!child.id) {
       child.id = 'child-' + crypto.randomBytes(4).toString('hex');
-      console.log(`[SAVE] Generated ID for child ${child.name}: ${child.id}`);
     }
   }
   // notifier les parents pour les nouvelles demandes et les approbations
@@ -426,11 +419,8 @@ async function saveFamily(store, email, b) {
     }
   }
   const lucas_before = merged.children?.find(c => c.name === 'Lucas');
-  console.log(`[SAVE-BEFORE-STORE] Lucas tasks:`, JSON.stringify(lucas_before?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt, xp: t.xp })) || []));
   // DEBUG: Check first task specifically
   const firstTask = lucas_before?.tasks?.[0];
-  console.log(`[SAVE-DEBUG] First task name: "${firstTask?.name}", done: ${firstTask?.done}, completedAt: ${firstTask?.completedAt}`);
-  console.log(`[SAVE-TIMESTAMP] Saved at ${new Date().toISOString()}, storing family ID: ${inc.id}`);
   await store.set('family:' + inc.id, merged);
 
   // Sync to Firebase (primary write target)
@@ -478,14 +468,11 @@ async function saveFamily(store, email, b) {
       }
     }
   } catch (fbErr) {
-    console.log('[SAVE-FIREBASE-SYNC] Could not sync to Firebase:', fbErr.message);
   }
 
   // Verify what was actually stored
   const verify = await store.get('family:' + inc.id);
   const lucas_verify = verify?.children?.find(c => c.name === 'Lucas');
-  console.log(`[SAVE-AFTER-STORE] Lucas tasks (read back):`, JSON.stringify(lucas_verify?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt })) || []));
-  console.log(`[SAVE-VERIFY-TIMESTAMP] Read back at ${new Date().toISOString()}`);
   // Index children by ID for fast lookup
   for (const child of merged.children || []) {
     if (child.id) {
@@ -562,7 +549,6 @@ async function createFamily(store, email, b) {
       createdAt: Date.now()
     });
   } catch (fbErr) {
-    console.log('[CREATE-FAMILY-FIREBASE] Could not sync to Firebase:', fbErr.message);
   }
 
   await logActivity(store, 'createFamily', email, fam.id, `Famille créée: ${name}`);
@@ -588,7 +574,6 @@ async function invite(store, email, b) {
   try {
     await db.ref(`families/${fid}/members`).set(fam.members);
   } catch (fbErr) {
-    console.log('[INVITE-FIREBASE] Could not sync to Firebase:', fbErr.message);
   }
 
   await logActivity(store, 'inviteMember', email, fid, `${inv} invité à la famille`);
@@ -612,7 +597,6 @@ async function removeAdult(store, email, b) {
   try {
     await db.ref(`families/${fid}/members`).set(fam.members);
   } catch (fbErr) {
-    console.log('[REMOVE-ADULT-FIREBASE] Could not sync to Firebase:', fbErr.message);
   }
 
   await logActivity(store, 'removeMember', email, fid, `${rem} retiré de la famille`);
@@ -676,7 +660,6 @@ async function submitGrade(store, famId, b) {
   try {
     await db.ref(`families/${famId}/gradeRequests/${gradeRequest.id}`).set(gradeRequest);
   } catch (fbErr) {
-    console.log('[SUBMIT-GRADE-FIREBASE] Could not sync to Firebase:', fbErr.message);
   }
 
   // Envoyer un email au parent
@@ -729,7 +712,6 @@ async function approveGrade(store, email, b) {
       });
     }
   } catch (fbErr) {
-    console.log('[APPROVE-GRADE-FIREBASE] Could not sync to Firebase:', fbErr.message);
   }
 
   await logActivity(store, 'approveGrade', email, familyId, `Note approuvée: ${req.child} - ${req.subject}`);
@@ -755,7 +737,6 @@ async function getLevelConfig(store, b) {
         config = configSnapshot.val();
       }
     } catch (fbErr) {
-      console.log('[GET-LEVEL-CONFIG-FIREBASE] Could not read from Firebase:', fbErr.message);
     }
 
     // Provide default if not found
@@ -821,7 +802,6 @@ async function updateLevelConfig(store, b) {
         updatedAt: Date.now()
       });
     } catch (fbErr) {
-      console.log('[UPDATE-LEVEL-CONFIG-FIREBASE] Could not sync to Firebase:', fbErr.message);
     }
 
     // Log activity
@@ -860,7 +840,6 @@ async function resetLevelConfig(store, b) {
     try {
       await db.ref(`levelConfigs/${familyId}`).set(defaultConfig);
     } catch (fbErr) {
-      console.log('[RESET-LEVEL-CONFIG-FIREBASE] Could not sync to Firebase:', fbErr.message);
     }
 
     // Log activity
@@ -923,22 +902,16 @@ function getDateRange(period, endDate = Date.now()) {
 }
 
 function aggregateTaskStats(child, period = 'week') {
-  console.log(`[STATS-ENTER] Child: ${child?.name}, Tasks type: ${Array.isArray(child?.tasks) ? 'array' : typeof child?.tasks}, Length: ${child?.tasks?.length || 0}`);
   const { start, end } = getDateRange(period);
-  console.log(`[STATS-RANGE] Period: ${period}, Start (epoch): ${start}, End (epoch): ${end}`);
-  console.log(`[STATS-RANGE] Start ISO: ${new Date(start).toISOString()}, End ISO: ${new Date(end).toISOString()}`);
-  console.log(`[STATS] Child: ${child.name}, Period: ${period}, Range: ${new Date(start).toISOString()} to ${new Date(end).toISOString()}`);
 
   // Ensure tasks array exists and all have completedAt field
   const rawTasks = child.tasks || [];
-  console.log(`[STATS-RAW] Raw tasks before map: ${JSON.stringify(rawTasks.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt, completedAtType: typeof t.completedAt })))}`);
 
   const tasks = rawTasks.map(t => ({
     ...t,
     completedAt: t.completedAt ? Number(t.completedAt) : null
   }));
 
-  console.log(`[STATS] All ${tasks.length} tasks after map:`, JSON.stringify(tasks.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
 
   const dailyBreakdown = {};
   let tasksCount = 0;
@@ -949,7 +922,6 @@ function aggregateTaskStats(child, period = 'week') {
 
   for (const task of tasks) {
     const inRange = task.done === true && task.completedAt && task.completedAt >= start && task.completedAt <= end;
-    console.log(`[STATS-CHECK] "${task.name}": done=${task.done}, completedAt=${task.completedAt}, start=${start}, end=${end}, inRange=${inRange}`);
     if (task.done === true && task.completedAt && task.completedAt >= start && task.completedAt <= end) {
       const iso = dateToISO(task.completedAt);
 
@@ -1030,10 +1002,8 @@ async function logActivity(store, type, subject, target, details) {
       details
     });
   } catch (fbErr) {
-    console.log('[ACTIVITY-LOG-FIREBASE] Could not log to Firebase:', fbErr.message);
   }
 
-  console.log(`[ACTIVITY-LOG] Type: ${type}, Subject: ${subject}, Target: ${target}, Total entries: ${globalHistory.length}`);
 }
 
 async function logAdminAction(store, action, target, details) {
@@ -1097,7 +1067,6 @@ export async function handleApi({ action, token, body = {} }, store) {
           child = childSnapshot.val();
         }
       } catch (fbErr) {
-        console.log('[TASK-STATS-FIREBASE] Could not read from Firebase:', fbErr.message);
       }
 
       // Fall back to store if Firebase unavailable

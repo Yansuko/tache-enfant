@@ -27,7 +27,6 @@ async function migrate() {
 
   try {
     // Step 2: Migrate accounts
-    console.log('Migrating accounts...');
     const keys = await store.list();
     const accountKeys = keys.filter(k => k.startsWith('account:'));
 
@@ -79,7 +78,6 @@ async function migrate() {
     }
 
     // Step 3: Migrate families
-    console.log('Migrating families...');
     const familyKeys = keys.filter(k => k.startsWith('family:'));
 
     for (const key of familyKeys) {
@@ -127,7 +125,6 @@ async function migrate() {
     }
 
     // Step 4: Migrate activity history
-    console.log('Migrating activity history...');
     try {
       const historyKey = 'activityHistory';
       const historyData = await store.get(historyKey);
@@ -163,7 +160,6 @@ async function migrate() {
     writeFileSync('migrate-report.json', JSON.stringify(report, null, 2));
   }
 
-  console.log(JSON.stringify(report, null, 2));
   return report;
 }
 
