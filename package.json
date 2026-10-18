@@ -11,6 +11,7 @@
     "test:all": "node test-backend.mjs && node test-extended.mjs && node test-all-actions.mjs"
   },
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "firebase-admin": "^12.0.0"
   }
 }
