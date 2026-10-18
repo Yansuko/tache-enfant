@@ -1275,6 +1275,15 @@ export async function handleApi({ action, token, body = {} }, store) {
             console.log('[ME-ENDPOINT] Family exists:', famSnapshot.exists());
             if (famSnapshot.exists()) {
               const famData = famSnapshot.val();
+              // Fetch children separately from Firebase (stored at /families/{id}/children/{id})
+              const childrenSnapshot = await db.ref(`families/${familyId}/children`).once('value');
+              if (childrenSnapshot.exists()) {
+                const childrenObj = childrenSnapshot.val();
+                // Convert children object to array
+                famData.children = Object.values(childrenObj).filter(c => c != null);
+              } else {
+                famData.children = [];
+              }
               // Normalize all family data (convert objects to arrays)
               normalizeFamilyData(famData);
               const memberInfo = {};
