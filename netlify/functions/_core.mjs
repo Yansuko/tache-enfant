@@ -433,14 +433,50 @@ async function saveFamily(store, email, b) {
   console.log(`[SAVE-TIMESTAMP] Saved at ${new Date().toISOString()}, storing family ID: ${inc.id}`);
   await store.set('family:' + inc.id, merged);
 
-  // Also sync to Firebase if exists
+  // Sync to Firebase (primary write target)
   try {
     const firebaseFamily = { ...merged };
     delete firebaseFamily.memberInfo;
     delete firebaseFamily.role;
     delete firebaseFamily.tab;
     delete firebaseFamily.activeChild;
-    await db.ref(`families/${inc.id}`).set(firebaseFamily);
+
+    // Write family header
+    const famPayload = {
+      id: firebaseFamily.id,
+      name: firebaseFamily.name,
+      owner: firebaseFamily.owner,
+      members: firebaseFamily.members,
+      day: firebaseFamily.day,
+      dailyBonus: firebaseFamily.dailyBonus,
+      questList: firebaseFamily.questList,
+      proposals: firebaseFamily.proposals,
+      sanctionsList: firebaseFamily.sanctionsList,
+      rewards: firebaseFamily.rewards,
+      requests: firebaseFamily.requests,
+      gradeRequests: firebaseFamily.gradeRequests,
+      taskRequests: firebaseFamily.taskRequests,
+      updatedAt: Date.now()
+    };
+    await db.ref(`families/${inc.id}`).set(famPayload);
+
+    // Write each child separately under /families/{familyId}/children/{childId}
+    for (const child of (merged.children || [])) {
+      if (child.id) {
+        await db.ref(`families/${inc.id}/children/${child.id}`).set({
+          id: child.id,
+          name: child.name,
+          xp: child.xp || 0,
+          gold: child.gold || 0,
+          pin: child.pin,
+          tasks: child.tasks || [],
+          grades: child.grades || [],
+          sanctions: child.sanctions || [],
+          dailyBonusDay: child.dailyBonusDay,
+          updatedAt: Date.now()
+        });
+      }
+    }
   } catch (fbErr) {
     console.log('[SAVE-FIREBASE-SYNC] Could not sync to Firebase:', fbErr.message);
   }
@@ -493,6 +529,44 @@ async function createFamily(store, email, b) {
   if (!metadata.familyIds.includes(fam.id)) metadata.familyIds.push(fam.id);
   if (!metadata.accountEmails.includes(email)) metadata.accountEmails.push(email);
   await store.set('_admin_metadata', metadata);
+
+  // Write to Firebase
+  try {
+    const fbFamily = {
+      id: fam.id,
+      name: fam.name,
+      owner: fam.owner,
+      members: fam.members,
+      children: [],
+      day: fam.day,
+      dailyBonus: fam.dailyBonus,
+      questList: fam.questList,
+      proposals: fam.proposals,
+      sanctionsList: fam.sanctionsList,
+      rewards: fam.rewards,
+      requests: fam.requests,
+      gradeRequests: fam.gradeRequests,
+      taskRequests: fam.taskRequests,
+      createdAt: fam.createdAt,
+      updatedAt: Date.now()
+    };
+    await db.ref(`families/${fam.id}`).set(fbFamily);
+
+    // Create default level config
+    await db.ref(`levelConfigs/${fam.id}`).set({
+      name: 'Configuration par défaut',
+      levels: Array.from({ length: 50 }, (_, i) => ({
+        level: i + 1,
+        xpRequired: (i + 1) * 100
+      })),
+      createdAt: Date.now()
+    });
+  } catch (fbErr) {
+    console.log('[CREATE-FAMILY-FIREBASE] Could not sync to Firebase:', fbErr.message);
+  }
+
+  await logActivity(store, 'createFamily', email, fam.id, `Famille créée: ${name}`);
+
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 async function invite(store, email, b) {
@@ -509,6 +583,16 @@ async function invite(store, email, b) {
   if (acc) { if (!acc.familyIds.includes(fid)) { acc.familyIds.push(fid); await store.set('account:' + inv, acc); } }
   else { const p = (await store.get('invite:' + inv)) || []; if (!p.includes(fid)) { p.push(fid); await store.set('invite:' + inv, p); } }
   if (emailSender) { await emailSender({ to: inv, subject: `Invitation à la famille « ${fam.name} »`, body: `${inviter?.name || email} vous a invité à rejoindre la famille « ${fam.name} » sur DailyKids Quest IV.` }); }
+
+  // Update Firebase
+  try {
+    await db.ref(`families/${fid}/members`).set(fam.members);
+  } catch (fbErr) {
+    console.log('[INVITE-FIREBASE] Could not sync to Firebase:', fbErr.message);
+  }
+
+  await logActivity(store, 'inviteMember', email, fid, `${inv} invité à la famille`);
+
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 async function removeAdult(store, email, b) {
@@ -523,6 +607,16 @@ async function removeAdult(store, email, b) {
   if (acc) { acc.familyIds = acc.familyIds.filter(x => x !== fid); await store.set('account:' + rem, acc); }
   const p = await store.get('invite:' + rem);
   if (p) await store.set('invite:' + rem, p.filter(x => x !== fid));
+
+  // Update Firebase
+  try {
+    await db.ref(`families/${fid}/members`).set(fam.members);
+  } catch (fbErr) {
+    console.log('[REMOVE-ADULT-FIREBASE] Could not sync to Firebase:', fbErr.message);
+  }
+
+  await logActivity(store, 'removeMember', email, fid, `${rem} retiré de la famille`);
+
   return { status: 200, body: { family: await withNames(store, fam) } };
 }
 
@@ -563,13 +657,27 @@ async function submitGrade(store, famId, b) {
   if (!childName || !subject || !grade || gold === undefined) return err(400, 'Tous les champs requis.');
   if (isNaN(gold) || gold < 0) return err(400, 'Or invalide.');
   fam.gradeRequests = fam.gradeRequests || [];
-  fam.gradeRequests.push({
-    child: childName, subject, grade, gold, status: 'pending', submittedAt: Date.now()
-  });
+  const gradeRequest = {
+    id: `grade_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+    child: childName,
+    subject,
+    grade,
+    gold,
+    status: 'pending',
+    submittedAt: Date.now()
+  };
+  fam.gradeRequests.push(gradeRequest);
   await store.set('family:' + famId, fam);
 
   // Log activity
   await logActivity(store, 'submitGrade', childName, `${fam.name}`, `Soumis: ${subject} (Note: ${grade}, Or: ${gold})`);
+
+  // Write to Firebase
+  try {
+    await db.ref(`families/${famId}/gradeRequests/${gradeRequest.id}`).set(gradeRequest);
+  } catch (fbErr) {
+    console.log('[SUBMIT-GRADE-FIREBASE] Could not sync to Firebase:', fbErr.message);
+  }
 
   // Envoyer un email au parent
   if (emailSender) {
@@ -598,6 +706,34 @@ async function approveGrade(store, email, b) {
   req.status = 'approved';
   req.approvedAt = Date.now();
   await store.set('family:' + familyId, fam);
+
+  // Update in Firebase
+  try {
+    // Update grade request status
+    await db.ref(`families/${familyId}/gradeRequests/${req.id}`).update({
+      status: 'approved',
+      approvedAt: Date.now()
+    });
+
+    // Update child's gold if exists
+    if (child && child.id) {
+      await db.ref(`families/${familyId}/children/${child.id}/gold`).set(child.gold);
+
+      // Add grade to child's grades array
+      await db.ref(`families/${familyId}/children/${child.id}/grades`).push({
+        subject: req.subject,
+        grade: req.grade,
+        xp: 0,
+        gold: req.gold,
+        approvedAt: Date.now()
+      });
+    }
+  } catch (fbErr) {
+    console.log('[APPROVE-GRADE-FIREBASE] Could not sync to Firebase:', fbErr.message);
+  }
+
+  await logActivity(store, 'approveGrade', email, familyId, `Note approuvée: ${req.child} - ${req.subject}`);
+
   return { status: 200, body: { ok: true } };
 }
 
@@ -743,6 +879,21 @@ async function logActivity(store, type, subject, target, details) {
   });
   if (globalHistory.length > 5000) globalHistory.shift();
   await store.set('_activity_history', globalHistory);
+
+  // Log to Firebase as well
+  try {
+    const entryId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    await db.ref(`activityHistory/${entryId}`).set({
+      timestamp: Date.now(),
+      type,
+      subject,
+      target,
+      details
+    });
+  } catch (fbErr) {
+    console.log('[ACTIVITY-LOG-FIREBASE] Could not log to Firebase:', fbErr.message);
+  }
+
   console.log(`[ACTIVITY-LOG] Type: ${type}, Subject: ${subject}, Target: ${target}, Total entries: ${globalHistory.length}`);
 }
 
@@ -797,12 +948,55 @@ export async function handleApi({ action, token, body = {} }, store) {
       }
 
       if (!familyId) return err(404, 'Enfant non trouvé.');
-      const family = await store.get('family:' + familyId);
-      if (!family) return err(404, 'Famille non trouvée.');
-      const child = family.children.find(c => c.id === childId);
+
+      // Try to read from Firebase first
+      let child = null;
+      let family = null;
+      try {
+        const childSnapshot = await db.ref(`families/${familyId}/children/${childId}`).once('value');
+        if (childSnapshot.exists()) {
+          child = childSnapshot.val();
+        }
+      } catch (fbErr) {
+        console.log('[TASK-STATS-FIREBASE] Could not read from Firebase:', fbErr.message);
+      }
+
+      // Fall back to store if Firebase unavailable
+      if (!child) {
+        family = await store.get('family:' + familyId);
+        if (!family) return err(404, 'Famille non trouvée.');
+        child = family.children.find(c => c.id === childId);
+      }
+
       if (!child) return err(404, 'Enfant non trouvé.');
+
       const stats = aggregateTaskStats(child, period);
-      const childrenStats = family.children.map(c => ({ tasks: aggregateTaskStats(c, period).tasksCount || 0, xp: aggregateTaskStats(c, period).xpGained || 0, gold: aggregateTaskStats(c, period).goldGained || 0 }));
+
+      // Get stats for all children in family
+      let childrenStats = [];
+      try {
+        // Try Firebase first
+        const childrenSnapshot = await db.ref(`families/${familyId}/children`).once('value');
+        if (childrenSnapshot.exists()) {
+          const childrenData = childrenSnapshot.val();
+          childrenStats = Object.values(childrenData).map(c => ({
+            tasks: aggregateTaskStats(c, period).tasksCount || 0,
+            xp: aggregateTaskStats(c, period).xpGained || 0,
+            gold: aggregateTaskStats(c, period).goldGained || 0
+          }));
+        }
+      } catch (fbErr) {
+        // Fall back to store
+        if (!family) family = await store.get('family:' + familyId);
+        if (family) {
+          childrenStats = family.children.map(c => ({
+            tasks: aggregateTaskStats(c, period).tasksCount || 0,
+            xp: aggregateTaskStats(c, period).xpGained || 0,
+            gold: aggregateTaskStats(c, period).goldGained || 0
+          }));
+        }
+      }
+
       return { status: 200, body: { ...stats, childrenStats } };
     }
     case 'me': {
