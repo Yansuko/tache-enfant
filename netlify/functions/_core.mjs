@@ -2,6 +2,7 @@
 // serveur de dev local (fichier). Aucune dépendance Netlify ici : tout passe par
 // une interface `store` minimale { get(key), set(key,val), del(key) } (valeurs JSON).
 import crypto from 'node:crypto';
+import { db, auth } from './firebase-admin.mjs';
 
 let emailSender = null;
 export function setEmailSender(fn) { emailSender = fn; }
@@ -40,6 +41,25 @@ async function getSecret(store) {
   let s = await store.get('secret');
   if (!s) { s = { key: crypto.randomBytes(32).toString('hex') }; await store.set('secret', s); }
   return s.key;
+}
+
+/* ── Firebase authentication ── */
+
+async function verifyFirebaseToken(token) {
+  if (!token) return null;
+  try {
+    const decodedToken = await auth.verifyIdToken(token);
+    return decodedToken.uid;
+  } catch (error) {
+    throw new Error(`Invalid token: ${error.message}`);
+  }
+}
+
+async function getUserUid(request) {
+  const authHeader = request.headers.get('authorization') || request.headers.authorization || '';
+  const token = authHeader.replace('Bearer ', '');
+  if (!token) throw new Error('Missing authorization token');
+  return await verifyFirebaseToken(token);
 }
 
 /* ── modèles ── */
@@ -168,13 +188,89 @@ async function signup(store, secret, b) {
   if (!EMAIL_RE.test(email)) return err(400, 'Email invalide.');
   if (String(password).length < 4) return err(400, 'Mot de passe trop court (4 caractères min).');
   if (await store.get('account:' + email)) return err(409, 'Un compte existe déjà avec cet email.');
+
+  let uid = null;
+  try {
+    // Try Firebase auth (requires env config)
+    try {
+      const user = await auth.createUser({
+        email,
+        password
+      });
+      uid = user.uid;
+
+      const familyId = 'family_' + Date.now();
+
+      // Create user doc in Firebase
+      await db.ref(`users/${uid}`).set({
+        email,
+        name,
+        familyIds: [familyId],
+        createdAt: Date.now()
+      });
+
+      // Create family in Firebase
+      await db.ref(`families/${familyId}`).set({
+        id: familyId,
+        name: familyName,
+        owner: email,
+        members: [email],
+        children: [],
+        day: '',
+        dailyBonus: { xp: 30, gold: 15 },
+        questList: [],
+        proposals: [],
+        sanctionsList: [],
+        rewards: [],
+        requests: [],
+        gradeRequests: [],
+        taskRequests: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+
+      // Create default level config
+      await db.ref(`levelConfigs/${familyId}`).set({
+        name: 'Configuration par défaut',
+        levels: Array.from({ length: 50 }, (_, i) => ({
+          level: i + 1,
+          xpRequired: (i + 1) * 100
+        })),
+        createdAt: Date.now()
+      });
+    } catch (fbErr) {
+      if (fbErr.message?.includes('auth/email-already-exists')) {
+        return err(409, 'Un compte existe déjà avec cet email.');
+      }
+      // Firebase not configured - use legacy store only
+      console.log('[SIGNUP] Firebase not available, using legacy store only:', fbErr.message);
+    }
+  } catch (error) {
+    console.error('[SIGNUP-ERROR]', error.message);
+    return err(500, error.message);
+  }
+
+  // Create account in legacy store (always)
   const fam = newFamily(familyName, email);
   const pending = (await store.get('invite:' + email)) || [];
   await store.set('family:' + fam.id, fam);
   await updateFamilyNameIndex(store, fam.name, fam.id);
-  await store.set('account:' + email, { email, name, ...hashPassword(password), familyIds: [fam.id, ...pending] });
+  await store.set('account:' + email, { email, name, ...hashPassword(password), familyIds: [fam.id, ...pending], ...(uid && { firebaseUid: uid }) });
   if (pending.length) await store.del('invite:' + email);
-  return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
+
+  // Log activity
+  await logActivity(store, 'signup', email, uid || 'unknown', `Account created with family ${familyName}`);
+
+  // Return token and user data
+  const state = await stateFor(store, email);
+  return {
+    status: 200,
+    body: {
+      token: signToken(email, secret),
+      ...(uid && { uid }),
+      ...state
+    }
+  };
 }
 async function login(store, secret, b) {
   const email = String(b.email || '').toLowerCase();
@@ -183,7 +279,56 @@ async function login(store, secret, b) {
   if (!acc) console.log(`[LOGIN] Account not found for ${email}`);
   if (acc && !pwCheck) console.log(`[LOGIN] Password mismatch for ${email}`);
   if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
+
+  let uid = null;
+  try {
+    // Try to sync with Firebase
+    try {
+      let firebaseUser;
+      try {
+        firebaseUser = await auth.getUserByEmail(email);
+      } catch (err) {
+        if (err.message?.includes('user-not-found')) {
+          // Create Firebase user if doesn't exist (migration scenario)
+          firebaseUser = await auth.createUser({
+            email,
+            password: b.password
+          });
+        } else {
+          throw err;
+        }
+      }
+
+      uid = firebaseUser.uid;
+
+      // Ensure user doc exists in Firebase
+      const userDocRef = db.ref(`users/${uid}`);
+      const userDocSnapshot = await userDocRef.once('value');
+      if (!userDocSnapshot.exists()) {
+        await userDocRef.set({
+          email,
+          name: acc.name,
+          familyIds: acc.familyIds || [],
+          createdAt: Date.now()
+        });
+      }
+
+      // Update legacy account with Firebase UID
+      acc.firebaseUid = uid;
+      await store.set('account:' + email, acc);
+    } catch (fbErr) {
+      // Firebase not configured - use legacy store only
+      console.log('[LOGIN] Firebase not available:', fbErr.message);
+    }
+  } catch (error) {
+    console.error('[LOGIN-ERROR]', error.message);
+    return err(500, error.message);
+  }
+
+  // Log activity
   await logActivity(store, 'login', email, acc.name, 'Parent login');
+
+  // Return using legacy store (Firebase sync attempted but optional)
   return { status: 200, body: { token: signToken(email, secret), ...(await stateFor(store, email)) } };
 }
 async function resetPassword(store, secret, b) {
@@ -287,6 +432,19 @@ async function saveFamily(store, email, b) {
   console.log(`[SAVE-DEBUG] First task name: "${firstTask?.name}", done: ${firstTask?.done}, completedAt: ${firstTask?.completedAt}`);
   console.log(`[SAVE-TIMESTAMP] Saved at ${new Date().toISOString()}, storing family ID: ${inc.id}`);
   await store.set('family:' + inc.id, merged);
+
+  // Also sync to Firebase if exists
+  try {
+    const firebaseFamily = { ...merged };
+    delete firebaseFamily.memberInfo;
+    delete firebaseFamily.role;
+    delete firebaseFamily.tab;
+    delete firebaseFamily.activeChild;
+    await db.ref(`families/${inc.id}`).set(firebaseFamily);
+  } catch (fbErr) {
+    console.log('[SAVE-FIREBASE-SYNC] Could not sync to Firebase:', fbErr.message);
+  }
+
   // Verify what was actually stored
   const verify = await store.get('family:' + inc.id);
   const lucas_verify = verify?.children?.find(c => c.name === 'Lucas');
@@ -647,7 +805,63 @@ export async function handleApi({ action, token, body = {} }, store) {
       const childrenStats = family.children.map(c => ({ tasks: aggregateTaskStats(c, period).tasksCount || 0, xp: aggregateTaskStats(c, period).xpGained || 0, gold: aggregateTaskStats(c, period).goldGained || 0 }));
       return { status: 200, body: { ...stats, childrenStats } };
     }
-    case 'me': return { status: 200, body: await stateFor(store, email) };
+    case 'me': {
+      try {
+        // For backward compatibility, support both Firebase and legacy auth
+        let userEmail = email;
+        let uid = null;
+
+        // Try Firebase token first if Authorization header present
+        if (body.firebaseToken) {
+          uid = await verifyFirebaseToken(body.firebaseToken);
+          if (uid) {
+            const userSnapshot = await db.ref(`users/${uid}`).once('value');
+            if (userSnapshot.exists()) {
+              const userData = userSnapshot.val();
+              userEmail = userData.email;
+            }
+          }
+        }
+
+        if (!userEmail) return err(401, 'Non authentifié.');
+
+        // Fetch user from Firebase if we have uid
+        if (uid) {
+          const userSnapshot = await db.ref(`users/${uid}`).once('value');
+          if (!userSnapshot.exists()) return err(404, 'User not found in Firebase');
+
+          const userData = userSnapshot.val();
+          const families = [];
+
+          for (const familyId of userData.familyIds || []) {
+            const famSnapshot = await db.ref(`families/${familyId}`).once('value');
+            if (famSnapshot.exists()) {
+              const famData = famSnapshot.val();
+              const memberInfo = {};
+              for (const m of famData.members || []) {
+                const memberAcc = await store.get('account:' + m);
+                memberInfo[m] = memberAcc ? memberAcc.name : null;
+              }
+              families.push({ ...famData, memberInfo });
+            }
+          }
+
+          return {
+            status: 200,
+            body: {
+              me: { email: userData.email, name: userData.name },
+              families
+            }
+          };
+        }
+
+        // Fall back to legacy store auth
+        return { status: 200, body: await stateFor(store, userEmail) };
+      } catch (error) {
+        console.error('[ME-ERROR]', error.message);
+        return err(401, 'Non authentifié.');
+      }
+    }
     case 'verifyPassword': {
       const acc = await store.get('account:' + email);
       return { status: 200, body: { ok: !!(acc && checkPassword(body.password, acc.salt, acc.hash)) } };
