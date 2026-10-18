@@ -4,6 +4,11 @@
   publish = "tache-enfant"
   functions = "netlify/functions"
 
+# Secrets scanning: ignore Firebase public keys in firebase-config.js
+# These are PUBLIC keys meant for browser code, not sensitive secrets
+[build.environment]
+  SECRETS_SCAN_OMIT_PATHS = "firebase-config.js"
+
 # Route /api → la fonction (double sécurité avec le config.path de la fonction)
 [[redirects]]
   from = "/api"
