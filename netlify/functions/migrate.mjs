@@ -22,7 +22,7 @@ function initFirebase() {
 }
 
 async function getAllBlobs() {
-  const store = getStore('migration');
+  const store = getStore('tache-enfant');
   const result = {};
 
   try {
