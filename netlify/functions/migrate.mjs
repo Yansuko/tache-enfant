@@ -26,15 +26,36 @@ async function getAllBlobs() {
   const result = {};
 
   try {
-    // Try to list all blobs
+    // List all blobs
     const listResult = await store.list();
+    console.log('[BLOBS-DEBUG] listResult type:', typeof listResult);
+    console.log('[BLOBS-DEBUG] listResult keys:', Object.keys(listResult || {}));
 
-    // If listResult is an object with entries, iterate through them
-    if (typeof listResult === 'object' && listResult !== null) {
-      for (const key in listResult) {
-        if (listResult.hasOwnProperty(key)) {
-          result[key] = listResult[key];
+    // Handle different response formats from store.list()
+    let keys = [];
+
+    if (Array.isArray(listResult)) {
+      // If it's an array of blob objects
+      keys = listResult.map(item => item.key || item.path || item.name);
+    } else if (listResult && listResult.blobs && Array.isArray(listResult.blobs)) {
+      // If response is {blobs: [...]}
+      keys = listResult.blobs.map(item => item.key || item.path || item.name);
+    } else if (listResult && typeof listResult === 'object') {
+      // If it's a plain object with blob keys
+      keys = Object.keys(listResult).filter(k => !k.startsWith('_'));
+    }
+
+    console.log(`[BLOBS-DEBUG] Found ${keys.length} blob keys`);
+
+    // Fetch each blob's data
+    for (const key of keys) {
+      try {
+        const data = await store.get(key);
+        if (data) {
+          result[key] = data;
         }
+      } catch (e) {
+        console.error(`Error fetching blob ${key}:`, e);
       }
     }
   } catch (error) {
