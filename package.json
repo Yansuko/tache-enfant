@@ -8,7 +8,8 @@
     "test": "node test-backend.mjs",
     "test:extended": "node test-extended.mjs",
     "test:actions": "node test-all-actions.mjs",
-    "test:all": "node test-backend.mjs && node test-extended.mjs && node test-all-actions.mjs",
+    "test:firebase": "node test-firebase-integration.mjs",
+    "test:all": "node test-backend.mjs && node test-extended.mjs && node test-all-actions.mjs && node test-firebase-integration.mjs",
     "migrate:firebase": "node migrate-to-firebase.mjs"
   },
   "dependencies": {

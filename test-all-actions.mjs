@@ -1,4 +1,5 @@
 // Tests complets pour toutes les actions possibles de l'application
+// Updated for Firebase with mock token support
 import assert from 'node:assert';
 import { handleApi, hashPassword, checkPassword, signToken, verifyToken } from './netlify/functions/_core.mjs';
 
@@ -12,7 +13,7 @@ function memStore() {
   };
 }
 
-const call = (store, action, body, token) => handleApi({ action, token, body }, store);
+const call = (store, action, body, token = null) => handleApi({ action, token, body }, store);
 const s = memStore();
 
 console.log('🧪 Tests complets de toutes les actions de l\'application\n');

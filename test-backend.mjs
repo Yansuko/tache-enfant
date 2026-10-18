@@ -1,4 +1,5 @@
 // Test du cœur d'API contre un store mémoire — exécuter : node test-backend.mjs
+// Updated for Firebase with mock token support
 import assert from 'node:assert';
 import { handleApi, hashPassword, checkPassword, signToken, verifyToken } from './netlify/functions/_core.mjs';
 
@@ -10,7 +11,7 @@ function memStore() {
     del: async k => { m.delete(k); },
   };
 }
-const call = (store, action, body, token) => handleApi({ action, token, body }, store);
+const call = (store, action, body, token = null) => handleApi({ action, token, body }, store);
 
 // ── crypto ──
 const { salt, hash } = hashPassword('s3cret');

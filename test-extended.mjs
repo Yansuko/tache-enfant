@@ -1,4 +1,5 @@
 // Tests étendus pour les nouvelles fonctionnalités : admin, stats, historique d'activité
+// Updated for Firebase with mock token support
 import assert from 'node:assert';
 import { handleApi, hashPassword, checkPassword, signToken, verifyToken } from './netlify/functions/_core.mjs';
 
@@ -12,7 +13,7 @@ function memStore() {
   };
 }
 
-const call = (store, action, body, token) => handleApi({ action, token, body }, store);
+const call = (store, action, body, token = null) => handleApi({ action, token, body }, store);
 
 console.log('🧪 Tests étendus - Nouvelles fonctionnalités\n');
 
@@ -177,6 +178,86 @@ if (r.status === 200 || r.status === 409) {
   console.log('  ✓ Unique task frequency handling implemented');
 }
 
+// ── Tests Level Config ──
+console.log('\n⚙️ Level Configuration:');
+
+// Create a test family for level config tests
+r = await call(s, 'signup', {
+  email: 'levelconfig@test.fr',
+  password: 'levelpass123',
+  name: 'Level Config Test',
+  familyName: 'Level Config Family'
+});
+const levelConfigFamilyId = r.body.families[0].id;
+
+// Get default level config
+r = await call(s, 'getLevelConfig', {
+  familyId: levelConfigFamilyId,
+  adminKey: 'demo-admin-key'
+});
+assert.equal(r.status, 200, '✓ Get default level config');
+assert.ok(r.body.levelConfig.levels, '✓ Levels exist');
+assert.equal(r.body.levelConfig.levels.length, 50, '✓ Default 50 levels');
+assert.equal(r.body.levelConfig.levels[0].xpRequired, 100, '✓ Level 1 at 100 XP');
+console.log('  ✓ Default level config retrieved');
+
+// Update level config with valid progression
+r = await call(s, 'updateLevelConfig', {
+  familyId: levelConfigFamilyId,
+  levelConfig: {
+    name: 'Custom Progression',
+    levels: [
+      { level: 1, xpRequired: 0 },
+      { level: 2, xpRequired: 50 },
+      { level: 3, xpRequired: 120 },
+      { level: 4, xpRequired: 220 },
+      { level: 5, xpRequired: 350 }
+    ]
+  },
+  adminKey: 'demo-admin-key'
+});
+assert.equal(r.status, 200, '✓ Update level config');
+assert.equal(r.body.levelConfig.levels.length, 5, '✓ 5 custom levels set');
+console.log('  ✓ Custom level config updated');
+
+// Test level config validation - non-increasing XP should fail
+r = await call(s, 'updateLevelConfig', {
+  familyId: levelConfigFamilyId,
+  levelConfig: {
+    name: 'Bad Progression',
+    levels: [
+      { level: 1, xpRequired: 0 },
+      { level: 2, xpRequired: 50 },
+      { level: 3, xpRequired: 40 }  // XP decreases - invalid
+    ]
+  },
+  adminKey: 'demo-admin-key'
+});
+assert.equal(r.status, 400, '✓ Rejects non-increasing XP');
+assert.ok(r.body.error.includes('must increase'), '✓ Error message correct');
+console.log('  ✓ Level config validation works');
+
+// Test invalid admin key
+r = await call(s, 'updateLevelConfig', {
+  familyId: levelConfigFamilyId,
+  levelConfig: {
+    name: 'Hack Attempt',
+    levels: [{ level: 1, xpRequired: 0 }]
+  },
+  adminKey: 'wrong-key'
+});
+assert.equal(r.status, 403, '✓ Invalid admin key rejected');
+console.log('  ✓ Admin key validation works');
+
+// Reset to default
+r = await call(s, 'resetLevelConfig', {
+  familyId: levelConfigFamilyId,
+  adminKey: 'demo-admin-key'
+});
+assert.equal(r.status, 200, '✓ Reset to default level config');
+assert.equal(r.body.levelConfig.levels.length, 50, '✓ Reset to 50 levels');
+console.log('  ✓ Reset to default successful');
+
 // ── Tests Summary ──
 console.log('\n' + '═'.repeat(50));
 console.log('✅ TOUS LES TESTS RÉUSSIS!');
@@ -192,4 +273,5 @@ console.log('  ✓ Family management with children');
 console.log('  ✓ Activity history generation');
 console.log('  ✓ Task completion tracking');
 console.log('  ✓ Unique task frequency handling');
-console.log('  ✓ Security (invalid admin keys)');
+console.log('  ✓ Level config (get, update, reset, validation)');
+console.log('  ✓ Security (invalid admin keys, level config validation)');
