@@ -1275,8 +1275,10 @@ export async function handleApi({ action, token, body = {} }, store) {
             console.log('[ME-ENDPOINT] Family exists:', famSnapshot.exists());
             if (famSnapshot.exists()) {
               const famData = famSnapshot.val();
+              console.log('[ME-ENDPOINT-DEBUG] Before normalize - children count:', famData?.children?.length, 'is array:', Array.isArray(famData?.children));
               // Normalize all family data (convert objects to arrays) - children are already included at top level
               normalizeFamilyData(famData);
+              console.log('[ME-ENDPOINT-DEBUG] After normalize - children count:', famData?.children?.length, 'is array:', Array.isArray(famData?.children));
               const memberInfo = {};
               for (const m of famData.members || []) {
                 const memberAcc = await store.get('account:' + m);
