@@ -107,6 +107,42 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebaseapps/9.23.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebaseapps/9.23.0/firebase-auth.js';
+import { firebaseConfig } from '../firebase-config.js';
+
+// Initialize Firebase at app startup
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+// Make auth functions available globally for the rest of the app
+window.firebaseAuth = auth;
+window.firebaseOnAuthStateChanged = onAuthStateChanged;
+window.firebaseSignIn = signInWithEmailAndPassword;
+window.firebaseSignUp = createUserWithEmailAndPassword;
+window.firebaseSignOut = signOut;
+window.getFirebaseIdToken = async (user) => {
+  if (user) return await user.getIdToken();
+  return null;
+};
+
+// Set up auth state listener for token management
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    // Auto-update token when user changes
+    const idToken = await user.getIdToken();
+    window.firebaseToken = idToken;
+    localStorage.setItem('te-firebase-user-uid', user.uid);
+  } else {
+    window.firebaseToken = null;
+    localStorage.removeItem('te-firebase-user-uid');
+  }
+});
+
+// Signal that Firebase is ready
+window.firebaseReady = true;
+</script>
 </head>
 <body>
 <div class="phone">
@@ -174,9 +210,18 @@ const frDate = () => {
 async function api(action, body = {}) {
   const url = new URL('/api', window.location.origin).toString();
   if (action === 'saveFamily') console.log(`[API] Calling: ${url} with action=${action}`);
+
+  // Get Firebase token if available, fall back to legacy token
+  let authHeader = {};
+  if (window.firebaseToken) {
+    authHeader = { Authorization: 'Bearer ' + window.firebaseToken };
+  } else if (token) {
+    authHeader = { Authorization: 'Bearer ' + token };
+  }
+
   const res = await fetch('/api', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify({ action, ...body }),
   });
   let json = {};
@@ -1470,12 +1515,34 @@ const ACTIONS = {
   login: async () => {
     const email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value;
     if (!email || !password) { authMsg = 'Email et mot de passe requis.'; return; }
-    onAuthed(await api('login', { email, password }));
+    try {
+      const userCredential = await window.firebaseSignIn(window.firebaseAuth, email, password);
+      const user = userCredential.user;
+      const idToken = await user.getIdToken();
+      window.firebaseToken = idToken;
+
+      // Call backend to get user data (verify token + fetch user/families)
+      const r = await api('me');
+      onAuthed({ ...r, token: idToken });
+    } catch (error) {
+      authMsg = 'Erreur: ' + error.message;
+    }
   },
   signup: async () => {
     const name = val('au-name'), email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value, familyName = val('au-fam');
     if (!name || !email || !password || !familyName) { authMsg = 'Tous les champs sont requis.'; return; }
-    onAuthed(await api('signup', { name, email, password, familyName }));
+    try {
+      const userCredential = await window.firebaseSignUp(window.firebaseAuth, email, password);
+      const user = userCredential.user;
+      const idToken = await user.getIdToken();
+      window.firebaseToken = idToken;
+
+      // Call backend to create user doc + family
+      const r = await api('signup', { name, email, familyName });
+      onAuthed({ ...r, token: idToken });
+    } catch (error) {
+      authMsg = 'Erreur: ' + error.message;
+    }
   },
   unlockParent: async () => {
     const password = document.getElementById('pu-pass').value;
@@ -1502,9 +1569,15 @@ const ACTIONS = {
     } catch (e) { resetMsg = 'Erreur: ' + String(e); }
     render();
   },
-  logout: () => {
-    token = null; localStorage.removeItem(TOKEN_KEY);
-    me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';
+  logout: async () => {
+    try {
+      await window.firebaseSignOut(window.firebaseAuth);
+      window.firebaseToken = null;
+      token = null; localStorage.removeItem(TOKEN_KEY);
+      me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';
+    } catch (error) {
+      authMsg = 'Erreur de déconnexion: ' + error.message;
+    }
   },
   'switch-family': el => { const i = families.findIndex(f => f.id === el.dataset.id); if (i >= 0) { setActiveFamily(i); state.role = 'parent'; } },
   'add-family': async () => {
@@ -1625,14 +1698,21 @@ console.assert(nextReward(128, [{ cost: 50 }, { cost: 80 }, { cost: 150 }]).cost
 console.assert(esc('<b>&"') === '&lt;b&gt;&amp;&quot;', 'esc');
 console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true }, { daily: true, done: true }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
 
-/* boot : restaure la session depuis le jeton persisté, sinon écran de connexion */
+/* boot : restaure la session via Firebase onAuthStateChanged */
 async function boot() {
-  token = localStorage.getItem(TOKEN_KEY);
-  if (token) {
-    try {
-      const r = await api('me');
-      if (!r.me) throw 'session invalide';
-      me = r.me;
+  // Wait for Firebase auth state to be ready
+  await new Promise((resolve) => {
+    const unsubscribe = window.firebaseOnAuthStateChanged(window.firebaseAuth, async (user) => {
+      unsubscribe(); // Unsubscribe from initial check
+
+      if (user) {
+        try {
+          // Firebase user exists, get their ID token and restore session
+          const idToken = await user.getIdToken();
+          window.firebaseToken = idToken;
+          const r = await api('me');
+          if (!r.me) throw 'session invalide';
+          me = r.me;
 
       // Save ALL currently approved tasks BEFORE loading new families
       const approvedTasks = {};
@@ -1734,11 +1814,22 @@ async function boot() {
           }
         }
       }
-      return;
-    } catch { token = null; localStorage.removeItem(TOKEN_KEY); }
-  }
-  me = null; families = []; state = null;
-  render();
+          resolve();
+        } catch (err) {
+          console.error('Boot error:', err);
+          window.firebaseToken = null;
+          me = null; families = []; state = null;
+          render();
+          resolve();
+        }
+      } else {
+        // No Firebase user logged in, show login screen
+        me = null; families = []; state = null;
+        render();
+        resolve();
+      }
+    });
+  });
 }
 boot();
 </script>
