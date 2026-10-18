@@ -1,11 +1,38 @@
 import admin from 'firebase-admin';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load .env if not already loaded
+if (!process.env.FIREBASE_DATABASE_URL) {
+  try {
+    const envPath = path.join(__dirname, '../../.env');
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    envContent.split('\n').forEach(line => {
+      const [key, val] = line.split('=');
+      if (key && val) process.env[key.trim()] = val.trim();
+    });
+  } catch (e) {
+    console.warn('[ENV] Could not load .env:', e.message);
+  }
+}
 
 let db, auth;
 
 try {
   let serviceAccount;
   try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    // Try to load from file first
+    try {
+      const accountPath = path.join(__dirname, '../../firebase-service-account.json');
+      const accountJson = fs.readFileSync(accountPath, 'utf-8');
+      serviceAccount = JSON.parse(accountJson);
+    } catch {
+      // Fall back to env variable
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    }
   } catch (error) {
     throw new Error(`Invalid FIREBASE_SERVICE_ACCOUNT: ${error.message}`);
   }

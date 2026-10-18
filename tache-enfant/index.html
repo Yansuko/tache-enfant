@@ -262,13 +262,22 @@ function setActiveFamily(i) {
 function normalizeFamilyData(f) {
   if (!f) return f;
   // Convert all OBJECT-stored arrays to actual arrays
-  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'proposals'];
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList'];
   for (const field of arrayFields) {
+    const before = f[field];
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
       const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
       f[field] = arr;
+      console.log(`[NORMALIZE] ${field}: converted object to array (${arr.length} items)`);
     }
-    if (!f[field] || !Array.isArray(f[field])) f[field] = [];
+    if (!f[field] || !Array.isArray(f[field])) {
+      if (!before && !f[field]) {
+        f[field] = [];
+        console.log(`[NORMALIZE] ${field}: initialized empty array`);
+      } else if (before && !Array.isArray(f[field])) {
+        console.warn(`[NORMALIZE] ${field}: still not array after normalization!`, typeof f[field]);
+      }
+    }
   }
   // Assurer que chaque enfant a un array de tasks
   if (f.children && Array.isArray(f.children)) {

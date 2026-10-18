@@ -25,14 +25,26 @@ let db = null;
 function initFirebase() {
   if (db) return;
   try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    let serviceAccount = {};
+    try {
+      const accountPath = path.join(DIR, 'firebase-service-account.json');
+      const accountJson = fs.readFileSync(accountPath, 'utf-8');
+      serviceAccount = JSON.parse(accountJson);
+    } catch {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    }
     if (!serviceAccount.project_id) {
       throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
     }
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: process.env.FIREBASE_DATABASE_URL
+      });
+    } catch (e) {
+      // App already initialized (happens on subsequent calls)
+      if (!e.message.includes('already exists')) throw e;
+    }
     db = admin.database();
     console.log('[FIREBASE] Initialized for dev server');
   } catch (e) {

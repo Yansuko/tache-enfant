@@ -1,4 +1,4 @@
-export const firebaseConfig = {
+window.firebaseConfig = {
   "apiKey": "AIzaSyBTWAWR0yQgPMo_PEK57lauxIzVqjtRMDI",
   "authDomain": "dailykidsquest-20c85.firebaseapp.com",
   "databaseURL": "https://dailykidsquest-20c85-default-rtdb.europe-west1.firebasedatabase.app",

@@ -9,7 +9,7 @@ let db = null;
 function initFirebase() {
   if (db) return;
   try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
     if (!serviceAccount.project_id) {
       throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
     }
