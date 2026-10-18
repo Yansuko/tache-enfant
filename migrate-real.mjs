@@ -42,32 +42,18 @@ const report = {
 };
 
 async function fetchNetlifyBlobs() {
-  const token = process.env.NETLIFY_BLOBS_TOKEN;
-  const siteId = process.env.NETLIFY_SITE_ID;
+  console.log('🔍 Fetching Netlify Blobs from local store...');
 
-  if (!token || !siteId) {
-    throw new Error('Missing NETLIFY_BLOBS_TOKEN or NETLIFY_SITE_ID');
+  // Try local .data/store.json first (development)
+  const localPath = '.data/store.json';
+  if (fs.existsSync(localPath)) {
+    console.log('✅ Found local .data/store.json (dev environment)');
+    const storeData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+    return storeData;
   }
 
-  console.log('🔍 Fetching Netlify Blobs...');
-
-  const allBlobs = {};
-
-  // Fetch blobs using REST API
-  const url = `https://api.netlify.com/api/v1/sites/${siteId}/blobs?paginate=false`;
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  if (!response.ok) {
-    console.log(`⚠️ Could not fetch blobs list (${response.status}). Checking if any data exists...`);
-    return allBlobs;
-  }
-
-  const data = await response.json();
-  console.log(`✅ Found ${data.length || 0} blobs`);
-
-  return data;
+  console.log('⚠️ Local store not found, this is production mode');
+  return {};
 }
 
 async function migrateData() {
@@ -77,94 +63,56 @@ async function migrateData() {
     // Fetch blobs from Netlify
     const blobs = await fetchNetlifyBlobs();
 
-    if (!Array.isArray(blobs) || blobs.length === 0) {
-      console.log('📭 No blobs found in Netlify\n');
+    if (!blobs || Object.keys(blobs).length === 0) {
+      console.log('📭 No blobs found\n');
       report.status = 'success';
-      report.errors.push('No Netlify Blobs data found - starting fresh with Firebase');
-
-      // Initialize Firebase with demo data for testing
-      console.log('📝 Initializing Firebase with demo data...');
-
-      // Create a demo account
-      try {
-        const demoUser = await admin.auth().createUser({
-          email: 'demo@test.com',
-          password: 'Demo123!',
-          displayName: 'Demo User'
-        });
-
-        const demoFamilyId = `family_${Date.now()}`;
-
-        await db.ref(`users/${demoUser.uid}`).set({
-          email: 'demo@test.com',
-          name: 'Demo User',
-          familyIds: [demoFamilyId],
-          createdAt: Date.now()
-        });
-
-        await db.ref(`families/${demoFamilyId}`).set({
-          id: demoFamilyId,
-          name: 'Demo Family',
-          owner: 'demo@test.com',
-          members: ['demo@test.com'],
-          children: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        });
-
-        await db.ref(`levelConfigs/${demoFamilyId}`).set({
-          name: 'Configuration par défaut',
-          levels: Array.from({ length: 50 }, (_, i) => ({
-            level: i + 1,
-            xpRequired: i * 100
-          })),
-          createdAt: Date.now()
-        });
-
-        report.accountsMigrated = 1;
-        report.familiesMigrated = 1;
-        report.levelConfigsMigrated = 1;
-
-        console.log('✅ Demo data created');
-      } catch (error) {
-        console.log(`⚠️ Demo data creation: ${error.message}`);
-      }
+      report.errors.push('No data found to migrate');
     } else {
       // Migrate real blobs data
-      console.log('📦 Migrating Netlify Blobs data to Firebase...\n');
+      console.log(`📦 Migrating ${Object.keys(blobs).length} items to Firebase...\n`);
 
-      for (const blob of blobs) {
-        const key = blob.key;
+      const keys = Object.keys(blobs);
 
-        try {
-          // Fetch blob content
-          const contentResponse = await fetch(blob.url);
-          const content = await contentResponse.json();
+      // Migrate accounts first
+      for (const key of keys) {
+        if (key.startsWith('account:')) {
+          const email = key.replace('account:', '');
+          const content = blobs[key];
 
-          if (key.startsWith('account:')) {
-            const email = key.replace('account:', '');
+          try {
             const user = await admin.auth().createUser({
               email,
-              password: content.passwordHash || 'TempPassword123!',
-              displayName: content.name
+              password: 'TempPassword123!',
+              displayName: content.name || email
             });
 
             await db.ref(`users/${user.uid}`).set({
               email,
-              name: content.name,
+              name: content.name || email,
               familyIds: content.familyIds || [],
               createdAt: content.createdAt || Date.now()
             });
 
             report.accountsMigrated++;
-            console.log(`✅ Migrated account: ${email}`);
-          } else if (key.startsWith('family:')) {
-            const familyId = key.replace('family:', '');
+            console.log(`✅ Account: ${email}`);
+          } catch (error) {
+            report.errors.push(`Account ${email}: ${error.message}`);
+            console.log(`❌ Account ${email}: ${error.message}`);
+          }
+        }
+      }
 
+      // Migrate families
+      for (const key of keys) {
+        if (key.startsWith('family:')) {
+          const familyId = key.replace('family:', '');
+          const content = blobs[key];
+
+          try {
             await db.ref(`families/${familyId}`).set({
               id: familyId,
-              name: content.name,
-              owner: content.owner,
+              name: content.name || 'Family',
+              owner: content.owner || 'admin',
               members: content.members || [],
               children: content.children || [],
               createdAt: content.createdAt || Date.now(),
@@ -185,11 +133,11 @@ async function migrateData() {
             report.tasksMigrated += (content.children || []).reduce((sum, c) => sum + (c.tasks?.length || 0), 0);
             report.levelConfigsMigrated++;
 
-            console.log(`✅ Migrated family: ${content.name}`);
+            console.log(`✅ Family: ${content.name} (${content.children?.length || 0} kids)`);
+          } catch (error) {
+            report.errors.push(`Family ${familyId}: ${error.message}`);
+            console.log(`❌ Family ${familyId}: ${error.message}`);
           }
-        } catch (error) {
-          report.errors.push(`${key}: ${error.message}`);
-          console.log(`❌ Error migrating ${key}: ${error.message}`);
         }
       }
     }

@@ -1,12 +1,10 @@
 {
-  "timestamp": "2026-10-18T19:45:16.806Z",
-  "accountsMigrated": 0,
-  "familiesMigrated": 0,
-  "childrenMigrated": 0,
-  "tasksMigrated": 0,
-  "levelConfigsMigrated": 0,
-  "errors": [
-    "Note: No existing Netlify Blobs data found to migrate. Firebase is ready for new user data."
-  ],
+  "timestamp": "2026-10-18T19:50:12.793Z",
+  "accountsMigrated": 2,
+  "familiesMigrated": 2,
+  "childrenMigrated": 7,
+  "tasksMigrated": 24,
+  "levelConfigsMigrated": 2,
+  "errors": [],
   "status": "success"
 }
