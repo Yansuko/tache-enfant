@@ -1,24 +1,75 @@
-// Fonction Netlify (Functions v2) — expose l'API sur /api via Netlify Blobs.
-import { getStore } from '@netlify/blobs';
+// Fonction Netlify (Functions v2) — expose l'API sur /api via Firebase Realtime Database
+import admin from 'firebase-admin';
 import { handleApi, setEmailSender } from './_core.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-// adapte Netlify Blobs à l'interface { get, set, del, list } attendue par le cœur
-function blobStore() {
-  const s = getStore('tache-enfant');
+let db = null;
+
+function initFirebase() {
+  if (db) return;
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    if (!serviceAccount.project_id) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+    db = admin.database();
+  } catch (e) {
+    console.error('[FIREBASE-INIT] Error:', e.message);
+    throw e;
+  }
+}
+
+// adapte Firebase à l'interface { get, set, del, list } attendue par le cœur
+function firebaseStore() {
+  initFirebase();
+
+  const getPath = (key) => {
+    // Map blob keys to Firebase paths
+    if (key.startsWith('family:')) return `families/${key.replace('family:', '')}`;
+    if (key.startsWith('account:')) return `users/email-${key.replace(/[^a-z0-9]/gi, '_')}`;
+    if (key.startsWith('_')) return `_metadata/${key.substring(1)}`;
+    return `_other/${key}`;
+  };
+
   return {
-    get: (k) => s.get(k, { type: 'json' }),
-    set: (k, v) => s.setJSON(k, v),
-    del: (k) => s.delete(k),
+    get: async (k) => {
+      const path = getPath(k);
+      const snap = await db.ref(path).once('value');
+      return snap.val();
+    },
+    set: async (k, v) => {
+      const path = getPath(k);
+      await db.ref(path).set(v);
+    },
+    del: async (k) => {
+      const path = getPath(k);
+      await db.ref(path).remove();
+    },
     list: async () => {
       const keys = [];
-      let cursor = null;
-      do {
-        const batch = await s.list({ cursor });
-        keys.push(...batch.blobs.map(b => b.key));
-        cursor = batch.cursor;
-      } while (cursor);
+
+      // List all family keys
+      const famsSnap = await db.ref('families').once('value');
+      const families = famsSnap.val() || {};
+      Object.keys(families).forEach(id => keys.push(`family:${id}`));
+
+      // List users by email (get from users)
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      Object.values(users).forEach(u => {
+        if (u.email) keys.push(`account:${u.email}`);
+      });
+
+      // List metadata
+      const metaSnap = await db.ref('_metadata').once('value');
+      const meta = metaSnap.val() || {};
+      Object.keys(meta).forEach(k => keys.push(`_${k}`));
+
       return keys;
     },
   };
@@ -56,7 +107,7 @@ export default async (req) => {
   try { payload = await req.json(); } catch { /* corps vide/invalide */ }
   const { action, ...body } = payload;
   try {
-    const r = await handleApi({ action, token, body }, blobStore());
+    const r = await handleApi({ action, token, body }, firebaseStore());
     return json(r.status, r.body);
   } catch (e) {
     return json(500, { error: 'Erreur serveur : ' + (e && e.message || e) });
