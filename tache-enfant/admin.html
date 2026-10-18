@@ -139,6 +139,20 @@
           </tbody>
         </table>
       </div>
+
+      <div class="section">
+        <h2>📊 Paramètres de niveaux</h2>
+        <div style="margin-bottom: 15px;">
+          <label for="family-selector" style="display: block; margin-bottom: 8px; font-weight: 500;">Sélectionner une famille:</label>
+          <select id="family-selector" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 100%; max-width: 400px;">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+
+        <div id="levelConfigContent">
+          <p>Sélectionnez une famille pour configurer ses niveaux.</p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -175,7 +189,10 @@
       document.getElementById('admin-key').value = '';
     }
 
+    let currentDashboardData = null;
+
     function showDashboard(data) {
+      currentDashboardData = data;
       const { stats, families, accounts, history } = data;
       document.getElementById('stat-users').textContent = stats.totalAccounts;
       document.getElementById('stat-families').textContent = stats.totalFamilies;
@@ -238,6 +255,144 @@
           <td>${a.details || '-'}</td>
         </tr>
       `).join('');
+
+      // Populate family selector
+      const familySelector = document.getElementById('family-selector');
+      familySelector.innerHTML = '<option value="">-- Sélectionner --</option>' +
+        families.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      familySelector.addEventListener('change', (e) => {
+        if (e.target.value) {
+          loadLevelConfig(e.target.value);
+        } else {
+          document.getElementById('levelConfigContent').innerHTML = '<p>Sélectionnez une famille pour configurer ses niveaux.</p>';
+        }
+      });
+    }
+
+    async function loadLevelConfig(familyId) {
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getLevelConfig', familyId, adminKey })
+        });
+        const data = await res.json();
+        if (res.ok && data.levelConfig) {
+          displayLevelConfig(familyId, data.levelConfig);
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de charger la configuration'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    function displayLevelConfig(familyId, config) {
+      const content = document.getElementById('levelConfigContent');
+
+      let html = `
+        <div style="overflow-x: auto; margin-bottom: 20px;">
+          <table style="width: 100%; border-collapse: collapse; background: white;">
+            <thead>
+              <tr style="background: #f8f9fa;">
+                <th style="padding: 12px; text-align: center; border: 1px solid #ddd; width: 80px;">Niveau</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">XP requis</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #ddd; width: 60px;">Diff</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      config.levels.forEach((level, idx) => {
+        const diff = idx > 0 ? level.xpRequired - config.levels[idx - 1].xpRequired : level.xpRequired;
+        html += `
+          <tr style="border-bottom: 1px solid #ddd;">
+            <td style="padding: 10px; text-align: center; border: 1px solid #ddd; font-weight: 500;">${level.level}</td>
+            <td style="padding: 10px; text-align: center; border: 1px solid #ddd;">
+              <input type="number" class="level-xp-input" data-level="${level.level}" value="${level.xpRequired}"
+                     style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; text-align: center;" />
+            </td>
+            <td style="padding: 10px; text-align: center; border: 1px solid #ddd; color: #666;">${diff}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <button onclick="saveLevelConfig('${familyId}')" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; font-weight: 500;">
+            💾 Sauvegarder
+          </button>
+          <button onclick="resetLevelConfig('${familyId}')" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+            ↻ Réinitialiser par défaut
+          </button>
+        </div>
+      `;
+
+      content.innerHTML = html;
+    }
+
+    async function saveLevelConfig(familyId) {
+      const inputs = document.querySelectorAll('.level-xp-input');
+      const levels = Array.from(inputs).map((input, idx) => ({
+        level: idx + 1,
+        xpRequired: parseInt(input.value)
+      }));
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'updateLevelConfig',
+            familyId,
+            adminKey,
+            levelConfig: {
+              name: 'Configuration personnalisée',
+              levels
+            }
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Configuration sauvegardée!');
+          // Reload dashboard
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de sauvegarder'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function resetLevelConfig(familyId) {
+      if (!confirm('Réinitialiser cette famille à la configuration par défaut (50 niveaux × 100 XP)?')) return;
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'resetLevelConfig',
+            familyId,
+            adminKey
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Configuration réinitialisée!');
+          // Reload dashboard
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de réinitialiser'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
     }
 
     async function resetPassword(email) {

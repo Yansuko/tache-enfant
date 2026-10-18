@@ -737,6 +737,145 @@ async function approveGrade(store, email, b) {
   return { status: 200, body: { ok: true } };
 }
 
+async function getLevelConfig(store, b) {
+  const { familyId, adminKey } = b;
+  if (!familyId) return err(400, 'familyId requis.');
+
+  // Verify admin key
+  if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+    return err(403, 'Clé admin invalide.');
+  }
+
+  try {
+    // Get level config from Firebase
+    let config = null;
+    try {
+      const configSnapshot = await db.ref(`levelConfigs/${familyId}`).once('value');
+      if (configSnapshot.exists()) {
+        config = configSnapshot.val();
+      }
+    } catch (fbErr) {
+      console.log('[GET-LEVEL-CONFIG-FIREBASE] Could not read from Firebase:', fbErr.message);
+    }
+
+    // Provide default if not found
+    if (!config) {
+      config = {
+        name: 'Configuration par défaut',
+        levels: Array.from({ length: 50 }, (_, i) => ({
+          level: i + 1,
+          xpRequired: (i + 1) * 100
+        })),
+        createdAt: Date.now()
+      };
+    }
+
+    return {
+      status: 200,
+      body: { levelConfig: config, familyId }
+    };
+  } catch (error) {
+    console.error('[GET-LEVEL-CONFIG-ERROR]', error.message);
+    return { status: 500, body: { error: error.message } };
+  }
+}
+
+async function updateLevelConfig(store, b) {
+  const { familyId, levelConfig, adminKey } = b;
+  if (!familyId) return err(400, 'familyId requis.');
+  if (!levelConfig) return err(400, 'levelConfig requis.');
+
+  // Verify admin key
+  if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+    return err(403, 'Clé admin invalide.');
+  }
+
+  try {
+    // Validate config structure
+    if (!levelConfig.levels || !Array.isArray(levelConfig.levels)) {
+      return err(400, 'Invalid level config format');
+    }
+
+    if (levelConfig.levels.length === 0 || levelConfig.levels.length > 99) {
+      return err(400, 'Must have 1-99 levels');
+    }
+
+    // Validate: levels ordered, XP increasing
+    for (let i = 0; i < levelConfig.levels.length; i++) {
+      const level = levelConfig.levels[i];
+
+      if (level.level !== i + 1) {
+        return err(400, `Level at index ${i} should have level ${i + 1}`);
+      }
+
+      if (i > 0 && level.xpRequired <= levelConfig.levels[i - 1].xpRequired) {
+        return err(400, `XP must increase (level ${i + 1})`);
+      }
+    }
+
+    // Write to Firebase
+    try {
+      await db.ref(`levelConfigs/${familyId}`).set({
+        name: levelConfig.name || 'Ma configuration',
+        levels: levelConfig.levels,
+        updatedAt: Date.now()
+      });
+    } catch (fbErr) {
+      console.log('[UPDATE-LEVEL-CONFIG-FIREBASE] Could not sync to Firebase:', fbErr.message);
+    }
+
+    // Log activity
+    await logActivity(store, 'updateLevelConfig', 'admin', familyId, `Updated level progression (${levelConfig.levels.length} levels)`);
+
+    return {
+      status: 200,
+      body: { message: 'Level config updated', levelConfig }
+    };
+  } catch (error) {
+    console.error('[UPDATE-LEVEL-CONFIG-ERROR]', error.message);
+    return { status: 500, body: { error: error.message } };
+  }
+}
+
+async function resetLevelConfig(store, b) {
+  const { familyId, adminKey } = b;
+  if (!familyId) return err(400, 'familyId requis.');
+
+  // Verify admin key
+  if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+    return err(403, 'Clé admin invalide.');
+  }
+
+  try {
+    const defaultConfig = {
+      name: 'Configuration par défaut',
+      levels: Array.from({ length: 50 }, (_, i) => ({
+        level: i + 1,
+        xpRequired: (i + 1) * 100
+      })),
+      createdAt: Date.now()
+    };
+
+    // Write to Firebase
+    try {
+      await db.ref(`levelConfigs/${familyId}`).set(defaultConfig);
+    } catch (fbErr) {
+      console.log('[RESET-LEVEL-CONFIG-FIREBASE] Could not sync to Firebase:', fbErr.message);
+    }
+
+    // Log activity
+    await logActivity(store, 'resetLevelConfig', 'admin', familyId, 'Reset level progression to default');
+
+    return {
+      status: 200,
+      body: { message: 'Level config reset to default', levelConfig: defaultConfig }
+    };
+  } catch (error) {
+    console.error('[RESET-LEVEL-CONFIG-ERROR]', error.message);
+    return { status: 500, body: { error: error.message } };
+  }
+}
+
 /* ── Task statistics aggregation ── */
 
 function dateToISO(ms) {
@@ -865,7 +1004,7 @@ function aggregateTaskStats(child, period = 'week') {
   };
 }
 
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily']);
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig']);
 
 // point d'entrée unique. payload = { action, token, body }
 async function logActivity(store, type, subject, target, details) {
@@ -1066,6 +1205,9 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'removeAdult': return removeAdult(store, email, body);
     case 'submitGrade': return submitGrade(store, body.familyId, body);
     case 'approveGrade': return approveGrade(store, email, body);
+    case 'getLevelConfig': return getLevelConfig(store, body);
+    case 'updateLevelConfig': return updateLevelConfig(store, body);
+    case 'resetLevelConfig': return resetLevelConfig(store, body);
     case 'getAdminStats': {
       // Verify admin key
       if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
