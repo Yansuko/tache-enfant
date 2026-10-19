@@ -13,13 +13,14 @@ import { runChildActionTests } from './11-child-actions.test.mjs';
 import { runStatisticsTests } from './12-statistics.test.mjs';
 import { runBugTests } from './13-bug-multiple-notes.test.mjs';
 import { runSanctionTests } from './14-sanctions.test.mjs';
+import { runLegacyGradeTests } from './15-bug-grades-object.test.mjs';
 
 const sections = [
   ['Authentication', runAuthTests], ['Families', runFamilyTests], ['Children', runChildrenTests],
   ['Tasks', runTaskTests], ['Rewards', runRewardTests], ['Levels', runLevelTests],
   ['Notes', runNoteTests], ['Navigation', runNavigationTests], ['Sync', runSyncTests],
   ['Regression', runRegressionTests], ['Child Actions', runChildActionTests], ['Statistics', runStatisticsTests],
-  ['Bug Regression', runBugTests], ['Sanctions', runSanctionTests]
+  ['Bug Regression', runBugTests], ['Sanctions', runSanctionTests], ['Legacy Format Bug', runLegacyGradeTests]
 ];
 
 console.log('🧪 DAILYKIDS QUEST - E2E TEST SUITE\n');
