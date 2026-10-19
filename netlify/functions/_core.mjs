@@ -422,6 +422,13 @@ async function saveFamily(store, email, b) {
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
 
+  // CRITICAL FIX: Don't overwrite gradeRequests with incomplete frontend data
+  // Keep server's gradeRequests - they are the source of truth (managed by submitGrade)
+  // Frontend shouldn't control this field via saveFamily
+  if (cur.gradeRequests) {
+    merged.gradeRequests = cur.gradeRequests;
+  }
+
   // Merge children: preserve existing tasks not in incoming data
   const incomingChildIds = new Set(inc.children?.map(c => c.id) || []);
   const serverOnlyChildren = cur.children?.filter(c => !inc.children?.some(ic => ic.id === c.id)) || [];
