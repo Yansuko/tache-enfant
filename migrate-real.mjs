@@ -22,7 +22,12 @@ if (fs.existsSync(envPath)) {
 }
 
 // Initialize Firebase
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(fs.readFileSync('firebase-service-account.json', 'utf-8'));
+} catch {
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+}
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: process.env.FIREBASE_DATABASE_URL

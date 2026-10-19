@@ -18,7 +18,12 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(fs.readFileSync('firebase-service-account.json', 'utf-8'));
+} catch {
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -26,9 +31,11 @@ admin.initializeApp({
 });
 
 const db = admin.database();
+console.log('Token:', process.env.NETLIFY_BLOBS_TOKEN ? 'OK' : 'MISSING');
+console.log('SiteID:', process.env.NETLIFY_SITE_ID ? 'OK' : 'MISSING');
 const store = getStore('migration', {
-  token: process.env.NETLIFY_BLOBS_TOKEN,
-  siteID: process.env.NETLIFY_SITE_ID
+  token: process.env.NETLIFY_BLOBS_TOKEN || 'nfp_m7gL3g1ayEq726z6TKWdHiv61tzJLSi8c5b5',
+  siteID: process.env.NETLIFY_SITE_ID || '6f683bca-35a7-4f27-bbfc-84b18c61826b'
 });
 
 async function migrate() {
