@@ -733,7 +733,12 @@ async function submitGrade(store, famId, b) {
   const { childName, subject, grade, gold } = b;
   if (!childName || !subject || !grade || gold === undefined) return err(400, 'Tous les champs requis.');
   if (isNaN(gold) || gold < 0) return err(400, 'Or invalide.');
-  fam.gradeRequests = fam.gradeRequests || [];
+  // Defensive: ensure gradeRequests is an array
+  let gradeRequests = fam.gradeRequests;
+  if (gradeRequests && typeof gradeRequests === 'object' && !Array.isArray(gradeRequests)) {
+    gradeRequests = Object.values(gradeRequests).filter(v => v != null);
+  }
+  fam.gradeRequests = gradeRequests || [];
   const gradeRequest = {
     id: `grade_${Date.now()}_${Math.random().toString(36).substring(7)}`,
     child: childName,
