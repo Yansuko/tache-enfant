@@ -469,12 +469,13 @@ async function saveFamily(store, email, b) {
     delete firebaseFamily.tab;
     delete firebaseFamily.activeChild;
 
-    // Write family header
+    // Write family header WITH CHILDREN
     const famPayload = {
       id: firebaseFamily.id,
       name: firebaseFamily.name,
       owner: firebaseFamily.owner,
       members: firebaseFamily.members,
+      children: merged.children || [],
       day: firebaseFamily.day,
       dailyBonus: firebaseFamily.dailyBonus,
       questList: firebaseFamily.questList,
@@ -1322,8 +1323,10 @@ export async function handleApi({ action, token, body = {} }, store) {
             console.log('[ME-ENDPOINT] Family exists:', famSnapshot.exists());
             if (famSnapshot.exists()) {
               const famData = famSnapshot.val();
-              console.log('[ME-ENDPOINT-DEBUG] Before normalize - children count:', famData?.children?.length, 'is array:', Array.isArray(famData?.children));
-              // Normalize all family data (convert objects to arrays) - children are already included at top level
+              console.log('[ME-ENDPOINT-DEBUG] Family keys:', Object.keys(famData || {}));
+
+              console.log('[ME-ENDPOINT-DEBUG] Before normalize - children:', famData?.children, 'type:', typeof famData?.children);
+              // Normalize all family data (convert objects to arrays)
               normalizeFamilyData(famData);
               console.log('[ME-ENDPOINT-DEBUG] After normalize - children count:', famData?.children?.length, 'is array:', Array.isArray(famData?.children));
               const memberInfo = {};
