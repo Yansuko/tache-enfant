@@ -44,10 +44,10 @@ if (missing.length > 0) {
 }
 
 // Generate the config file
-const content = `export const firebaseConfig = ${JSON.stringify(config, null, 2)};
+const content = `window.firebaseConfig = ${JSON.stringify(config, null, 2)};
 `;
 
-const configPath = path.join(__dirname, 'firebase-config.js');
+const configPath = path.join(__dirname, 'tache-enfant', 'firebase-config.js');
 fs.writeFileSync(configPath, content, 'utf-8');
 
 console.log('✅ firebase-config.js generated successfully');
