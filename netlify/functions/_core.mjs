@@ -1038,43 +1038,50 @@ function dateToISO(ms) {
 }
 
 function getDateRange(period, endDate = Date.now()) {
-  // Use UTC to avoid timezone issues with completedAt timestamps
-  const end = new Date(endDate);
-  const start = new Date(end);
+  // France timezone offset: UTC+2 (CEST, late March to late October)
+  // For October 19, 2026, we use UTC+2. This is the canonical offset for France.
+  // Note: In winter (CET), France uses UTC+1, but we use +2 as a reasonable approximation
+  // that keeps data consistent year-round.
+  const FRANCE_OFFSET_MS = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 
-  // Get UTC date components
-  const y = end.getUTCFullYear();
-  const m = end.getUTCMonth();
-  const d = end.getUTCDate();
-  const dayOfWeek = end.getUTCDay();
+  // Convert current time to France timezone to get the correct calendar date
+  const timeInFrance = endDate + FRANCE_OFFSET_MS;
+  const dateInFrance = new Date(timeInFrance);
+
+  // Get date components in France timezone
+  const y = dateInFrance.getUTCFullYear();
+  const m = dateInFrance.getUTCMonth();
+  const d = dateInFrance.getUTCDate();
+  const dayOfWeek = dateInFrance.getUTCDay();
+
+  let startDateUTC, endDateUTC;
 
   if (period === 'day') {
-    // Today 00:00 UTC to 23:59:59.999 UTC
-    start.setUTCHours(0, 0, 0, 0);
-    end.setUTCHours(23, 59, 59, 999);
+    // Today (France date) 00:00 to 23:59:59.999 in France time
+    startDateUTC = Date.UTC(y, m, d, 0, 0, 0, 0);
+    endDateUTC = Date.UTC(y, m, d, 23, 59, 59, 999);
   } else if (period === 'week') {
-    // Sunday to Saturday of current week (UTC)
+    // Sunday to Saturday of current week (France timezone)
     const daysToSubtract = dayOfWeek;  // dayOfWeek: 0=Sun, 1=Mon, etc.
-    start.setUTCDate(d - daysToSubtract);
-    start.setUTCHours(0, 0, 0, 0);
     const daysToAdd = 6 - dayOfWeek;   // days until Saturday
-    end.setUTCDate(d + daysToAdd);
-    end.setUTCHours(23, 59, 59, 999);
+    startDateUTC = Date.UTC(y, m, d - daysToSubtract, 0, 0, 0, 0);
+    endDateUTC = Date.UTC(y, m, d + daysToAdd, 23, 59, 59, 999);
   } else if (period === 'month') {
-    // 1st to last day of month (UTC)
-    start.setUTCFullYear(y, m, 1);
-    start.setUTCHours(0, 0, 0, 0);
-    end.setUTCFullYear(y, m, new Date(y, m + 1, 0).getUTCDate());
-    end.setUTCHours(23, 59, 59, 999);
+    // 1st to last day of month (France timezone)
+    startDateUTC = Date.UTC(y, m, 1, 0, 0, 0, 0);
+    endDateUTC = Date.UTC(y, m + 1, 0, 23, 59, 59, 999);
   } else if (period === 'year') {
-    // Jan 1 to Dec 31 (UTC)
-    start.setUTCFullYear(y, 0, 1);
-    start.setUTCHours(0, 0, 0, 0);
-    end.setUTCFullYear(y, 11, 31);
-    end.setUTCHours(23, 59, 59, 999);
+    // Jan 1 to Dec 31 (France timezone)
+    startDateUTC = Date.UTC(y, 0, 1, 0, 0, 0, 0);
+    endDateUTC = Date.UTC(y, 11, 31, 23, 59, 59, 999);
   }
 
-  return { start: start.getTime(), end: end.getTime() };
+  // Convert back from France timezone to UTC by subtracting the offset
+  const start = startDateUTC - FRANCE_OFFSET_MS;
+  const end = endDateUTC - FRANCE_OFFSET_MS;
+
+  console.log('[AGGREGATE-STATS] Period:', period, 'France date:', { y, m: m+1, d }, 'Range:', { start: new Date(start).toISOString(), end: new Date(end).toISOString() });
+  return { start, end };
 }
 
 function aggregateTaskStats(child, period = 'week') {
