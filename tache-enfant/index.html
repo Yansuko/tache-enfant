@@ -241,6 +241,25 @@ async function api(action, body = {}) {
 }
 function toast(on) { document.getElementById('toast').style.display = on ? 'block' : 'none'; }
 
+// Log action to audit trail
+function logAction(actionType, target, details = {}, status = 'success') {
+  if (!state || !state.id) return;
+  if (!state.actionLog) state.actionLog = [];
+  // Determine actor: account name for parent, child name for child
+  const actor = me?.name || (state.role === 'enfant' ? child()?.name : 'Parent');
+  state.actionLog.push({
+    timestamp: Date.now(),
+    userId: actor,
+    actionType,
+    target,
+    details,
+    status,
+    datetime: new Date().toISOString()
+  });
+  // Keep last 10000 entries to avoid excessive storage
+  if (state.actionLog.length > 10000) state.actionLog = state.actionLog.slice(-10000);
+}
+
 function setActiveFamily(i) {
   activeFamily = Math.max(0, Math.min(i, families.length - 1));
   state = families[activeFamily] || null;
@@ -262,7 +281,7 @@ function setActiveFamily(i) {
 function normalizeFamilyData(f) {
   if (!f) return f;
   // Convert all OBJECT-stored arrays to actual arrays
-  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList'];
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog'];
   for (const field of arrayFields) {
     const before = f[field];
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
@@ -408,6 +427,7 @@ async function persistFamily() {
         rewards: res.family.rewards !== undefined ? res.family.rewards : state.rewards,
         questList: res.family.questList !== undefined ? res.family.questList : state.questList,
         taskRequests: res.family.taskRequests !== undefined ? res.family.taskRequests : state.taskRequests,
+        actionLog: res.family.actionLog !== undefined ? res.family.actionLog : state.actionLog,
         updatedAt: res.family.updatedAt,
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
@@ -1406,11 +1426,13 @@ const ACTIONS = {
       // completedAt will be set only when parent approves
       t.done = true;
       t.completedAt = null;
+      logAction('task_submitted', t.name, { child: c.name, xp: t.xp, gold: t.gold });
     } else {
       // Enfant décoche → retirer de la queue et unmark task
       state.taskRequests = state.taskRequests?.filter(req => !(req.child === c.name && req.taskIndex === i)) || [];
       t.done = false;
       t.completedAt = null;
+      logAction('task_cancelled', t.name, { child: c.name });
     }
     console.log(`[TOGGLE-STATE-${toggleId}] ${toggleTime} State updated: done=${t.done}, completedAt=${t.completedAt}`);
     // MUST await save() before render() to prevent render() from resetting state
@@ -1475,10 +1497,14 @@ const ACTIONS = {
         console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
         found = true;
         childIndex = i;
+        logAction('task_approved', req.taskName, { child: req.child, xp: req.xp, gold: req.gold, approver: me?.name });
         break;
       }
     }
-    if (!found) { console.log(`[APPROVE] FAILED: req.child=${req.child}, children=${state.children?.map(c => c.name).join(',')}, taskIndex=${req.taskIndex}`); }
+    if (!found) {
+      console.log(`[APPROVE] FAILED: req.child=${req.child}, children=${state.children?.map(c => c.name).join(',')}, taskIndex=${req.taskIndex}`);
+      logAction('task_approved', req.taskName, { child: req.child }, 'failed');
+    }
     req.status = 'approved';
     // Set stats child index so parent will see this child's stats next
     if (found && childIndex >= 0) {
@@ -1496,6 +1522,7 @@ const ACTIONS = {
     if (req) {
       const task = child().tasks[req.taskIndex];
       if (task) task.done = false;
+      logAction('task_rejected', req.taskName, { child: req.child, rejector: me?.name });
     }
     state.taskRequests = (state.taskRequests || []).filter((r, i) => !(i === idx && r.status === 'pending'));
     await save();
@@ -1505,7 +1532,9 @@ const ACTIONS = {
     const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10), frequency = val('propose-task-frequency') || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
     state.proposals = state.proposals || [];
-    state.proposals.push({ icon: '⭐', name, xp, gold, frequency, child: child().name, status: 'pending', proposedAt: Date.now() });
+    const c = child();
+    state.proposals.push({ icon: '⭐', name, xp, gold, frequency, child: c.name, status: 'pending', proposedAt: Date.now() });
+    logAction('task_proposed', name, { child: c.name, xp, gold, frequency });
     document.getElementById('propose-task-name').value = '';
     document.getElementById('propose-task-xp').value = '';
     document.getElementById('propose-task-gold').value = '';
@@ -1528,7 +1557,9 @@ const ACTIONS = {
   'request-reward': el => {
     const r = state.rewards[+el.dataset.i];
     if (!r) return;
-    state.requests.push({ child: child().name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
+    const c = child();
+    state.requests.push({ child: c.name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
+    logAction('reward_requested', r.name, { child: c.name, cost: r.cost });
   },
   approve: el => {
     const q = state.requests[+el.dataset.i];
@@ -1538,10 +1569,17 @@ const ACTIONS = {
     console.log(`[APPROVE-FOUND] child=${q.child}, cost=${q.cost}, old gold=${c?.gold}, new gold=${Math.max(0, (c?.gold || 0) - q.cost)}`);
     if (c) c.gold = Math.max(0, c.gold - q.cost);
     q.status = 'approved';
+    logAction('reward_approved', q.name, { child: q.child, cost: q.cost, approver: me?.name });
     console.log(`[APPROVE-AFTER] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
     console.log(`[APPROVE-REWARD] Approved "${q.name}" for ${q.child}: gold cost=${q.cost}, new gold=${c?.gold || 0}. Total requests: ${state.requests?.length || 0}`);
   },
-  refuse: el => { const q = state.requests[+el.dataset.i]; if (q) q.status = 'refused'; },
+  refuse: el => {
+    const q = state.requests[+el.dataset.i];
+    if (q) {
+      q.status = 'refused';
+      logAction('reward_refused', q.name, { child: q.child, cost: q.cost, refuser: me?.name });
+    }
+  },
   'apply-sanction': el => {
     // Defensive: ensure arrays are normalized
     console.log(`[SANCTION-BEFORE] child.sanctions:`, JSON.stringify(child()?.sanctions || []));
@@ -1555,6 +1593,7 @@ const ACTIONS = {
     console.log(`[SANCTION-APPLY] Applying "${s.name}" (${s.gold}🪙) to ${c.name}`);
     c.sanctions.unshift({ motif: s.name, gold: s.gold });
     c.gold = Math.max(0, c.gold - s.gold);
+    logAction('sanction_applied', s.name, { child: c.name, goldDeducted: s.gold, applier: me?.name });
     console.log(`[SANCTION-AFTER] child.sanctions:`, JSON.stringify(c.sanctions || []));
     console.log(`[SANCTION-APPLIED] Applied "${s.name}" to ${c.name}: gold ${c.gold + s.gold} → ${c.gold}, sanctions now: ${c.sanctions.length}`);
   },
@@ -1593,6 +1632,7 @@ const ACTIONS = {
       // Persist the update to backend so other users see it
       console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, state.gradeRequests.map(g => `${g.subject}`));
       await save();
+      logAction('grade_submitted', subject, { child: c.name, grade: gradeVal, goldAwarded: gold });
       console.log(`[GRADE-SAVE-AFTER] After save(). state.gradeRequests:`, state.gradeRequests?.map(g => `${g.subject}`) || []);
     }
     document.getElementById('grade-subject').value = '';
@@ -1807,6 +1847,10 @@ const ACTIONS = {
   },
   logout: async () => {
     try {
+      const userName = me?.name || 'Unknown';
+      if (state) logAction('user_logout', userName, { role: authRole });
+      // Save audit log before logout
+      if (state) await save();
       await window.firebaseSignOut(window.firebaseAuth);
       window.firebaseToken = null;
       token = null; localStorage.removeItem(TOKEN_KEY);

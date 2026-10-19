@@ -124,15 +124,64 @@
       </div>
 
       <div class="section">
-        <h2>Historique d'activité de l'application</h2>
-        <table id="activity-table">
+        <h2>📋 Journal d'audit complet</h2>
+        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+          <h3 style="margin-bottom: 12px; font-size: 16px;">Filtres</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Type d'action:</label>
+              <select id="filter-action-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                <option value="">-- Tous --</option>
+                <option value="task_submitted">Tâche soumise</option>
+                <option value="task_cancelled">Tâche annulée</option>
+                <option value="task_approved">Tâche approuvée</option>
+                <option value="task_rejected">Tâche refusée</option>
+                <option value="task_proposed">Tâche proposée</option>
+                <option value="reward_requested">Récompense demandée</option>
+                <option value="reward_approved">Récompense approuvée</option>
+                <option value="reward_refused">Récompense refusée</option>
+                <option value="sanction_applied">Sanction appliquée</option>
+                <option value="grade_submitted">Note soumise</option>
+                <option value="user_login">Connexion</option>
+                <option value="user_logout">Déconnexion</option>
+              </select>
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Utilisateur:</label>
+              <input type="text" id="filter-user" placeholder="Nom ou email" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Cible/Enfant:</label>
+              <input type="text" id="filter-target" placeholder="Nom de tâche, enfant..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Depuis:</label>
+              <input type="date" id="filter-date-from" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Jusqu'à:</label>
+              <input type="date" id="filter-date-to" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div style="display: flex; align-items: flex-end; gap: 8px;">
+              <button onclick="applyAuditFilters()" style="flex: 1; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">Appliquer filtres</button>
+              <button onclick="clearAuditFilters()" style="flex: 1; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Réinitialiser</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 10px; color: #666; font-size: 13px;">
+          <strong id="audit-log-count">-</strong> entrées
+        </div>
+
+        <table id="activity-table" style="font-size: 13px;">
           <thead>
             <tr>
-              <th>Date/Heure</th>
-              <th>Type</th>
-              <th>Sujet</th>
-              <th>Cible</th>
+              <th style="width: 140px;">Date/Heure</th>
+              <th style="width: 120px;">Type d'action</th>
+              <th style="width: 100px;">Utilisateur</th>
+              <th style="width: 100px;">Cible</th>
               <th>Détails</th>
+              <th style="width: 80px;">Statut</th>
             </tr>
           </thead>
           <tbody id="activity-body">
@@ -245,16 +294,9 @@
         </tr>
       `).join('');
 
-      const abody = document.getElementById('activity-body');
-      abody.innerHTML = (data.activityHistory || []).map(a => `
-        <tr>
-          <td>${new Date(a.timestamp).toLocaleString('fr-FR')}</td>
-          <td>${a.type}</td>
-          <td>${a.subject}</td>
-          <td>${a.target}</td>
-          <td>${a.details || '-'}</td>
-        </tr>
-      `).join('');
+      // Store audit logs globally for filtering
+      window.allAuditLogs = data.auditLogs || [];
+      displayAuditLogs(window.allAuditLogs);
 
       // Populate family selector
       const familySelector = document.getElementById('family-selector');
@@ -472,6 +514,90 @@
       } catch (e) {
         alert('Erreur: ' + e.message);
       }
+    }
+
+    // Audit log display and filtering
+    window.allAuditLogs = [];
+
+    function formatDetailsForDisplay(details) {
+      if (!details || typeof details !== 'object') return details || '-';
+      return Object.entries(details)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' | ');
+    }
+
+    function formatActionType(actionType) {
+      const labels = {
+        'task_submitted': '📋 Tâche soumise',
+        'task_cancelled': '❌ Tâche annulée',
+        'task_approved': '✅ Tâche approuvée',
+        'task_rejected': '🚫 Tâche refusée',
+        'task_proposed': '💭 Tâche proposée',
+        'reward_requested': '🎁 Récompense demandée',
+        'reward_approved': '🎉 Récompense approuvée',
+        'reward_refused': '💔 Récompense refusée',
+        'sanction_applied': '⚠️ Sanction appliquée',
+        'grade_submitted': '📝 Note soumise',
+        'user_login': '🔓 Connexion',
+        'user_logout': '🚪 Déconnexion'
+      };
+      return labels[actionType] || actionType;
+    }
+
+    function displayAuditLogs(logs) {
+      const abody = document.getElementById('activity-body');
+      if (!logs || logs.length === 0) {
+        abody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #666;">Aucune activité enregistrée</td></tr>';
+        document.getElementById('audit-log-count').textContent = '0';
+        return;
+      }
+
+      // Sort by timestamp descending (newest first)
+      const sorted = [...logs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      abody.innerHTML = sorted.map(a => `
+        <tr>
+          <td>${new Date(a.timestamp || 0).toLocaleString('fr-FR')}</td>
+          <td>${formatActionType(a.actionType)}</td>
+          <td><strong>${a.userId || '-'}</strong></td>
+          <td>${a.target || '-'}</td>
+          <td style="font-size: 12px; color: #666;">${formatDetailsForDisplay(a.details)}</td>
+          <td><span style="padding: 4px 8px; border-radius: 3px; font-size: 12px; background: ${a.status === 'success' ? '#d4edda' : '#f8d7da'}; color: ${a.status === 'success' ? '#155724' : '#721c24'};">${a.status === 'success' ? '✓' : '✗'}</span></td>
+        </tr>
+      `).join('');
+
+      document.getElementById('audit-log-count').textContent = sorted.length;
+    }
+
+    function applyAuditFilters() {
+      const actionType = document.getElementById('filter-action-type').value;
+      const user = document.getElementById('filter-user').value.toLowerCase();
+      const target = document.getElementById('filter-target').value.toLowerCase();
+      const dateFrom = document.getElementById('filter-date-from').value;
+      const dateTo = document.getElementById('filter-date-to').value;
+
+      const dateFromMs = dateFrom ? new Date(dateFrom).getTime() : 0;
+      const dateToMs = dateTo ? new Date(dateTo).getTime() + 86400000 : Infinity;
+
+      const filtered = (window.allAuditLogs || []).filter(log => {
+        if (actionType && log.actionType !== actionType) return false;
+        if (user && !log.userId?.toLowerCase().includes(user)) return false;
+        if (target && !log.target?.toLowerCase().includes(target) && !JSON.stringify(log.details || {}).toLowerCase().includes(target)) return false;
+        const logTime = log.timestamp || 0;
+        if (logTime < dateFromMs || logTime > dateToMs) return false;
+        return true;
+      });
+
+      displayAuditLogs(filtered);
+    }
+
+    function clearAuditFilters() {
+      document.getElementById('filter-action-type').value = '';
+      document.getElementById('filter-user').value = '';
+      document.getElementById('filter-target').value = '';
+      document.getElementById('filter-date-from').value = '';
+      document.getElementById('filter-date-to').value = '';
+      displayAuditLogs(window.allAuditLogs || []);
     }
 
     // Try to load from localStorage if key exists

@@ -618,12 +618,14 @@ async function saveFamily(store, email, b) {
       requests: firebaseFamily.requests,
       gradeRequests: firebaseFamily.gradeRequests,
       taskRequests: firebaseFamily.taskRequests,
+      actionLog: firebaseFamily.actionLog,
       updatedAt: Date.now()
     };
 
     // Log what's being written to Firebase
     console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - requests:`, JSON.stringify(famPayload.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
     console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - sanctionsList:`, JSON.stringify(famPayload.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+    console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - actionLog entries:`, famPayload.actionLog?.length || 0, 'actions');
 
     await db.ref(`families/${inc.id}`).set(famPayload);
 
@@ -1611,6 +1613,24 @@ export async function handleApi({ action, token, body = {} }, store) {
       const history = (await store.get('_admin_history')) || [];
       let activityHistory = (await store.get('_activity_history')) || [];
 
+      // Collect audit logs from all families
+      const allAuditLogs = [];
+      for (const famId of metadata.familyIds || []) {
+        try {
+          const fbSnap = await db.ref(`families/${famId}`).once('value');
+          const fam = fbSnap.val();
+          if (fam && fam.actionLog && Array.isArray(fam.actionLog)) {
+            allAuditLogs.push(...fam.actionLog);
+          }
+        } catch (fbErr) {
+          console.log('[GET-ADMIN-STATS] Error reading audit logs for family:', famId, fbErr.message);
+        }
+      }
+      // Sort by timestamp descending (most recent first) and keep last 5000 entries
+      allAuditLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      const auditLogs = allAuditLogs.slice(0, 5000);
+      console.log('[GET-ADMIN-STATS] Total audit logs collected:', auditLogs.length, '- Sample:', auditLogs.slice(0, 2).map(a => ({ actionType: a.actionType, userId: a.userId, timestamp: new Date(a.timestamp).toISOString() })));
+
       // If activity history is empty, generate from existing completed tasks
       if (activityHistory.length === 0) {
         const generatedActivities = [];
@@ -1658,7 +1678,8 @@ export async function handleApi({ action, token, body = {} }, store) {
           families: families.slice(0, 50),
           accounts: accounts.slice(0, 50),
           history: history.slice(-100),  // Last 100 admin actions
-          activityHistory: activityHistory.slice(-500)  // Last 500 app activities
+          activityHistory: activityHistory.slice(-500),  // Last 500 app activities
+          auditLogs: auditLogs  // Complete audit logs from all families
         }
       };
     }
