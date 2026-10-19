@@ -404,11 +404,11 @@
           body: JSON.stringify({ action: 'adminResetPassword', adminKey, email })
         });
         const data = await res.json();
-        if (data.status === 200) {
+        if (res.status === 200) {
           alert(`Mot de passe réinitialisé pour ${email}`);
           location.reload();
         } else {
-          alert('Erreur: ' + (data.body?.error || 'Impossible de réinitialiser'));
+          alert('Erreur: ' + (data.error || 'Impossible de réinitialiser'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);
@@ -424,11 +424,11 @@
           body: JSON.stringify({ action: 'adminDeleteAccount', adminKey, email })
         });
         const data = await res.json();
-        if (data.status === 200) {
+        if (res.status === 200) {
           alert(`Compte ${email} supprimé`);
           location.reload();
         } else {
-          alert('Erreur: ' + (data.body?.error || 'Impossible de supprimer'));
+          alert('Erreur: ' + (data.error || 'Impossible de supprimer'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);
@@ -447,7 +447,7 @@
           alert(data.message || `PIN de ${childName} réinitialisé`);
           location.reload();
         } else {
-          alert('Erreur: ' + (data.body?.error || data.error || 'Impossible de réinitialiser le PIN'));
+          alert('Erreur: ' + (data.error || 'Impossible de réinitialiser le PIN'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);
@@ -463,11 +463,11 @@
           body: JSON.stringify({ action: 'adminDeleteFamily', adminKey, familyId })
         });
         const data = await res.json();
-        if (data.status === 200) {
+        if (res.status === 200) {
           alert(`Famille "${familyName}" supprimée`);
           location.reload();
         } else {
-          alert('Erreur: ' + (data.body?.error || data.error || 'Impossible de supprimer la famille'));
+          alert('Erreur: ' + (data.error || 'Impossible de supprimer la famille'));
         }
       } catch (e) {
         alert('Erreur: ' + e.message);
