@@ -353,11 +353,22 @@ async function persistFamily() {
     try {
       const payload = { family: stripUi(state) };
       normalizeFamilyData(payload.family);
+
+      // Log shop data before sending
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] requests:`, JSON.stringify(payload.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status, cost: r.cost })) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold })) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 })) || []));
+
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
       console.log(`[PERSIST-TOKEN-${persistId}] Token present:`, !!token);
       const res = await api('saveFamily', payload);
       if (!res.family) throw new Error('saveFamily returned no family: ' + JSON.stringify(res));
+
+      // Log what we received from backend
+      console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - requests:`, JSON.stringify(res.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+      console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - sanctionsList:`, JSON.stringify(res.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+
       normalizeFamilyData(res.family);
       console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
       // Merge backend response with local state, preserving approved tasks (done=true with completedAt)
@@ -402,6 +413,8 @@ async function persistFamily() {
         dailyBonus: res.family.dailyBonus
       };
       Object.assign(state, serverFields);
+      console.log(`[PERSIST-MERGE-${persistId}] After merge - requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+      console.log(`[PERSIST-MERGE-${persistId}] After merge - sanctionsList:`, JSON.stringify(state.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
       console.log(`[PERSIST-MERGE] After merge: requests=${state.requests?.length || 0}, sanctionsList=${state.sanctionsList?.length || 0}`);
       console.log(`[SAVE] Success`);
       toast(false);
@@ -1519,24 +1532,30 @@ const ACTIONS = {
   },
   approve: el => {
     const q = state.requests[+el.dataset.i];
-    if (!q) return;
+    console.log(`[APPROVE-BEFORE] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
+    if (!q) { console.log(`[APPROVE-ERROR] Request not found at index ${+el.dataset.i}`); return; }
     const c = state.children.find(c => c.name === q.child);
+    console.log(`[APPROVE-FOUND] child=${q.child}, cost=${q.cost}, old gold=${c?.gold}, new gold=${Math.max(0, (c?.gold || 0) - q.cost)}`);
     if (c) c.gold = Math.max(0, c.gold - q.cost);
     q.status = 'approved';
+    console.log(`[APPROVE-AFTER] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
     console.log(`[APPROVE-REWARD] Approved "${q.name}" for ${q.child}: gold cost=${q.cost}, new gold=${c?.gold || 0}. Total requests: ${state.requests?.length || 0}`);
   },
   refuse: el => { const q = state.requests[+el.dataset.i]; if (q) q.status = 'refused'; },
   'apply-sanction': el => {
     // Defensive: ensure arrays are normalized
-    if (!state.sanctionsList || !Array.isArray(state.sanctionsList)) return;
+    console.log(`[SANCTION-BEFORE] child.sanctions:`, JSON.stringify(child()?.sanctions || []));
+    if (!state.sanctionsList || !Array.isArray(state.sanctionsList)) { console.log(`[SANCTION-ERROR] sanctionsList not array`); return; }
     const s = state.sanctionsList[+el.dataset.i];
-    if (!s || !s.name || !(s.gold > 0)) return;
+    if (!s || !s.name || !(s.gold > 0)) { console.log(`[SANCTION-ERROR] Sanction invalid at index ${+el.dataset.i}`); return; }
     const c = child();
-    if (!c) return;
+    if (!c) { console.log(`[SANCTION-ERROR] Child not found`); return; }
     // Initialize sanctions array if missing (backward compat for existing children)
     if (!c.sanctions || !Array.isArray(c.sanctions)) c.sanctions = [];
+    console.log(`[SANCTION-APPLY] Applying "${s.name}" (${s.gold}🪙) to ${c.name}`);
     c.sanctions.unshift({ motif: s.name, gold: s.gold });
     c.gold = Math.max(0, c.gold - s.gold);
+    console.log(`[SANCTION-AFTER] child.sanctions:`, JSON.stringify(c.sanctions || []));
     console.log(`[SANCTION-APPLIED] Applied "${s.name}" to ${c.name}: gold ${c.gold + s.gold} → ${c.gold}, sanctions now: ${c.sanctions.length}`);
   },
   'add-sanction-def': () => {

@@ -506,10 +506,24 @@ async function resetPassword(store, secret, b) {
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
   const saveTime = new Date().toISOString();
+  console.log(`[SAVEFAMILY-START-${saveId}] ${saveTime} saveFamily called`);
   let inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
+
+  // Log incoming shop data BEFORE normalization
+  console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] requests:`, JSON.stringify(inc.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] sanctionsList:`, JSON.stringify(inc.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] children count:`, inc.children?.length || 0);
+  if (inc.children?.[0]) {
+    console.log(`[SAVEFAMILY-RECV-CHILD0-${saveId}] name=${inc.children[0].name}, gold=${inc.children[0].gold}, sanctions=${JSON.stringify(inc.children[0].sanctions?.slice(0, 2) || [])}`);
+  }
+
   // Normalize incoming family data
   normalizeFamilyData(inc);
+
+  // Log after normalization
+  console.log(`[SAVEFAMILY-NORM-SHOP-${saveId}] requests after normalize:`, JSON.stringify(inc.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+
   const lucas = inc.children?.find(c => c.name === 'Lucas');
 
   // Read from Firebase (single source of truth)
@@ -576,6 +590,10 @@ async function saveFamily(store, email, b) {
   // DEBUG: Check first task specifically
   const firstTask = lucas_before?.tasks?.[0];
 
+  // Log merged data BEFORE Firebase write
+  console.log(`[SAVEFAMILY-MERGED-${saveId}] requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-MERGED-${saveId}] sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+
   // Write to Firebase (single source of truth)
   try {
     const firebaseFamily = { ...merged };
@@ -602,6 +620,11 @@ async function saveFamily(store, email, b) {
       taskRequests: firebaseFamily.taskRequests,
       updatedAt: Date.now()
     };
+
+    // Log what's being written to Firebase
+    console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - requests:`, JSON.stringify(famPayload.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+    console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - sanctionsList:`, JSON.stringify(famPayload.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+
     await db.ref(`families/${inc.id}`).set(famPayload);
 
     // Write each child separately under /families/{familyId}/children/{childId}
@@ -661,6 +684,11 @@ async function saveFamily(store, email, b) {
   // (avoids stale data if storage didn't persist the changes yet)
   merged.memberInfo = {};
   for (const m of merged.members) { const a = await store.get('account:' + m); merged.memberInfo[m] = a ? a.name : null; }
+
+  // Log what we're returning to frontend
+  console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+
   return { status: 200, body: { family: merged } };
 }
 async function createFamily(store, email, b, firebaseUid) {
