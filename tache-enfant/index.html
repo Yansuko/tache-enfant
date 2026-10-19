@@ -734,12 +734,16 @@ function screenSanctions() {
   <div style="padding:0 20px 8px">
     ${childSeg()}
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-      ${sanctions.map((s, i) => `
+      ${sanctions.map((s, i) => {
+        const c = child();
+        const childName = c ? esc(c.name) : 'Enfant';
+        return `
       <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:10px;padding:10px 14px">
         <div style="flex:1;font-size:14px">${esc(s.name)} <span class="tag tag-accent">-${s.gold} 🪙</span></div>
-        <button class="btn btn-primary" data-action="apply-sanction" data-i="${i}">Appliquer à ${esc(child().name)}</button>
+        <button class="btn btn-primary" data-action="apply-sanction" data-i="${i}">Appliquer à ${childName}</button>
         <button class="btn btn-icon btn-ghost" data-action="del-sanction-def" data-i="${i}" aria-label="Supprimer">✕</button>
-      </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucune sanction dans la liste.</p>'}
+      </div>`;
+      }).join('') || '<p class="text-muted" style="font-size:13px">Aucune sanction dans la liste.</p>'}
     </div>
     <div class="card elev-sm" style="gap:8px;margin-top:10px">
       <div class="card-title" style="font-size:14px">+ Ajouter à la liste</div>
@@ -747,10 +751,13 @@ function screenSanctions() {
       <div class="field" style="margin:0"><label>Or retiré 🪙</label><input class="input" id="sanction-pts" type="number" min="1" placeholder="Ex : 10"></div>
       <button class="btn btn-secondary btn-block" data-action="add-sanction-def">Ajouter la sanction</button>
     </div>
-    ${child().sanctions.map(s => `
+    ${(() => {
+      const c = child();
+      return c && c.sanctions && Array.isArray(c.sanctions) ? c.sanctions.map(s => `
     <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:10px;color:var(--color-neutral-700)">
-      <span>${esc(s.motif)} · ${esc(child().name)}</span><span class="tag tag-accent">-${s.gold} 🪙</span>
-    </div>`).join('')}
+      <span>${esc(s.motif)} · ${esc(c.name)}</span><span class="tag tag-accent">-${s.gold} 🪙</span>
+    </div>`).join('') : '';
+    })()}
   </div>
   ${state.proposals.some(p => p.status === 'pending') ? `
   <div style="padding:16px 20px 8px" class="kicker">Propositions à valider</div>
@@ -1511,10 +1518,12 @@ const ACTIONS = {
   },
   refuse: el => { const q = state.requests[+el.dataset.i]; if (q) q.status = 'refused'; },
   'apply-sanction': el => {
+    // Defensive: ensure arrays are normalized
+    if (!state.sanctionsList || !Array.isArray(state.sanctionsList)) return;
     const s = state.sanctionsList[+el.dataset.i];
-    if (!s) return;
+    if (!s || !s.name || !(s.gold > 0)) return;
     const c = child();
-    if (!c) return;
+    if (!c || !c.sanctions || !Array.isArray(c.sanctions)) return;
     c.sanctions.unshift({ motif: s.name, gold: s.gold });
     c.gold = Math.max(0, c.gold - s.gold);
   },
@@ -1876,6 +1885,7 @@ document.body.addEventListener('click', async e => {
     return;
   }
   if (!state) return;
+  normalizeFamilyData(state);
   const c0 = state.children[state.activeChild];
   const lvl0 = c0 ? level(c0.xp) : 1;
   const bonus0 = c0 ? c0.dailyBonusDay : null;
