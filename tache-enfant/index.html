@@ -297,14 +297,20 @@ function normalizeFamilyData(f) {
       }
     }
   }
-  // Assurer que chaque enfant a un array de tasks
+  // Assurer que chaque enfant a des arrays pour tasks, sanctions, grades, etc.
   if (f.children && Array.isArray(f.children)) {
     for (const child of f.children) {
       if (child && typeof child === 'object') {
+        // Normalize tasks array
         if (child.tasks && typeof child.tasks === 'object' && !Array.isArray(child.tasks)) {
           child.tasks = Object.values(child.tasks).filter(v => v !== null && v !== undefined);
         }
         if (!child.tasks || !Array.isArray(child.tasks)) child.tasks = [];
+        // Normalize sanctions array
+        if (child.sanctions && typeof child.sanctions === 'object' && !Array.isArray(child.sanctions)) {
+          child.sanctions = Object.values(child.sanctions).filter(v => v !== null && v !== undefined);
+        }
+        if (!child.sanctions || !Array.isArray(child.sanctions)) child.sanctions = [];
       }
     }
   }
@@ -1523,9 +1529,12 @@ const ACTIONS = {
     const s = state.sanctionsList[+el.dataset.i];
     if (!s || !s.name || !(s.gold > 0)) return;
     const c = child();
-    if (!c || !c.sanctions || !Array.isArray(c.sanctions)) return;
+    if (!c) return;
+    // Initialize sanctions array if missing (backward compat for existing children)
+    if (!c.sanctions || !Array.isArray(c.sanctions)) c.sanctions = [];
     c.sanctions.unshift({ motif: s.name, gold: s.gold });
     c.gold = Math.max(0, c.gold - s.gold);
+    console.log(`[SANCTION-APPLIED] Applied "${s.name}" to ${c.name}: gold ${c.gold + s.gold} → ${c.gold}, sanctions now: ${c.sanctions.length}`);
   },
   'add-sanction-def': () => {
     const name = val('sanction-motif'), gold = parseInt(val('sanction-pts'), 10);
@@ -1987,6 +1996,28 @@ console.assert((() => {
   state = saved;
   return result;
 })(), 'sanctions normalization and handler');
+
+// Test backward compatibility: children without sanctions array should get it initialized
+console.assert((() => {
+  const saved = state;
+  state = {
+    children: [{ name: 'Luc', gold: 100 }],  // no sanctions array (old data)
+    activeChild: 0,
+    sanctionsList: [{ name: 'Mensonge', gold: 20 }],
+    role: 'parent'
+  };
+  normalizeFamilyData(state);
+  const c = state.children[0];
+  const hasSanctions = c.sanctions && Array.isArray(c.sanctions) && c.sanctions.length === 0;
+  // Simulate handler: init if missing, then apply
+  if (!c.sanctions || !Array.isArray(c.sanctions)) c.sanctions = [];
+  const s = state.sanctionsList[0];
+  c.sanctions.unshift({ motif: s.name, gold: s.gold });
+  c.gold = Math.max(0, c.gold - s.gold);
+  const result = hasSanctions && c.sanctions.length === 1 && c.gold === 80;
+  state = saved;
+  return result;
+})(), 'sanctions backward compat: init missing array');
 
 /* boot : restaure la session via Firebase onAuthStateChanged */
 async function boot() {
