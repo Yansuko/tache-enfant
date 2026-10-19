@@ -59,7 +59,10 @@ const store = {
     initFirebase();
     let path = '';
     if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
-    else if (k.startsWith('account:')) path = `users/email-${k.replace(/[^a-z0-9]/gi, '_')}`;
+    else if (k.startsWith('account:')) {
+      const email = k.replace('account:', '');
+      path = `users/email-${email.replace(/[^a-z0-9]/gi, '_')}`;
+    }
     else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
     else path = `_other/${k}`;
 
@@ -71,7 +74,10 @@ const store = {
     initFirebase();
     let path = '';
     if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
-    else if (k.startsWith('account:')) path = `users/email-${k.replace(/[^a-z0-9]/gi, '_')}`;
+    else if (k.startsWith('account:')) {
+      const email = k.replace('account:', '');
+      path = `users/email-${email.replace(/[^a-z0-9]/gi, '_')}`;
+    }
     else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
     else path = `_other/${k}`;
 
@@ -82,7 +88,10 @@ const store = {
     initFirebase();
     let path = '';
     if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
-    else if (k.startsWith('account:')) path = `users/email-${k.replace(/[^a-z0-9]/gi, '_')}`;
+    else if (k.startsWith('account:')) {
+      const email = k.replace('account:', '');
+      path = `users/email-${email.replace(/[^a-z0-9]/gi, '_')}`;
+    }
     else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
     else path = `_other/${k}`;
 
