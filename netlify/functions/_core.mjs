@@ -46,7 +46,7 @@ async function getSecret(store) {
 // Normalize family data: convert Firebase object-stored arrays to actual arrays
 function normalizeFamilyData(f) {
   if (!f || typeof f !== 'object') return f;
-  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList'];
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog'];
   for (const field of arrayFields) {
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
       const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
@@ -120,7 +120,7 @@ export function newFamily(name, owner) {
   return {
     id: 'fam-' + crypto.randomBytes(5).toString('hex'), name, owner, members: [owner],
     day: '', dailyBonus: { xp: 30, gold: 15 },
-    questList: [], proposals: [], children: [], sanctionsList: [],
+    questList: [], proposals: [], children: [], sanctionsList: [], actionLog: [],
     rewards: [
       { icon: '📱', name: 'Temps écran +30min', cost: 50, lvl: 1 },
       { icon: '🎮', name: 'Session de jeu +1h', cost: 75, lvl: 2 },
