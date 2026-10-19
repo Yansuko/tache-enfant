@@ -866,20 +866,22 @@ async function submitGrade(store, famId, b) {
   return { status: 200, body: { family: fam } };
 }
 async function approveGrade(store, email, b) {
-  const { familyId, index } = b;
+  const { familyId, gradeId, gold } = b;
   const fbSnap = await db.ref(`families/${familyId}`).once('value');
   const fam = fbSnap.val();
   if (!fam) return err(404, 'Famille introuvable.');
   if (!fam.members.includes(email)) return err(403, 'Accès refusé.');
   // Normalize family data
   normalizeFamilyData(fam);
-  if (!fam.gradeRequests || !fam.gradeRequests[index]) return err(404, 'Note introuvable.');
-  const req = fam.gradeRequests[index];
+  const req = fam.gradeRequests?.find(g => g.id === gradeId);
+  if (!req) return err(404, 'Note introuvable.');
   if (req.status !== 'pending') return err(400, 'Seules les notes en attente peuvent être approuvées.');
   const child = fam.children.find(c => c.name === req.child);
-  if (child) { child.gold = (child.gold || 0) + req.gold; }
+  const goldAmount = (gold !== undefined && gold !== null) ? gold : req.gold;
+  if (child) { child.gold = (child.gold || 0) + goldAmount; }
   req.status = 'approved';
   req.approvedAt = Date.now();
+  req.gold = goldAmount;
 
   // Update in Firebase
   try {

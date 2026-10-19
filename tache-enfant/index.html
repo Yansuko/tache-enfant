@@ -1516,12 +1516,17 @@ const ACTIONS = {
     const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
+    console.log(`[GRADE-SUBMIT-START] Submitting: ${subject} ${gradeVal} (${gold}🪙)`);
     const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+    console.log(`[GRADE-SUBMIT-RESPONSE] Received family with ${result.family?.gradeRequests?.length || 0} grades:`, result.family?.gradeRequests?.map(g => `${g.subject}`) || []);
     if (result.family) {
       // API returns updated family - sync it to state
       state.gradeRequests = result.family.gradeRequests || [];
+      console.log(`[GRADE-STATE-UPDATED] state.gradeRequests now has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.subject}`));
       // Persist the update to backend so other users see it
+      console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, state.gradeRequests.map(g => `${g.subject}`));
       await save();
+      console.log(`[GRADE-SAVE-AFTER] After save(). state.gradeRequests:`, state.gradeRequests?.map(g => `${g.subject}`) || []);
     }
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
@@ -1551,13 +1556,13 @@ const ACTIONS = {
     grades = grades || [];
     const pending = grades.filter(r => r.status === 'pending');
     if (i < pending.length) {
-      const gi = state.gradeRequests.indexOf(pending[i]);
+      const grade = pending[i];
       const newGold = parseInt(document.getElementById(`grade-gold-${i}`).value, 10) || 0;
-      await api('approveGrade', { familyId: state.id, index: gi });
-      state.gradeRequests[gi].status = 'approved';
-      state.gradeRequests[gi].approvedAt = Date.now();
-      state.gradeRequests[gi].gold = newGold;
-      const child = state.children.find(c => c.name === pending[i].child);
+      await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold });
+      grade.status = 'approved';
+      grade.approvedAt = Date.now();
+      grade.gold = newGold;
+      const child = state.children.find(c => c.name === grade.child);
       if (child) child.gold = (child.gold || 0) + newGold;
       render();
     }
