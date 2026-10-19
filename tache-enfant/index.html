@@ -1387,8 +1387,8 @@ const ACTIONS = {
     document.getElementById('new-task-freq').value = 'daily';
     save(); render();
   },
-  'assign-quest': el => addQuestTo(child(), state.questList[+el.dataset.i]),
-  'assign-quest-all': el => { const t = state.questList[+el.dataset.i]; state.children.forEach(c => addQuestTo(c, t)); },
+  'assign-quest': el => { const t = state.questList[+el.dataset.i]; if (t) addQuestTo(child(), t); },
+  'assign-quest-all': el => { const t = state.questList[+el.dataset.i]; if (t && state.children) state.children.forEach(c => addQuestTo(c, t)); },
   'del-quest-def': el => { state.questList.splice(+el.dataset.i, 1); },
   'add-quest-def': () => {
     const name = val('qd-name'), xp = parseInt(val('qd-xp'), 10), gold = parseInt(val('qd-gold') || '0', 10);
@@ -1481,19 +1481,24 @@ const ACTIONS = {
   },
   'request-reward': el => {
     const r = state.rewards[+el.dataset.i];
+    if (!r) return;
     state.requests.push({ child: child().name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
   },
   approve: el => {
     const q = state.requests[+el.dataset.i];
+    if (!q) return;
     const c = state.children.find(c => c.name === q.child);
     if (c) c.gold = Math.max(0, c.gold - q.cost);
     q.status = 'approved';
   },
-  refuse: el => { state.requests[+el.dataset.i].status = 'refused'; },
+  refuse: el => { const q = state.requests[+el.dataset.i]; if (q) q.status = 'refused'; },
   'apply-sanction': el => {
     const s = state.sanctionsList[+el.dataset.i];
-    child().sanctions.unshift({ motif: s.name, gold: s.gold });
-    child().gold = Math.max(0, child().gold - s.gold);
+    if (!s) return;
+    const c = child();
+    if (!c) return;
+    c.sanctions.unshift({ motif: s.name, gold: s.gold });
+    c.gold = Math.max(0, c.gold - s.gold);
   },
   'add-sanction-def': () => {
     const name = val('sanction-motif'), gold = parseInt(val('sanction-pts'), 10);
@@ -1546,9 +1551,10 @@ const ACTIONS = {
   'del-proposal': el => { state.proposals.splice(+el.dataset.i, 1); },
   'approve-proposal': el => {
     const [p] = state.proposals.splice(+el.dataset.i, 1);
+    if (!p) return;
     state.rewards.push({ icon: '💡', name: p.name, cost: p.cost, lvl: 1 });
   },
-  'refuse-proposal': el => { state.proposals[+el.dataset.i].status = 'refused'; },
+  'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
   'approve-grade': async el => {
     const i = +el.dataset.i;
     // Defensive: ensure gradeRequests is an array
@@ -1598,7 +1604,7 @@ const ACTIONS = {
   },
   'del-child': el => {
     const c = state.children[+el.dataset.i];
-    if (!confirm(`Supprimer ${c.name} et toutes ses données ?`)) return;
+    if (!c || !confirm(`Supprimer ${c.name} et toutes ses données ?`)) return;
     state.children.splice(+el.dataset.i, 1);
     // Defensive: ensure arrays before filtering
     let requests = state.requests;
@@ -1616,7 +1622,7 @@ const ACTIONS = {
   },
   'reset-child-pin': el => {
     const c = state.children[+el.dataset.i];
-    if (!confirm(`Réinitialiser le PIN de ${c.name} ? Il devra en créer un nouveau.`)) return;
+    if (!c || !confirm(`Réinitialiser le PIN de ${c.name} ? Il devra en créer un nouveau.`)) return;
     c.pin = null;
     unlocked.delete(c.name);
     render();
