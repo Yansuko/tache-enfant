@@ -354,8 +354,23 @@ async function persistFamily() {
           }
         }
       }
+      // Merge server data smartly: preserve local pending grades, accept server's approved grades
+      // to prevent loss of just-submitted grades during rapid submissions
+      const localPending = (state.gradeRequests || []).filter(r => r && r.status === 'pending');
+      const serverGrades = res.family.gradeRequests || [];
+      const mergedGrades = [];
+      const seenIds = new Set();
+      // Add all server grades
+      for (const g of serverGrades) {
+        if (g && g.id) { mergedGrades.push(g); seenIds.add(g.id); }
+      }
+      // Add local pending grades that aren't on server yet
+      for (const g of localPending) {
+        if (g && g.id && !seenIds.has(g.id)) mergedGrades.push(g);
+      }
+
       // Update server-managed fields from response - MUST include all array fields
-      // to prevent stale data (gradeRequests, sanctionsList, proposals, etc.)
+      // to prevent stale data (sanctionsList, proposals, etc.)
       // CRITICAL: Include children to prevent loss of child data during persistence
       const serverFields = {
         id: res.family.id,
@@ -365,7 +380,7 @@ async function persistFamily() {
         memberInfo: res.family.memberInfo,
         children: res.family.children,  // MUST include - don't lose children!
         requests: res.family.requests,
-        gradeRequests: res.family.gradeRequests,
+        gradeRequests: mergedGrades,
         sanctionsList: res.family.sanctionsList,
         proposals: res.family.proposals,
         rewards: res.family.rewards,
@@ -1527,6 +1542,7 @@ const ACTIONS = {
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
     document.getElementById('grade-gold').value = '';
+    await save();
     render();
   },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
