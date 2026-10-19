@@ -1861,6 +1861,22 @@ document.body.addEventListener('click', async e => {
   }
   save(); render();
 });
+document.body.addEventListener('keypress', e => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'au-pass') {
+    const loginBtn = document.querySelector('[data-action="login"]') || document.querySelector('[data-action="signup"]');
+    if (loginBtn) loginBtn.click();
+  } else if (e.target.id === 'ec-pin') {
+    const unlockBtn = document.querySelector('[data-action="unlock-child-direct"]');
+    if (unlockBtn) unlockBtn.click();
+  } else if (e.target.id === 'pu-pass') {
+    const unlockParentBtn = document.querySelector('[data-action="unlockParent"]');
+    if (unlockParentBtn) unlockParentBtn.click();
+  } else if (e.target.id === 'reset-password') {
+    const resetBtn = document.querySelector('[data-action="reset-password-step2"]');
+    if (resetBtn) resetBtn.click();
+  }
+});
 document.getElementById('role-seg').addEventListener('change', e => {
   if (state) state.role = e.target.value;
   if (e.target.value === 'enfant') parentUnlocked = false; // re-verrouille l'espace parent
