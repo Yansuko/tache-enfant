@@ -11,12 +11,15 @@ import { runSyncTests } from './09-sync.test.mjs';
 import { runRegressionTests } from './10-regression.test.mjs';
 import { runChildActionTests } from './11-child-actions.test.mjs';
 import { runStatisticsTests } from './12-statistics.test.mjs';
+import { runBugTests } from './13-bug-multiple-notes.test.mjs';
+import { runSanctionTests } from './14-sanctions.test.mjs';
 
 const sections = [
   ['Authentication', runAuthTests], ['Families', runFamilyTests], ['Children', runChildrenTests],
   ['Tasks', runTaskTests], ['Rewards', runRewardTests], ['Levels', runLevelTests],
   ['Notes', runNoteTests], ['Navigation', runNavigationTests], ['Sync', runSyncTests],
-  ['Regression', runRegressionTests], ['Child Actions', runChildActionTests], ['Statistics', runStatisticsTests]
+  ['Regression', runRegressionTests], ['Child Actions', runChildActionTests], ['Statistics', runStatisticsTests],
+  ['Bug Regression', runBugTests], ['Sanctions', runSanctionTests]
 ];
 
 console.log('🧪 DAILYKIDS QUEST - E2E TEST SUITE\n');
