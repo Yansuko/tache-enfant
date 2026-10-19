@@ -1443,7 +1443,7 @@ const ACTIONS = {
     // CRITICAL: Must await to prevent race condition where stats are fetched before save completes
     await save();
   },
-  'reject-task': el => {
+  'reject-task': async el => {
     const idx = +el.dataset.i;
     const req = (state.taskRequests || []).find((r, i) => i === idx && r.child === child().name && r.status === 'pending');
     if (req) {
@@ -1451,7 +1451,7 @@ const ACTIONS = {
       if (task) task.done = false;
     }
     state.taskRequests = (state.taskRequests || []).filter((r, i) => !(i === idx && r.child === child().name && r.status === 'pending'));
-    save(); render();
+    await save();
   },
   'propose-task': () => {
     const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10), frequency = val('propose-task-frequency') || 'daily';
