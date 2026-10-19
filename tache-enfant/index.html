@@ -1929,7 +1929,7 @@ document.body.addEventListener('click', async e => {
     if (c.dailyBonusDay === state.day && bonus0 !== state.day) celebrate(`🎯 Mission accomplie ! +${bonus.xp} XP`);
     else if (level(c.xp) > lvl0) celebrate(`⚔️ Niveau ${level(c.xp)} !`);
   }
-  save(); render();
+  await save(); render();
 });
 document.body.addEventListener('keypress', e => {
   if (e.key !== 'Enter') return;
