@@ -1517,7 +1517,12 @@ const ACTIONS = {
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
     await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
-    state.gradeRequests = state.gradeRequests || [];
+    // Defensive: ensure gradeRequests is an array
+    let grades = state.gradeRequests;
+    if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
+      grades = Object.values(grades).filter(v => v != null);
+    }
+    state.gradeRequests = grades || [];
     state.gradeRequests.push({ child: c.name, subject, grade: gradeVal, gold, status: 'pending', submittedAt: Date.now() });
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
