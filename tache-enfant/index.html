@@ -337,22 +337,23 @@ async function persistFamily() {
       normalizeFamilyData(res.family);
       console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
       // Merge backend response with local state, preserving approved tasks (done=true with completedAt)
+      const mergedChildren = [];
       for (let i = 0; i < (res.family.children || []).length; i++) {
+        const remoteChild = res.family.children[i];
+        let mergedChild = { ...remoteChild };
         if (state.children && state.children[i]) {
-          const remoteChild = res.family.children[i];
           const localChild = state.children[i];
-          for (let j = 0; j < (remoteChild.tasks || []).length; j++) {
-            // Preserve local approved tasks even if server returns them as unapproved
-            // Only accept server version if task is NOT approved locally (done=false or no completedAt)
-            if (!localChild.tasks[j].done || !localChild.tasks[j].completedAt) {
-              localChild.tasks[j] = remoteChild.tasks[j];
-            } else {
-              // Task is approved locally (done=true with completedAt): ensure it stays approved
-              // even if server sent back an old version without approval
-              localChild.tasks[j] = { ...remoteChild.tasks[j], done: true, completedAt: localChild.tasks[j].completedAt };
+          // Merge tasks array
+          mergedChild.tasks = (remoteChild.tasks || []).map((remoteTask, j) => {
+            const localTask = localChild.tasks?.[j];
+            if (localTask && localTask.done && localTask.completedAt) {
+              // Preserve local approved tasks even if server returns them as unapproved
+              return { ...remoteTask, done: true, completedAt: localTask.completedAt };
             }
-          }
+            return remoteTask;
+          });
         }
+        mergedChildren.push(mergedChild);
       }
       // Update server-managed fields from response - MUST include all array fields
       // to prevent stale data (gradeRequests, sanctionsList, proposals, etc.)
@@ -363,7 +364,7 @@ async function persistFamily() {
         owner: res.family.owner,
         members: res.family.members,
         memberInfo: res.family.memberInfo,
-        children: res.family.children,  // MUST include - don't lose children!
+        children: mergedChildren,  // Use merged children that preserve local approvals
         requests: res.family.requests,
         gradeRequests: res.family.gradeRequests,
         sanctionsList: res.family.sanctionsList,
@@ -1324,7 +1325,7 @@ function childAuth(c) {
 /* ── actions ── */
 
 const val = id => document.getElementById(id).value.trim();
-function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, frequency: t.frequency || 'daily' }); }
+function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
 function replaceFamily(f) {
   const i = families.findIndex(x => x.id === f.id);
   if (i < 0) return;
@@ -1379,7 +1380,7 @@ const ACTIONS = {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
     const frequency = document.getElementById('new-task-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, frequency });
+    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, completedAt: null, frequency });
     document.getElementById('new-task-name').value = '';
     document.getElementById('new-task-xp').value = '';
     document.getElementById('new-task-gold').value = '';

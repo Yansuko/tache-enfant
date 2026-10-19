@@ -123,6 +123,29 @@ export function newFamily(name, owner) {
 }
 
 function seedFamily() {
+  // Use function to generate fresh timestamps so demo tasks always appear in current week
+  function demoTasks() {
+    const now = Date.now();
+    return [
+      { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: now },
+      { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: now },
+      { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: true, completedAt: now - 86400000 },
+      { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: now - 86400000 },
+      { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: now - 172800000 },
+      { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: now - 172800000 },
+      { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: now - 172800000 },
+      { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: now - 259200000 },
+      { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: true, completedAt: now - 259200000 },
+      { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: now - 345600000 },
+      { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: now - 345600000 },
+      { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: now - 345600000 },
+      { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: true, completedAt: now - 432000000 },
+      { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: now - 518400000 },
+      { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: now - 518400000 },
+      { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: now - 604800000 },
+    ];
+  }
+
   return {
     id: 'fam-demo', name: 'Famille Démo', owner: 'parent@demo.fr', members: ['parent@demo.fr'],
     day: '', dailyBonus: { xp: 30, gold: 15 },
@@ -136,24 +159,7 @@ function seedFamily() {
     taskRequests: [],
     children: [
       { id: 'child-emma-demo', name: 'Emma', xp: 450, gold: 280,
-        tasks: [
-          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 0 },
-          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: Date.now() - 0 },
-          { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: true, completedAt: Date.now() - 86400000 },
-          { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: Date.now() - 86400000 },
-          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 172800000 },
-          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: Date.now() - 172800000 },
-          { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: Date.now() - 172800000 },
-          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 259200000 },
-          { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: true, completedAt: Date.now() - 259200000 },
-          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 345600000 },
-          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: Date.now() - 345600000 },
-          { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: Date.now() - 345600000 },
-          { icon: '🍽️', name: 'Mettre la table', xp: 10, gold: 5, done: true, completedAt: Date.now() - 432000000 },
-          { icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, done: true, daily: true, completedAt: Date.now() - 518400000 },
-          { icon: '📚', name: 'Faire ses devoirs', xp: 30, gold: 15, done: true, daily: true, completedAt: Date.now() - 518400000 },
-          { icon: '🐶', name: 'Sortir le chien', xp: 16, gold: 8, done: true, completedAt: Date.now() - 604800000 },
-        ],
+        tasks: demoTasks(),
         grades: [
           { subject: 'Mathématiques', grade: '16/20', xp: 50, gold: 10 },
           { subject: 'Français', grade: '13/20', xp: 30, gold: 5 },
@@ -194,6 +200,21 @@ function seedFamily() {
 async function ensureSeed(store) {
   if (await store.get('seeded')) {
     // Already seeded, don't overwrite user changes
+    // But refresh demo tasks to have current timestamps
+    try {
+      const fam = seedFamily();
+      const fbSnap = await db.ref(`families/${fam.id}`).once('value');
+      if (fbSnap.exists()) {
+        const current = fbSnap.val();
+        // Refresh Emma's tasks with current timestamps
+        if (current.children && current.children.length > 0) {
+          current.children[0].tasks = fam.children[0].tasks;
+          await db.ref(`families/${fam.id}`).set(current);
+        }
+      }
+    } catch (e) {
+      // Silently ignore refresh errors
+    }
     return;
   }
   const fam = seedFamily();
