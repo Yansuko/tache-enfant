@@ -382,6 +382,7 @@ async function persistFamily() {
       // Update server-managed fields from response - MUST include all array fields
       // to prevent stale data (gradeRequests, sanctionsList, proposals, etc.)
       // CRITICAL: Include children to prevent loss of child data during persistence
+      // CRITICAL FIX: Only merge fields that are defined to prevent undefined overwrites
       const serverFields = {
         id: res.family.id,
         name: res.family.name,
@@ -389,18 +390,19 @@ async function persistFamily() {
         members: res.family.members,
         memberInfo: res.family.memberInfo,
         children: mergedChildren,  // Use merged children that preserve local approvals
-        requests: res.family.requests,
-        gradeRequests: res.family.gradeRequests,
-        sanctionsList: res.family.sanctionsList,
-        proposals: res.family.proposals,
-        rewards: res.family.rewards,
-        questList: res.family.questList,
-        taskRequests: res.family.taskRequests,
+        requests: res.family.requests !== undefined ? res.family.requests : state.requests,
+        gradeRequests: res.family.gradeRequests !== undefined ? res.family.gradeRequests : state.gradeRequests,
+        sanctionsList: res.family.sanctionsList !== undefined ? res.family.sanctionsList : state.sanctionsList,
+        proposals: res.family.proposals !== undefined ? res.family.proposals : state.proposals,
+        rewards: res.family.rewards !== undefined ? res.family.rewards : state.rewards,
+        questList: res.family.questList !== undefined ? res.family.questList : state.questList,
+        taskRequests: res.family.taskRequests !== undefined ? res.family.taskRequests : state.taskRequests,
         updatedAt: res.family.updatedAt,
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
       };
       Object.assign(state, serverFields);
+      console.log(`[PERSIST-MERGE] After merge: requests=${state.requests?.length || 0}, sanctionsList=${state.sanctionsList?.length || 0}`);
       console.log(`[SAVE] Success`);
       toast(false);
     }
@@ -1521,6 +1523,7 @@ const ACTIONS = {
     const c = state.children.find(c => c.name === q.child);
     if (c) c.gold = Math.max(0, c.gold - q.cost);
     q.status = 'approved';
+    console.log(`[APPROVE-REWARD] Approved "${q.name}" for ${q.child}: gold cost=${q.cost}, new gold=${c?.gold || 0}. Total requests: ${state.requests?.length || 0}`);
   },
   refuse: el => { const q = state.requests[+el.dataset.i]; if (q) q.status = 'refused'; },
   'apply-sanction': el => {
@@ -2019,6 +2022,63 @@ console.assert((() => {
   return result;
 })(), 'sanctions backward compat: init missing array');
 
+// Test reward approval persistence
+console.assert((() => {
+  const saved = state;
+  state = {
+    children: [{ id: 'c1', name: 'Alice', gold: 100 }, { id: 'c2', name: 'Bob', gold: 50 }],
+    activeChild: 0,
+    requests: [
+      { child: 'Alice', name: 'Phone', cost: 40, status: 'pending', icon: '📱' },
+      { child: 'Bob', name: 'Game', cost: 30, status: 'pending', icon: '🎮' }
+    ],
+    sanctionsList: [{ name: 'Rudeness', gold: 10 }],
+    role: 'parent'
+  };
+  normalizeFamilyData(state);
+
+  // Simulate approve handler: approve first request
+  const q = state.requests[0];
+  const c = state.children.find(ch => ch.name === q.child);
+  if (c) c.gold = Math.max(0, c.gold - q.cost);
+  q.status = 'approved';
+
+  // Apply sanction to second child
+  const c2 = state.children[1];
+  if (!c2.sanctions) c2.sanctions = [];
+  const sanction = state.sanctionsList[0];
+  c2.sanctions.unshift({ motif: sanction.name, gold: sanction.gold });
+  c2.gold = Math.max(0, c2.gold - sanction.gold);
+
+  // Verify state after actions
+  const approved = state.requests[0].status === 'approved';
+  const aliceGoldCorrect = state.children[0].gold === 60;  // 100 - 40
+  const bobGoldCorrect = state.children[1].gold === 40;    // 50 - 10
+  const bobSanctioned = state.children[1].sanctions.length === 1;
+
+  // Simulate stripUi and persistence round-trip
+  const payload = { ...state };
+  delete payload.role;
+  const serverResponse = JSON.parse(JSON.stringify(payload));  // Server echoes back
+
+  // Merge response back (simulating persistFamily with defensive merge)
+  state.requests = serverResponse.requests !== undefined ? serverResponse.requests : state.requests;
+  state.sanctionsList = serverResponse.sanctionsList !== undefined ? serverResponse.sanctionsList : state.sanctionsList;
+  state.children = serverResponse.children || state.children;
+
+  // Verify persistence
+  const persistedApproval = state.requests[0].status === 'approved';
+  const persistedAliceGold = state.children[0].gold === 60;
+  const persistedBobGold = state.children[1].gold === 40;
+  const persistedSanctions = state.children[1].sanctions.length === 1;
+
+  const result = approved && aliceGoldCorrect && bobGoldCorrect && bobSanctioned &&
+                 persistedApproval && persistedAliceGold && persistedBobGold && persistedSanctions;
+
+  state = saved;
+  return result;
+})(), 'reward approval and sanctions persistence');
+
 /* boot : restaure la session via Firebase onAuthStateChanged */
 async function boot() {
   // Wait for Firebase to be initialized
@@ -2042,14 +2102,32 @@ async function boot() {
 
       // Save ALL currently approved tasks BEFORE loading new families
       const approvedTasks = {};
+      // CRITICAL: Also preserve shop actions (approved requests and applied sanctions)
+      const approvedRequests = [];
+      const childSanctions = {};  // childId -> sanctions array
+
       if (families.length && state?.children) {
         for (const family of families) {
+          // Preserve approved requests
+          if (state.requests && Array.isArray(state.requests)) {
+            for (const req of state.requests) {
+              if (req.status === 'approved') {
+                approvedRequests.push(JSON.parse(JSON.stringify(req)));
+              }
+            }
+          }
+
+          // Preserve applied sanctions
           for (const child of family.children || []) {
             for (const task of child.tasks || []) {
               if (task.done && task.completedAt) {
                 const key = `${child.id}:${task.name}`;
                 approvedTasks[key] = task;
               }
+            }
+            // Save sanctions if any exist
+            if (child.sanctions && Array.isArray(child.sanctions) && child.sanctions.length > 0) {
+              childSanctions[child.id] = JSON.parse(JSON.stringify(child.sanctions));
             }
           }
         }
@@ -2127,6 +2205,44 @@ async function boot() {
       if (localStorage.getItem('statsPeriod')) {
         statsPeriod = localStorage.getItem('statsPeriod');
       }
+
+      // Restore approved requests BEFORE render
+      if (state && approvedRequests.length > 0) {
+        if (!state.requests) state.requests = [];
+        for (const approvedReq of approvedRequests) {
+          const existingReq = state.requests.find(r =>
+            r.child === approvedReq.child &&
+            r.name === approvedReq.name &&
+            r.cost === approvedReq.cost
+          );
+          if (existingReq) {
+            existingReq.status = 'approved';
+            console.log(`[BOOT-RESTORE] Restored approved request: ${approvedReq.child} - ${approvedReq.name}`);
+          } else {
+            // If request doesn't exist, add it back
+            state.requests.push(approvedReq);
+            console.log(`[BOOT-RESTORE] Re-added approved request: ${approvedReq.child} - ${approvedReq.name}`);
+          }
+        }
+      }
+
+      // Restore applied sanctions BEFORE render
+      if (state && Object.keys(childSanctions).length > 0) {
+        for (const child of state.children || []) {
+          if (childSanctions[child.id]) {
+            if (!child.sanctions) child.sanctions = [];
+            // Merge with existing sanctions (avoid duplicates)
+            const existingMotifs = new Set(child.sanctions.map(s => s.motif));
+            for (const sanction of childSanctions[child.id]) {
+              if (!existingMotifs.has(sanction.motif)) {
+                child.sanctions.unshift(sanction);
+                console.log(`[BOOT-RESTORE] Restored sanction on ${child.name}: ${sanction.motif}`);
+              }
+            }
+          }
+        }
+      }
+
       render();
 
       // CRITICAL: Restore approved tasks AFTER render() since setActiveFamily and render()
