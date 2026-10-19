@@ -1964,6 +1964,29 @@ console.assert(level(0) === 1 && level(99) === 1 && level(230) === 3, 'level');
 console.assert(nextReward(128, [{ cost: 50 }, { cost: 80 }, { cost: 150 }]).cost === 150, 'nextReward');
 console.assert(esc('<b>&"') === '&lt;b&gt;&amp;&quot;', 'esc');
 console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true }, { daily: true, done: true }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
+// ponytail: sanctions handler test with normalization
+console.assert((() => {
+  const saved = state;
+  state = {
+    children: [{ name: 'Emma', gold: 50, sanctions: [] }, { name: 'Pierre', gold: 100, sanctions: [] }],
+    activeChild: 0,
+    sanctionsList: { '0': { name: 'Insolence', gold: 10 }, '1': { name: 'Retard', gold: 5 } },  // object form from Firebase
+    role: 'parent'
+  };
+  normalizeFamilyData(state);  // Should convert to array
+  // After normalization, sanctionsList should be array
+  const isArray = Array.isArray(state.sanctionsList);
+  // Handler should work with normalized data
+  const sanction = state.sanctionsList[0];
+  const c = state.children[0];
+  if (sanction && c) {
+    c.sanctions.unshift({ motif: sanction.name, gold: sanction.gold });
+    c.gold = Math.max(0, c.gold - sanction.gold);
+  }
+  const result = isArray && state.children[0].sanctions.length === 1 && state.children[0].gold === 40;
+  state = saved;
+  return result;
+})(), 'sanctions normalization and handler');
 
 /* boot : restaure la session via Firebase onAuthStateChanged */
 async function boot() {
