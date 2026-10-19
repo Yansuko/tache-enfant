@@ -1085,11 +1085,11 @@ function aggregateTaskStats(child, period = 'week') {
   let rawTasks = child.tasks || [];
   // Convert tasks object to array if needed (from Firebase)
   if (rawTasks && typeof rawTasks === 'object' && !Array.isArray(rawTasks)) {
-    rawTasks = Object.values(rawTasks);
+    rawTasks = Object.values(rawTasks).filter(v => v !== null && v !== undefined);
   }
   console.log('[AGGREGATE-STATS] Total tasks:', rawTasks.length);
 
-  const tasks = rawTasks.map(t => ({
+  const tasks = rawTasks.filter(t => t && typeof t === 'object').map(t => ({
     ...t,
     completedAt: t.completedAt ? Number(t.completedAt) : null
   }));
@@ -1287,10 +1287,8 @@ export async function handleApi({ action, token, body = {} }, store) {
         const familySnapshot = await db.ref(`families/${familyId}`).once('value');
         if (familySnapshot.exists()) {
           family = familySnapshot.val();
-          // Ensure children is always an array
-          if (family.children && typeof family.children === 'object' && !Array.isArray(family.children)) {
-            family.children = Object.values(family.children);
-          }
+          // IMPORTANT: Normalize all family data to convert Firebase objects to arrays
+          normalizeFamilyData(family);
           if (family && family.children) {
             child = family.children.find(c => c.id === childId);
           }
@@ -1311,11 +1309,9 @@ export async function handleApi({ action, token, body = {} }, store) {
       // Get stats for all children in family
       let childrenStats = [];
       try {
-        // Try Firebase first
-        const childrenSnapshot = await db.ref(`families/${familyId}/children`).once('value');
-        if (childrenSnapshot.exists()) {
-          const childrenData = childrenSnapshot.val();
-          childrenStats = Object.values(childrenData).map(c => ({
+        // Get stats from the already-read family (already normalized)
+        if (family && family.children) {
+          childrenStats = family.children.map(c => ({
             tasks: aggregateTaskStats(c, period).tasksCount || 0,
             xp: aggregateTaskStats(c, period).xpGained || 0,
             gold: aggregateTaskStats(c, period).goldGained || 0
