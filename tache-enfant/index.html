@@ -429,11 +429,12 @@ function screenAccueil() {
     if (!daily.length) return '';
     const doneN = daily.filter(t => t.done).length;
     const got = c.dailyBonusDay === state.day;
+    const dailyBonus = state.dailyBonus || { xp: 30, gold: 15 };
     return `
     <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <span style="font-family:var(--font-heading);font-size:15px">🎯 Mission du jour · ${doneN}/${daily.length}</span>
-        ${got ? '<span class="tag tag-accent-2">Bonus reçu 🎁</span>' : loot(state.dailyBonus.xp, state.dailyBonus.gold).replaceAll('margin-top:4px', '')}
+        ${got ? '<span class="tag tag-accent-2">Bonus reçu 🎁</span>' : loot(dailyBonus.xp, dailyBonus.gold).replaceAll('margin-top:4px', '')}
       </div>
       <div style="height:6px;border-radius:999px;background:var(--color-neutral-300);overflow:hidden">
         <div style="height:100%;width:${doneN / daily.length * 100}%;background:var(--color-accent-500);border-radius:999px"></div>
@@ -873,7 +874,7 @@ function screenFamille() {
         <span class="tag tag-neutral" style="margin-top:4px">${f.children.length} enfant${f.children.length > 1 ? 's' : ''}</span>
         <span class="tag ${f.owner === me.email ? 'tag-accent-2' : 'tag-neutral'}" style="margin-top:4px;margin-left:6px">${f.owner === me.email ? 'Propriétaire' : 'Invité'}</span>
       </div>
-      ${f.id === state.id ? '<span class="tag tag-accent">Active</span>' : `<button class="btn btn-secondary" data-action="switch-family" data-id="${f.id}">Gérer</button>`}
+      ${f.id === state.id ? '<span class="tag tag-accent">Active</span>' : `<div style="display:flex;gap:6px;align-items:center"><button class="btn btn-secondary" data-action="switch-family" data-id="${f.id}">Gérer</button>${f.owner === me.email ? '<button class="btn btn-icon btn-ghost" data-action="delete-family" data-id="' + f.id + '" title="Supprimer">🗑️</button>' : ''}</div>`}
     </div>`).join('')}
     <div class="card elev-sm" style="gap:8px;margin-top:6px">
       <div class="field" style="margin:0"><label>Créer une nouvelle famille</label><input class="input" id="new-fam-name" placeholder="Ex : Famille Durand"></div>
@@ -1735,6 +1736,27 @@ const ACTIONS = {
     }
   },
   'switch-family': el => { const i = families.findIndex(f => f.id === el.dataset.id); if (i >= 0) { setActiveFamily(i); state.role = 'parent'; } },
+  'delete-family': async el => {
+    const familyId = el.dataset.id;
+    console.log('[DELETE-FAMILY] Button clicked, familyId:', familyId);
+    if (!familyId) {
+      alert('Erreur: ID de famille manquant');
+      return;
+    }
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette famille? Cette action ne peut pas être annulée.')) return;
+    try {
+      console.log('[DELETE-FAMILY] Calling API with familyId:', familyId);
+      await api('deleteFamily', { familyId });
+      console.log('[DELETE-FAMILY] API success, removing from local list');
+      families = families.filter(f => f.id !== familyId);
+      setActiveFamily(0);
+      render();
+      alert('Famille supprimée avec succès!');
+    } catch (err) {
+      console.error('[DELETE-FAMILY] Error:', err);
+      alert('Erreur lors de la suppression: ' + err);
+    }
+  },
   'add-family': async () => {
     const name = val('new-fam-name'); if (!name) { alert('Nom de la famille requis.'); return; }
     const r = await api('createFamily', { name });
@@ -1775,7 +1797,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'change-password']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -1796,9 +1818,10 @@ function maybeAwardDailyBonus() {
   if (!c) return;
   const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
   if (daily.length && daily.every(t => t.done) && c.dailyBonusDay !== state.day) {
+    const bonus = state.dailyBonus || { xp: 30, gold: 15 };
     c.dailyBonusDay = state.day;
-    c.xp += state.dailyBonus.xp;
-    c.gold += state.dailyBonus.gold;
+    c.xp += bonus.xp;
+    c.gold += bonus.gold;
   }
 }
 
@@ -1821,7 +1844,8 @@ document.body.addEventListener('click', async e => {
   maybeAwardDailyBonus();
   const c = state.children[state.activeChild];
   if (state.role === 'enfant' && c) {
-    if (c.dailyBonusDay === state.day && bonus0 !== state.day) celebrate(`🎯 Mission accomplie ! +${state.dailyBonus.xp} XP`);
+    const bonus = state.dailyBonus || { xp: 30, gold: 15 };
+    if (c.dailyBonusDay === state.day && bonus0 !== state.day) celebrate(`🎯 Mission accomplie ! +${bonus.xp} XP`);
     else if (level(c.xp) > lvl0) celebrate(`⚔️ Niveau ${level(c.xp)} !`);
   }
   save(); render();

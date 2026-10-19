@@ -98,7 +98,16 @@ export function newFamily(name, owner) {
   return {
     id: 'fam-' + crypto.randomBytes(5).toString('hex'), name, owner, members: [owner],
     day: '', dailyBonus: { xp: 30, gold: 15 },
-    questList: [], proposals: [], children: [], sanctionsList: [], rewards: [], requests: [], gradeRequests: [], taskRequests: [],
+    questList: [], proposals: [], children: [], sanctionsList: [],
+    rewards: [
+      { icon: '📱', name: 'Temps écran +30min', cost: 50, lvl: 1 },
+      { icon: '🎮', name: 'Session de jeu +1h', cost: 75, lvl: 2 },
+      { icon: '🍕', name: 'Pizza au dîner', cost: 100, lvl: 2 },
+      { icon: '🚴', name: 'Sortie à vélo', cost: 120, lvl: 3 },
+      { icon: '🎬', name: 'Soirée cinéma en famille', cost: 150, lvl: 3 },
+      { icon: '🎪', name: 'Sortie au parc d\'attraction', cost: 200, lvl: 4 },
+    ],
+    requests: [], gradeRequests: [], taskRequests: [],
   };
 }
 
@@ -597,6 +606,44 @@ async function createFamily(store, email, b, firebaseUid) {
   await logActivity(store, 'createFamily', email, fam.id, `Famille créée: ${name}`);
 
   return { status: 200, body: { family: await withNames(store, fam) } };
+}
+async function deleteFamily(store, email, b) {
+  const familyId = b.familyId;
+  if (!familyId) return err(400, 'familyId requis.');
+
+  // Get family and verify ownership
+  const fam = await store.get('family:' + familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  if (fam.owner !== email) return err(403, 'Seul le propriétaire peut supprimer la famille.');
+
+  // Remove from all members
+  for (const member of fam.members) {
+    const acc = await store.get('account:' + member);
+    if (acc) {
+      acc.familyIds = acc.familyIds.filter(id => id !== familyId);
+      await store.set('account:' + member, acc);
+    }
+  }
+
+  // Delete from store
+  await store.del('family:' + familyId);
+
+  // Delete from Firebase
+  try {
+    await db.ref(`families/${familyId}`).remove();
+    await db.ref(`levelConfigs/${familyId}`).remove();
+  } catch (fbErr) {
+    console.log('[DELETE-FAMILY] Firebase cleanup error (non-fatal):', fbErr.message);
+  }
+
+  // Update admin metadata
+  const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+  metadata.familyIds = metadata.familyIds.filter(id => id !== familyId);
+  await store.set('_admin_metadata', metadata);
+
+  await logActivity(store, 'deleteFamily', email, familyId, `Famille supprimée: ${fam.name}`);
+
+  return { status: 200, body: { ok: true } };
 }
 async function invite(store, email, b) {
   const fid = b.familyId, inv = String(b.email || '').toLowerCase();
@@ -1341,6 +1388,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'saveFamily': return saveFamily(store, email, body);
     case 'createFamily': return createFamily(store, email, body, firebaseUid);
+    case 'deleteFamily': return deleteFamily(store, email, body);
     case 'invite': return invite(store, email, body);
     case 'removeAdult': return removeAdult(store, email, body);
     case 'submitGrade': return submitGrade(store, body.familyId, body);
@@ -1348,6 +1396,47 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'getLevelConfig': return getLevelConfig(store, body);
     case 'updateLevelConfig': return updateLevelConfig(store, body);
     case 'resetLevelConfig': return resetLevelConfig(store, body);
+    case 'adminDeleteFamily': {
+      // Verify admin key
+      const adminKey = body.adminKey || headers.get('x-admin-key');
+      if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+        return err(403, 'Clé admin invalide.');
+      }
+      const familyId = body.familyId;
+      if (!familyId) return err(400, 'familyId requis.');
+
+      // Delete from store
+      const fam = await store.get('family:' + familyId);
+      if (!fam) return err(404, 'Famille introuvable.');
+
+      // Remove from all members
+      for (const member of fam.members) {
+        const acc = await store.get('account:' + member);
+        if (acc) {
+          acc.familyIds = acc.familyIds.filter(id => id !== familyId);
+          await store.set('account:' + member, acc);
+        }
+      }
+
+      // Delete from store
+      await store.del('family:' + familyId);
+
+      // Delete from Firebase
+      try {
+        await db.ref(`families/${familyId}`).remove();
+        await db.ref(`levelConfigs/${familyId}`).remove();
+      } catch (fbErr) {
+        console.log('[ADMIN-DELETE-FAMILY] Firebase cleanup error (non-fatal):', fbErr.message);
+      }
+
+      // Update admin metadata
+      const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+      metadata.familyIds = metadata.familyIds.filter(id => id !== familyId);
+      await store.set('_admin_metadata', metadata);
+
+      console.log('[ADMIN-DELETE-FAMILY] Deleted family:', familyId);
+      return { status: 200, body: { ok: true } };
+    }
     case 'getAdminStats': {
       // Verify admin key
       if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
