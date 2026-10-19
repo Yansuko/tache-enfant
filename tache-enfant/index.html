@@ -831,10 +831,12 @@ function screenGrades() {
 
 function screenEnfants() {
   if (state) normalizeFamilyData(state);
+  const children = (state && state.children) ? state.children : [];
+  console.log('[SCREEN-ENFANTS] state:', state?.name, 'children:', children.length, 'state.children type:', typeof state?.children);
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Enfants</h2></div>
   <div class="deck deck-2" style="padding:14px 20px">
-    ${state.children.map((c, i) => `
+    ${children.length ? children.map((c, i) => `
     <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:12px">
       <div class="task-icon">🧒</div>
       <div style="flex:1">
@@ -845,7 +847,7 @@ function screenEnfants() {
       </div>
       <button class="btn btn-secondary" data-action="reset-child-pin" data-i="${i}" title="Réinitialiser le PIN">🔑</button>
       <button class="btn btn-icon btn-ghost" data-action="del-child" data-i="${i}" aria-label="Supprimer">✕</button>
-    </div>`).join('') || '<p class="text-muted">Aucun enfant.</p>'}
+    </div>`).join('') : '<p class="text-muted">Aucun enfant.</p>'}
   </div>
   <div style="padding:8px 20px 24px;margin-top:auto">
     <div class="card elev-md" style="gap:10px">
