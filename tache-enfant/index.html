@@ -1516,12 +1516,14 @@ const ACTIONS = {
     const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
-    await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+    const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+    if (result.family) {
+      // API returns updated family - use it directly instead of calling save()
+      state.gradeRequests = result.family.gradeRequests || [];
+    }
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
     document.getElementById('grade-gold').value = '';
-    // Reload family from backend to get fresh gradeRequests with backend-generated IDs
-    await save();
     render();
   },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
