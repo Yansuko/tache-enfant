@@ -64,6 +64,17 @@ function normalizeFamilyData(f) {
         return true;
       });
     }
+
+    // Deduplicate children by ID (fix for children stored as object with both numeric and ID keys)
+    if (field === 'children' && f[field].length > 0) {
+      const seen = new Set();
+      f[field] = f[field].filter(c => {
+        if (!c || !c.id) return true;
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+      });
+    }
   }
   // Ensure each child has an array of tasks
   if (f.children && Array.isArray(f.children)) {
@@ -505,6 +516,8 @@ async function saveFamily(store, email, b) {
   const fbSnap = await db.ref(`families/${inc.id}`).once('value');
   const cur = fbSnap.val();
   if (!cur) return err(404, 'Famille introuvable.');
+  // Normalize current family data (convert Firebase objects to arrays)
+  normalizeFamilyData(cur);
   // Check if user is a parent member or a child of this family
   const isParent = cur.members?.includes(email);
   const isChild = email?.endsWith('@enfant.local') && cur.children?.some(c => c.name === email.replace('@enfant.local', ''));

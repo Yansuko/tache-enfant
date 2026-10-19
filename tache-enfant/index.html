@@ -278,6 +278,24 @@ function normalizeFamilyData(f) {
         console.warn(`[NORMALIZE] ${field}: still not array after normalization!`, typeof f[field]);
       }
     }
+
+    // Deduplicate children by ID (fix for children stored as object with both numeric and ID keys)
+    if (field === 'children' && f[field].length > 0) {
+      const seen = new Set();
+      const deduped = f[field].filter(c => {
+        if (!c || !c.id) return true;
+        if (seen.has(c.id)) {
+          console.log(`[NORMALIZE] Removing duplicate child: ${c.name} (${c.id})`);
+          return false;
+        }
+        seen.add(c.id);
+        return true;
+      });
+      if (deduped.length < f[field].length) {
+        console.log(`[NORMALIZE] children: deduplicated from ${f[field].length} to ${deduped.length} items`);
+        f[field] = deduped;
+      }
+    }
   }
   // Assurer que chaque enfant a un array de tasks
   if (f.children && Array.isArray(f.children)) {
