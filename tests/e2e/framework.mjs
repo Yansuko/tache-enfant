@@ -57,6 +57,66 @@ export function logTest(title, status, details = '') {
   if (details) console.log(`   ${details}`);
 }
 
+/* ── Shared fixtures for sections 5-12 ── */
+
+export const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+export const mkChild = (name, extra = {}) => ({ id: `child-${uniq()}`, name, xp: 0, gold: 0, level: 1, tasks: [], ...extra });
+export const mkTask = (name = 'Faire les devoirs', extra = {}) =>
+  ({ id: `task-${uniq()}`, name, xp: 50, gold: 25, done: false, daily: false, createdAt: Date.now(), ...extra });
+// Same default config the backend writes at signup (netlify/functions/_core.mjs)
+export const defaultLevelConfig = () =>
+  ({ name: 'Configuration par défaut', levels: Array.from({ length: 50 }, (_, i) => ({ level: i + 1, xpRequired: (i + 1) * 100 })), createdAt: Date.now() });
+
+// RTDB drops empty arrays and may return arrays as objects: restore the shape the app works with.
+const arr = v => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []).filter(x => x != null);
+export function normalizeFamily(f) {
+  for (const k of ['children', 'rewards', 'requests']) f[k] = arr(f[k]);
+  for (const c of f.children) { c.tasks = arr(c.tasks); c.notes = arr(c.notes); }
+  return f;
+}
+
+// Creates parent (Auth + users/{uid}) + families/{id} (+ levelConfigs/{id}), runs fn, always cleans up.
+// fn receives { uid, email, familyId, ref, get, update }; it fails by throwing (assert).
+// get() → normalized family; update(mutate) → read-modify-write of the whole family, like the app's saveFamily.
+export async function withFamily(title, seed, fn) {
+  const email = `test-${uniq()}@test.fr`;
+  let uid, familyId;
+  try {
+    uid = await createTestUser(email, 'Test1234!');
+    familyId = `family-${uid}`;
+    const { levelConfig, ...family } = seed;
+    await db.ref(`users/${uid}`).set({ email, familyIds: [familyId], createdAt: Date.now() });
+    await db.ref(`families/${familyId}`).set({ id: familyId, name: 'Test Family', owner: email, members: [email], ...family });
+    if (levelConfig) await db.ref(`levelConfigs/${familyId}`).set(levelConfig);
+    const ref = db.ref(`families/${familyId}`);
+    const get = async () => normalizeFamily((await ref.once('value')).val());
+    const update = async mutate => { const f = await get(); mutate(f); await ref.set(f); return f; };
+    await fn({ uid, email, familyId, ref, get, update });
+    logTest(title, 'PASS');
+    return true;
+  } catch (err) {
+    logTest(title, 'FAIL', err.message);
+    return false;
+  } finally {
+    if (familyId) {
+      await db.ref(`families/${familyId}`).remove().catch(() => {});
+      await db.ref(`levelConfigs/${familyId}`).remove().catch(() => {});
+    }
+    if (uid) {
+      await db.ref(`users/${uid}`).remove().catch(() => {});
+      await deleteTestUser(uid).catch(() => {});
+    }
+  }
+}
+
+// Runs a list of test thunks sequentially; true only if all pass.
+export async function runAll(header, tests) {
+  console.log(`\n${header}\n`);
+  const results = [];
+  for (const t of tests) results.push(await t());
+  return results.every(Boolean);
+}
+
 // Smoke check when run directly: node tests/e2e/framework.mjs
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { auth } = await initFirebase();
