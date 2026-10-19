@@ -1518,8 +1518,10 @@ const ACTIONS = {
     const c = child();
     const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
     if (result.family) {
-      // API returns updated family - use it directly instead of calling save()
+      // API returns updated family - sync it to state
       state.gradeRequests = result.family.gradeRequests || [];
+      // Persist the update to backend so other users see it
+      await save();
     }
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
