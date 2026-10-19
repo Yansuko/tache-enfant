@@ -1516,12 +1516,22 @@ const ACTIONS = {
     const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
-    await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
-    document.getElementById('grade-subject').value = '';
-    document.getElementById('grade-value').value = '';
-    document.getElementById('grade-gold').value = '';
-    await save();  // Reload from server (avoids duplicates from local additions)
-    render();
+    const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+    if (result.ok) {
+      // Don't call save() - it would re-submit the whole family state and cause duplicates!
+      // Just reload family data from server to get the new grade with its backend-generated ID
+      const fam = await db.ref(`families/${state.id}`).once('value');
+      if (fam.exists()) {
+        const freshFamily = fam.val();
+        if (freshFamily.gradeRequests) {
+          state.gradeRequests = freshFamily.gradeRequests;
+        }
+      }
+      document.getElementById('grade-subject').value = '';
+      document.getElementById('grade-value').value = '';
+      document.getElementById('grade-gold').value = '';
+      render();
+    }
   },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
   'propose-reward': () => {
