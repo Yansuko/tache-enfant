@@ -515,6 +515,18 @@ async function saveFamily(store, email, b) {
   const serverOnlyChildren = cur.children?.filter(c => !inc.children?.some(ic => ic.id === c.id)) || [];
   merged.children = [...(inc.children || []), ...serverOnlyChildren];
 
+  // Normalize completedAt timestamps to always be numbers
+  for (const child of merged.children || []) {
+    if (child && child.tasks && Array.isArray(child.tasks)) {
+      for (const task of child.tasks) {
+        if (task && task.completedAt) {
+          const num = Number(task.completedAt);
+          task.completedAt = !isNaN(num) ? num : (typeof task.completedAt === 'string' ? new Date(task.completedAt).getTime() : null);
+        }
+      }
+    }
+  }
+
   merged.children?.forEach(c => {
   });
   // Generate missing child IDs (for children created before ID generation was implemented)
@@ -1117,10 +1129,15 @@ function aggregateTaskStats(child, period = 'week') {
   }
   console.log('[AGGREGATE-STATS] Total tasks:', rawTasks.length);
 
-  const tasks = rawTasks.filter(t => t && typeof t === 'object').map(t => ({
-    ...t,
-    completedAt: t.completedAt ? Number(t.completedAt) : null
-  }));
+  const tasks = rawTasks.filter(t => t && typeof t === 'object').map(t => {
+    let completedAt = null;
+    if (t.completedAt) {
+      const num = Number(t.completedAt);
+      // Handle both numeric timestamps and ISO date strings
+      completedAt = !isNaN(num) ? num : (typeof t.completedAt === 'string' ? new Date(t.completedAt).getTime() : null);
+    }
+    return { ...t, completedAt };
+  });
 
 
   const dailyBreakdown = {};
