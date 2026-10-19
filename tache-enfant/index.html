@@ -1630,6 +1630,7 @@ const ACTIONS = {
     const r = await api('unlockChildDirect', { familyName: famname, childName: name, pin });
     if (!r || !r.families || !r.families.length) { authMsg = 'Famille ou enfant introuvable, ou PIN incorrect.'; return; }
     me = { email: name + '@enfant.local', name };
+    token = r.token; // Store token for child authentication
     families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
     state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
     // Find the correct child by name and set activeChild to their index

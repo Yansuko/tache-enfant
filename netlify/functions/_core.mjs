@@ -505,7 +505,10 @@ async function saveFamily(store, email, b) {
   const fbSnap = await db.ref(`families/${inc.id}`).once('value');
   const cur = fbSnap.val();
   if (!cur) return err(404, 'Famille introuvable.');
-  if (!cur.members.includes(email)) return err(403, 'Accès refusé.');
+  // Check if user is a parent member or a child of this family
+  const isParent = cur.members?.includes(email);
+  const isChild = email?.endsWith('@enfant.local') && cur.children?.some(c => c.name === email.replace('@enfant.local', ''));
+  if (!isParent && !isChild) return err(403, 'Accès refusé.');
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
@@ -813,7 +816,7 @@ async function updateFamilyNameIndex(store, name, familyId) {
   }
   await store.set('family-names-index', idx);
 }
-async function unlockChildDirect(store, b) {
+async function unlockChildDirect(store, b, secret) {
   const famname = (b.familyName || '').trim().toLowerCase();
   const childName = (b.childName || '').trim();
   const pin = String(b.pin || '').trim();
@@ -828,7 +831,10 @@ async function unlockChildDirect(store, b) {
     normalizeFamilyData(fam);
     const child = fam.children.find(c => c.name === childName);
     if (!child || !child.pin || child.pin !== pin) continue;
-    return { status: 200, body: { families: [await withNames(store, fam)] } };
+    // Generate token for child using same format as frontend (name@enfant.local)
+    const childEmail = childName + '@enfant.local';
+    const token = signToken(childEmail, secret);
+    return { status: 200, body: { families: [await withNames(store, fam)], token } };
   }
   return err(401, 'Famille ou enfant introuvable, ou PIN incorrect.');
 }
@@ -1291,7 +1297,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'signup': return signup(store, secret, body);
     case 'login': return login(store, secret, body);
     case 'reset-password': return resetPassword(store, secret, body);
-    case 'unlockChildDirect': return unlockChildDirect(store, body);
+    case 'unlockChildDirect': return unlockChildDirect(store, body, secret);
     case 'getTaskStats': {
       const { childId, period = 'week' } = body;
       console.log('[GET-TASK-STATS] childId:', childId, 'period:', period, 'familyId from me:', firebaseUid);
