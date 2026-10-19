@@ -109,6 +109,12 @@ export async function withFamily(title, seed, fn) {
   }
 }
 
+// PIN check of unlockChildDirect (netlify/functions/_core.mjs): child by name, exact PIN match.
+export const childLogin = (family, name, pin) =>
+  family.children.find(c => c.name === name && c.pin && c.pin === String(pin).trim()) || null;
+// Same formula as the app (tache-enfant/index.html): level = floor(xp / 100) + 1
+export const levelFor = xp => Math.floor(xp / 100) + 1;
+
 // Runs a list of test thunks sequentially; true only if all pass.
 export async function runAll(header, tests) {
   console.log(`\n${header}\n`);
