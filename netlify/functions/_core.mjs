@@ -53,6 +53,17 @@ function normalizeFamilyData(f) {
       f[field] = arr;
     }
     if (!f[field] || !Array.isArray(f[field])) f[field] = [];
+
+    // Deduplicate gradeRequests by ID
+    if (field === 'gradeRequests' && f[field].length > 0) {
+      const seen = new Set();
+      f[field] = f[field].filter(g => {
+        if (!g || !g.id) return true;
+        if (seen.has(g.id)) return false;
+        seen.add(g.id);
+        return true;
+      });
+    }
   }
   // Ensure each child has an array of tasks
   if (f.children && Array.isArray(f.children)) {
@@ -187,7 +198,28 @@ async function ensureSeed(store) {
   }
   const fam = seedFamily();
   const { salt, hash } = hashPassword('demo');
-  await store.set('family:' + fam.id, fam);
+  // Firebase: create demo family
+  try {
+    await db.ref(`families/${fam.id}`).set({
+      id: fam.id,
+      name: fam.name,
+      owner: fam.owner,
+      members: fam.members,
+      children: fam.children,
+      day: fam.day,
+      dailyBonus: fam.dailyBonus,
+      questList: fam.questList,
+      proposals: fam.proposals,
+      sanctionsList: fam.sanctionsList,
+      rewards: fam.rewards,
+      requests: fam.requests,
+      gradeRequests: fam.gradeRequests,
+      taskRequests: fam.taskRequests,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  } catch (fbErr) {
+  }
   await store.set('account:parent@demo.fr', { email: 'parent@demo.fr', name: 'Parent démo', salt, hash, familyIds: [fam.id] });
   await updateFamilyNameIndex(store, fam.name, fam.id);
   // Index children by ID for fast lookup
@@ -212,7 +244,18 @@ async function stateFor(store, email) {
   const acc = await store.get('account:' + email);
   if (!acc) return { me: null, families: [] };
   const families = [];
-  for (const id of acc.familyIds) { const f = await store.get('family:' + id); if (f) families.push(await withNames(store, f)); }
+  for (const id of acc.familyIds) {
+    try {
+      const fbSnap = await db.ref(`families/${id}`).once('value');
+      const f = fbSnap.val();
+      if (f) {
+        normalizeFamilyData(f);
+        families.push(await withNames(store, f));
+      }
+    } catch (fbErr) {
+      // Skip if Firebase error
+    }
+  }
   return { me: { email: acc.email, name: acc.name }, families };
 }
 
@@ -285,10 +328,31 @@ async function signup(store, secret, b) {
     return err(500, error.message);
   }
 
-  // Create account in legacy store (always)
+  // Create family in Firebase and legacy store
   const fam = newFamily(familyName, email);
   const pending = (await store.get('invite:' + email)) || [];
-  await store.set('family:' + fam.id, fam);
+  // Firebase family (primary)
+  try {
+    await db.ref(`families/${fam.id}`).set({
+      id: fam.id,
+      name: fam.name,
+      owner: fam.owner,
+      members: fam.members,
+      children: fam.children,
+      day: fam.day,
+      dailyBonus: fam.dailyBonus,
+      questList: fam.questList,
+      proposals: fam.proposals,
+      sanctionsList: fam.sanctionsList,
+      rewards: fam.rewards,
+      requests: fam.requests,
+      gradeRequests: fam.gradeRequests,
+      taskRequests: fam.taskRequests,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  } catch (fbErr) {
+  }
   await updateFamilyNameIndex(store, fam.name, fam.id);
   await store.set('account:' + email, { email, name, ...hashPassword(password), familyIds: [fam.id, ...pending], ...(uid && { firebaseUid: uid }) });
   if (pending.length) await store.del('invite:' + email);
@@ -415,7 +479,10 @@ async function saveFamily(store, email, b) {
   // Normalize incoming family data
   normalizeFamilyData(inc);
   const lucas = inc.children?.find(c => c.name === 'Lucas');
-  const cur = await store.get('family:' + inc.id);
+
+  // Read from Firebase (single source of truth)
+  const fbSnap = await db.ref(`families/${inc.id}`).once('value');
+  const cur = fbSnap.val();
   if (!cur) return err(404, 'Famille introuvable.');
   if (!cur.members.includes(email)) return err(403, 'Accès refusé.');
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
@@ -459,9 +526,8 @@ async function saveFamily(store, email, b) {
   const lucas_before = merged.children?.find(c => c.name === 'Lucas');
   // DEBUG: Check first task specifically
   const firstTask = lucas_before?.tasks?.[0];
-  await store.set('family:' + inc.id, merged);
 
-  // Sync to Firebase (primary write target)
+  // Write to Firebase (single source of truth)
   try {
     const firebaseFamily = { ...merged };
     delete firebaseFamily.memberInfo;
@@ -509,9 +575,6 @@ async function saveFamily(store, email, b) {
   } catch (fbErr) {
   }
 
-  // Verify what was actually stored
-  const verify = await store.get('family:' + inc.id);
-  const lucas_verify = verify?.children?.find(c => c.name === 'Lucas');
   // Index children by ID for fast lookup
   for (const child of merged.children || []) {
     if (child.id) {
@@ -534,6 +597,17 @@ async function saveFamily(store, email, b) {
     }
   }
 
+  // Deduplicate gradeRequests
+  if (merged.gradeRequests && Array.isArray(merged.gradeRequests)) {
+    const seen = new Set();
+    merged.gradeRequests = merged.gradeRequests.filter(g => {
+      if (!g || !g.id) return true;
+      if (seen.has(g.id)) return false;
+      seen.add(g.id);
+      return true;
+    });
+  }
+
   // Return the merged data directly without reloading from storage
   // (avoids stale data if storage didn't persist the changes yet)
   merged.memberInfo = {};
@@ -546,7 +620,6 @@ async function createFamily(store, email, b, firebaseUid) {
   if (!name) return err(400, 'Nom de la famille requis.');
   const fam = newFamily(name, email);
   fam.createdAt = Date.now();
-  await store.set('family:' + fam.id, fam);
   await updateFamilyNameIndex(store, fam.name, fam.id);
 
   // Update user record (Firebase or legacy)
@@ -612,8 +685,9 @@ async function deleteFamily(store, email, b) {
   const familyId = b.familyId;
   if (!familyId) return err(400, 'familyId requis.');
 
-  // Get family and verify ownership
-  const fam = await store.get('family:' + familyId);
+  // Get family and verify ownership from Firebase
+  const fbSnap = await db.ref(`families/${familyId}`).once('value');
+  const fam = fbSnap.val();
   if (!fam) return err(404, 'Famille introuvable.');
   if (fam.owner !== email) return err(403, 'Seul le propriétaire peut supprimer la famille.');
 
@@ -625,9 +699,6 @@ async function deleteFamily(store, email, b) {
       await store.set('account:' + member, acc);
     }
   }
-
-  // Delete from store
-  await store.del('family:' + familyId);
 
   // Delete from Firebase
   try {
@@ -649,21 +720,21 @@ async function deleteFamily(store, email, b) {
 async function invite(store, email, b) {
   const fid = b.familyId, inv = String(b.email || '').toLowerCase();
   if (!EMAIL_RE.test(inv)) return err(400, 'Email invalide.');
-  const fam = await store.get('family:' + fid);
+  const fbSnap = await db.ref(`families/${fid}`).once('value');
+  const fam = fbSnap.val();
   if (!fam) return err(404, 'Famille introuvable.');
   if (fam.owner !== email) return err(403, 'Seul le propriétaire peut inviter.');
   if (fam.members.includes(inv)) return err(409, 'Cet adulte a déjà accès.');
   const inviter = await store.get('account:' + email);
   fam.members.push(inv);
-  await store.set('family:' + fid, fam);
   const acc = await store.get('account:' + inv);
   if (acc) { if (!acc.familyIds.includes(fid)) { acc.familyIds.push(fid); await store.set('account:' + inv, acc); } }
   else { const p = (await store.get('invite:' + inv)) || []; if (!p.includes(fid)) { p.push(fid); await store.set('invite:' + inv, p); } }
   if (emailSender) { await emailSender({ to: inv, subject: `Invitation à la famille « ${fam.name} »`, body: `${inviter?.name || email} vous a invité à rejoindre la famille « ${fam.name} » sur DailyKids Quest IV.` }); }
 
-  // Update Firebase
+  // Update Firebase members
   try {
-    await db.ref(`families/${fid}/members`).set(fam.members);
+    await db.ref(`families/${fid}`).update({ members: fam.members });
   } catch (fbErr) {
   }
 
@@ -673,20 +744,20 @@ async function invite(store, email, b) {
 }
 async function removeAdult(store, email, b) {
   const fid = b.familyId, rem = String(b.email || '').toLowerCase();
-  const fam = await store.get('family:' + fid);
+  const fbSnap = await db.ref(`families/${fid}`).once('value');
+  const fam = fbSnap.val();
   if (!fam) return err(404, 'Famille introuvable.');
   if (fam.owner !== email) return err(403, 'Seul le propriétaire peut retirer un adulte.');
   if (rem === fam.owner) return err(400, 'Impossible de retirer le propriétaire.');
   fam.members = fam.members.filter(m => m !== rem);
-  await store.set('family:' + fid, fam);
   const acc = await store.get('account:' + rem);
   if (acc) { acc.familyIds = acc.familyIds.filter(x => x !== fid); await store.set('account:' + rem, acc); }
   const p = await store.get('invite:' + rem);
   if (p) await store.set('invite:' + rem, p.filter(x => x !== fid));
 
-  // Update Firebase
+  // Update Firebase members
   try {
-    await db.ref(`families/${fid}/members`).set(fam.members);
+    await db.ref(`families/${fid}`).update({ members: fam.members });
   } catch (fbErr) {
   }
 
@@ -717,7 +788,8 @@ async function unlockChildDirect(store, b) {
   const idx = (await store.get('family-names-index')) || {};
   const famIds = idx[famname] || [];
   for (const fid of famIds) {
-    const fam = await store.get('family:' + fid);
+    const fbSnap = await db.ref(`families/${fid}`).once('value');
+    const fam = fbSnap.val();
     if (!fam) continue;
     // Normalize family data
     normalizeFamilyData(fam);
@@ -728,17 +800,30 @@ async function unlockChildDirect(store, b) {
   return err(401, 'Famille ou enfant introuvable, ou PIN incorrect.');
 }
 async function submitGrade(store, famId, b) {
-  const fam = await store.get('family:' + famId);
-  if (!fam) return err(404, 'Famille introuvable.');
   const { childName, subject, grade, gold } = b;
   if (!childName || !subject || !grade || gold === undefined) return err(400, 'Tous les champs requis.');
   if (isNaN(gold) || gold < 0) return err(400, 'Or invalide.');
-  // Defensive: ensure gradeRequests is an array
-  let gradeRequests = fam.gradeRequests;
-  if (gradeRequests && typeof gradeRequests === 'object' && !Array.isArray(gradeRequests)) {
-    gradeRequests = Object.values(gradeRequests).filter(v => v != null);
+
+  // Read from Firebase only (single source of truth)
+  const fbSnap = await db.ref(`families/${famId}`).once('value');
+  const fam = fbSnap.val();
+  if (!fam) return err(404, 'Famille introuvable.');
+
+  // Ensure gradeRequests is always a clean array
+  let gradeRequests = fam.gradeRequests || [];
+  if (!Array.isArray(gradeRequests)) {
+    // If object, convert to array
+    if (typeof gradeRequests === 'object') {
+      gradeRequests = Object.keys(gradeRequests)
+        .filter(key => /^\d+$/.test(key))
+        .map(key => gradeRequests[key])
+        .filter(v => v != null && typeof v === 'object');
+    } else {
+      gradeRequests = [];
+    }
   }
-  fam.gradeRequests = gradeRequests || [];
+
+  // Create new grade
   const gradeRequest = {
     id: `grade_${Date.now()}_${Math.random().toString(36).substring(7)}`,
     child: childName,
@@ -748,8 +833,13 @@ async function submitGrade(store, famId, b) {
     status: 'pending',
     submittedAt: Date.now()
   };
-  fam.gradeRequests.push(gradeRequest);
-  await store.set('family:' + famId, fam);
+
+  // Add to array
+  gradeRequests.push(gradeRequest);
+  fam.gradeRequests = gradeRequests;
+
+  // Save to Firebase only
+  await db.ref(`families/${famId}`).set(fam);
 
   // Log activity
   await logActivity(store, 'submitGrade', childName, `${fam.name}`, `Soumis: ${subject} (Note: ${grade}, Or: ${gold})`);
@@ -777,7 +867,8 @@ async function submitGrade(store, famId, b) {
 }
 async function approveGrade(store, email, b) {
   const { familyId, index } = b;
-  const fam = await store.get('family:' + familyId);
+  const fbSnap = await db.ref(`families/${familyId}`).once('value');
+  const fam = fbSnap.val();
   if (!fam) return err(404, 'Famille introuvable.');
   if (!fam.members.includes(email)) return err(403, 'Accès refusé.');
   // Normalize family data
@@ -789,29 +880,11 @@ async function approveGrade(store, email, b) {
   if (child) { child.gold = (child.gold || 0) + req.gold; }
   req.status = 'approved';
   req.approvedAt = Date.now();
-  await store.set('family:' + familyId, fam);
 
   // Update in Firebase
   try {
-    // Update grade request status
-    await db.ref(`families/${familyId}/gradeRequests/${req.id}`).update({
-      status: 'approved',
-      approvedAt: Date.now()
-    });
-
-    // Update child's gold if exists
-    if (child && child.id) {
-      await db.ref(`families/${familyId}/children/${child.id}/gold`).set(child.gold);
-
-      // Add grade to child's grades array
-      await db.ref(`families/${familyId}/children/${child.id}/grades`).push({
-        subject: req.subject,
-        grade: req.grade,
-        xp: 0,
-        gold: req.gold,
-        approvedAt: Date.now()
-      });
-    }
+    // Write the updated family to Firebase
+    await db.ref(`families/${familyId}`).set(fam);
   } catch (fbErr) {
   }
 
@@ -1224,18 +1297,6 @@ export async function handleApi({ action, token, body = {} }, store) {
         console.error('[GET-TASK-STATS] Firebase read error:', fbErr.message);
       }
 
-      // Fall back to store if Firebase unavailable
-      if (!child) {
-        family = await store.get('family:' + familyId);
-        if (!family) return err(404, 'Famille non trouvée.');
-        // Ensure children is always an array
-        if (family.children && typeof family.children === 'object' && !Array.isArray(family.children)) {
-          family.children = Object.values(family.children);
-        }
-        if (!family.children) family.children = [];
-        child = family.children.find(c => c.id === childId);
-      }
-
       if (!child) {
         console.error('[GET-TASK-STATS] Child not found - childId:', childId, 'familyId:', familyId);
         return err(404, 'Enfant non trouvé.');
@@ -1259,22 +1320,7 @@ export async function handleApi({ action, token, body = {} }, store) {
           }));
         }
       } catch (fbErr) {
-        // Fall back to store
-        if (!family) family = await store.get('family:' + familyId);
-        if (family) {
-          // Ensure children is always an array
-          let children = family.children;
-          if (children && typeof children === 'object' && !Array.isArray(children)) {
-            children = Object.values(children);
-          }
-          if (children) {
-            childrenStats = children.map(c => ({
-              tasks: aggregateTaskStats(c, period).tasksCount || 0,
-              xp: aggregateTaskStats(c, period).xpGained || 0,
-              gold: aggregateTaskStats(c, period).goldGained || 0
-            }));
-          }
-        }
+        console.error('[GET-TASK-STATS] Error getting children stats:', fbErr.message);
       }
 
       return { status: 200, body: { ...stats, childrenStats } };
@@ -1405,47 +1451,6 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'getLevelConfig': return getLevelConfig(store, body);
     case 'updateLevelConfig': return updateLevelConfig(store, body);
     case 'resetLevelConfig': return resetLevelConfig(store, body);
-    case 'adminDeleteFamily': {
-      // Verify admin key
-      const adminKey = body.adminKey || headers.get('x-admin-key');
-      if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
-        return err(403, 'Clé admin invalide.');
-      }
-      const familyId = body.familyId;
-      if (!familyId) return err(400, 'familyId requis.');
-
-      // Delete from store
-      const fam = await store.get('family:' + familyId);
-      if (!fam) return err(404, 'Famille introuvable.');
-
-      // Remove from all members
-      for (const member of fam.members) {
-        const acc = await store.get('account:' + member);
-        if (acc) {
-          acc.familyIds = acc.familyIds.filter(id => id !== familyId);
-          await store.set('account:' + member, acc);
-        }
-      }
-
-      // Delete from store
-      await store.del('family:' + familyId);
-
-      // Delete from Firebase
-      try {
-        await db.ref(`families/${familyId}`).remove();
-        await db.ref(`levelConfigs/${familyId}`).remove();
-      } catch (fbErr) {
-        console.log('[ADMIN-DELETE-FAMILY] Firebase cleanup error (non-fatal):', fbErr.message);
-      }
-
-      // Update admin metadata
-      const metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
-      metadata.familyIds = metadata.familyIds.filter(id => id !== familyId);
-      await store.set('_admin_metadata', metadata);
-
-      console.log('[ADMIN-DELETE-FAMILY] Deleted family:', familyId);
-      return { status: 200, body: { ok: true } };
-    }
     case 'getAdminStats': {
       // Verify admin key
       if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
@@ -1473,30 +1478,36 @@ export async function handleApi({ action, token, body = {} }, store) {
         }
       }
 
-      // Load families
+      // Load families from Firebase
       for (const famId of metadata.familyIds || []) {
-        const fam = await store.get('family:' + famId);
-        if (fam) {
-          totalChildren += fam.children?.length || 0;
-          let familyTasks = 0;
-          const children = [];
-          for (const child of fam.children || []) {
-            const childStats = aggregateTaskStats(child, 'year');
-            familyTasks += childStats.tasksCount || 0;
-            children.push({
-              id: child.id,
-              name: child.name,
-              pin: child.pin
+        try {
+          const fbSnap = await db.ref(`families/${famId}`).once('value');
+          const fam = fbSnap.val();
+          if (fam) {
+            normalizeFamilyData(fam);
+            totalChildren += fam.children?.length || 0;
+            let familyTasks = 0;
+            const children = [];
+            for (const child of fam.children || []) {
+              const childStats = aggregateTaskStats(child, 'year');
+              familyTasks += childStats.tasksCount || 0;
+              children.push({
+                id: child.id,
+                name: child.name,
+                pin: child.pin
+              });
+            }
+            totalTasksCompleted += familyTasks;
+            families.push({
+              id: famId,
+              name: fam.name,
+              owner: fam.owner,
+              children,
+              tasksCompleted: familyTasks
             });
           }
-          totalTasksCompleted += familyTasks;
-          families.push({
-            id: famId,
-            name: fam.name,
-            owner: fam.owner,
-            children,
-            tasksCompleted: familyTasks
-          });
+        } catch (fbErr) {
+          console.log('[GET-ADMIN-STATS] Error reading family:', famId, fbErr.message);
         }
       }
 
@@ -1514,23 +1525,29 @@ export async function handleApi({ action, token, body = {} }, store) {
       if (activityHistory.length === 0) {
         const generatedActivities = [];
         for (const famId of metadata.familyIds || []) {
-          const fam = await store.get('family:' + famId);
-          if (fam && fam.children) {
-            for (const child of fam.children) {
-              if (child.tasks && Array.isArray(child.tasks)) {
-                for (const task of child.tasks) {
-                  if (task.done === true && task.completedAt) {
-                    generatedActivities.push({
-                      timestamp: task.completedAt,
-                      type: 'completeTask',
-                      subject: child.name,
-                      target: fam.name,
-                      details: task.name + (task.xp ? ` (${task.xp} XP)` : '')
-                    });
+          try {
+            const fbSnap = await db.ref(`families/${famId}`).once('value');
+            const fam = fbSnap.val();
+            if (fam && fam.children) {
+              normalizeFamilyData(fam);
+              for (const child of fam.children) {
+                if (child.tasks && Array.isArray(child.tasks)) {
+                  for (const task of child.tasks) {
+                    if (task.done === true && task.completedAt) {
+                      generatedActivities.push({
+                        timestamp: task.completedAt,
+                        type: 'completeTask',
+                        subject: child.name,
+                        target: fam.name,
+                        details: task.name + (task.xp ? ` (${task.xp} XP)` : '')
+                      });
+                    }
                   }
                 }
               }
             }
+          } catch (fbErr) {
+            console.log('[GET-ADMIN-STATS] Error generating activity for family:', famId, fbErr.message);
           }
         }
         // Sort by timestamp descending (most recent first)
@@ -1591,7 +1608,12 @@ export async function handleApi({ action, token, body = {} }, store) {
 
       // Delete families owned by this account
       for (const famId of acc.familyIds || []) {
-        await store.del('family:' + famId);
+        try {
+          await db.ref(`families/${famId}`).remove();
+          await db.ref(`levelConfigs/${famId}`).remove();
+        } catch (fbErr) {
+          console.log('[ADMIN-DELETE-ACCOUNT] Error deleting family:', famId, fbErr.message);
+        }
       }
 
       // Delete account
@@ -1616,7 +1638,8 @@ export async function handleApi({ action, token, body = {} }, store) {
       const childId = body.childId;
       if (!famId || !childId) return err(400, 'Family ID et Child ID requis.');
 
-      const fam = await store.get('family:' + famId);
+      const fbSnap = await db.ref(`families/${famId}`).once('value');
+      const fam = fbSnap.val();
       if (!fam) return err(404, 'Famille non trouvée.');
 
       const child = fam.children?.find(c => c.id === childId);
@@ -1626,7 +1649,10 @@ export async function handleApi({ action, token, body = {} }, store) {
       const newPin = Math.random().toString().slice(2, 6);
       const oldPin = child.pin;
       child.pin = newPin;
-      await store.set('family:' + famId, fam);
+      try {
+        await db.ref(`families/${famId}`).set(fam);
+      } catch (fbErr) {
+      }
 
       // Log action
       await logAdminAction(store, 'resetPin', `${fam.name} - ${child.name}`, `Ancien PIN: ${oldPin}, Nouveau PIN: ${newPin}`);
@@ -1641,11 +1667,9 @@ export async function handleApi({ action, token, body = {} }, store) {
       const famId = body.familyId;
       if (!famId) return err(400, 'Family ID requis.');
 
-      const fam = await store.get('family:' + famId);
+      const fbSnap = await db.ref(`families/${famId}`).once('value');
+      const fam = fbSnap.val();
       if (!fam) return err(404, 'Famille non trouvée.');
-
-      // Delete family
-      await store.del('family:' + famId);
 
       // Remove from account's familyIds
       for (const email of fam.members || []) {
@@ -1654,6 +1678,13 @@ export async function handleApi({ action, token, body = {} }, store) {
           acc.familyIds = (acc.familyIds || []).filter(id => id !== famId);
           await store.set('account:' + email, acc);
         }
+      }
+
+      // Delete from Firebase
+      try {
+        await db.ref(`families/${famId}`).remove();
+        await db.ref(`levelConfigs/${famId}`).remove();
+      } catch (fbErr) {
       }
 
       // Remove from metadata
