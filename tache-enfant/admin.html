@@ -296,6 +296,10 @@
 
       // Store audit logs globally for filtering
       window.allAuditLogs = data.auditLogs || [];
+      console.log('[ADMIN-DASHBOARD] Received auditLogs:', window.allAuditLogs?.length || 0, 'entries');
+      if (window.allAuditLogs?.length > 0) {
+        console.log('[ADMIN-DASHBOARD] Sample audit logs:', window.allAuditLogs.slice(0, 3).map(a => ({ actionType: a.actionType, userId: a.userId, timestamp: new Date(a.timestamp).toISOString() })));
+      }
       displayAuditLogs(window.allAuditLogs);
 
       // Populate family selector

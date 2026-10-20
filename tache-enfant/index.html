@@ -377,6 +377,7 @@ async function persistFamily() {
       console.log(`[PERSIST-SEND-SHOP-${persistId}] requests:`, JSON.stringify(payload.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status, cost: r.cost })) || []));
       console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold })) || []));
       console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 })) || []));
+      console.log(`[PERSIST-SEND-ACTIONLOG-${persistId}] actionLog in payload:`, payload.family.actionLog?.length || 0, 'entries');
 
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
@@ -387,6 +388,7 @@ async function persistFamily() {
       // Log what we received from backend
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - requests:`, JSON.stringify(res.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - sanctionsList:`, JSON.stringify(res.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+      console.log(`[PERSIST-RECV-ACTIONLOG-${persistId}] Backend returned actionLog:`, res.family.actionLog?.length || 0, 'entries');
 
       normalizeFamilyData(res.family);
       console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
@@ -435,6 +437,7 @@ async function persistFamily() {
       Object.assign(state, serverFields);
       console.log(`[PERSIST-MERGE-${persistId}] After merge - requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-MERGE-${persistId}] After merge - sanctionsList:`, JSON.stringify(state.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+      console.log(`[PERSIST-MERGE-ACTIONLOG-${persistId}] After merge - actionLog:`, state.actionLog?.length || 0, 'entries');
       console.log(`[PERSIST-MERGE] After merge: requests=${state.requests?.length || 0}, sanctionsList=${state.sanctionsList?.length || 0}`);
       console.log(`[SAVE] Success`);
       toast(false);
@@ -1595,6 +1598,7 @@ const ACTIONS = {
     c.gold = Math.max(0, c.gold - s.gold);
     logAction('sanction_applied', s.name, { child: c.name, goldDeducted: s.gold, applier: me?.name });
     console.log(`[SANCTION-AFTER] child.sanctions:`, JSON.stringify(c.sanctions || []));
+    console.log(`[SANCTION-ACTIONLOG-AFTER] state.actionLog after logAction:`, state.actionLog?.length || 0, 'entries');
     console.log(`[SANCTION-APPLIED] Applied "${s.name}" to ${c.name}: gold ${c.gold + s.gold} → ${c.gold}, sanctions now: ${c.sanctions.length}`);
   },
   'add-sanction-def': () => {

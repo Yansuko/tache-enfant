@@ -513,6 +513,7 @@ async function saveFamily(store, email, b) {
   // Log incoming shop data BEFORE normalization
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] requests:`, JSON.stringify(inc.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] sanctionsList:`, JSON.stringify(inc.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-RECV-ACTIONLOG-${saveId}] incoming actionLog:`, inc.actionLog?.length || 0, 'entries, type:', typeof inc.actionLog);
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] children count:`, inc.children?.length || 0);
   if (inc.children?.[0]) {
     console.log(`[SAVEFAMILY-RECV-CHILD0-${saveId}] name=${inc.children[0].name}, gold=${inc.children[0].gold}, sanctions=${JSON.stringify(inc.children[0].sanctions?.slice(0, 2) || [])}`);
@@ -523,6 +524,7 @@ async function saveFamily(store, email, b) {
 
   // Log after normalization
   console.log(`[SAVEFAMILY-NORM-SHOP-${saveId}] requests after normalize:`, JSON.stringify(inc.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-NORM-ACTIONLOG-${saveId}] actionLog after normalize:`, inc.actionLog?.length || 0, 'entries, type:', typeof inc.actionLog);
 
   const lucas = inc.children?.find(c => c.name === 'Lucas');
 
@@ -593,6 +595,7 @@ async function saveFamily(store, email, b) {
   // Log merged data BEFORE Firebase write
   console.log(`[SAVEFAMILY-MERGED-${saveId}] requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-MERGED-${saveId}] sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-MERGED-ACTIONLOG-${saveId}] actionLog in merged:`, merged.actionLog?.length || 0, 'entries, type:', typeof merged.actionLog);
 
   // Write to Firebase (single source of truth)
   try {
@@ -603,29 +606,31 @@ async function saveFamily(store, email, b) {
     delete firebaseFamily.activeChild;
 
     // Write family header WITH CHILDREN
+    // ponytail: ensure all array fields are arrays (not undefined); Firebase needs all fields to be defined
+    const ensureArray = (val) => Array.isArray(val) ? val : [];
     const famPayload = {
       id: firebaseFamily.id,
       name: firebaseFamily.name,
       owner: firebaseFamily.owner,
       members: firebaseFamily.members,
-      children: merged.children || [],
+      children: ensureArray(merged.children),
       day: firebaseFamily.day,
       dailyBonus: firebaseFamily.dailyBonus,
-      questList: firebaseFamily.questList,
-      proposals: firebaseFamily.proposals,
-      sanctionsList: firebaseFamily.sanctionsList,
-      rewards: firebaseFamily.rewards,
-      requests: firebaseFamily.requests,
-      gradeRequests: firebaseFamily.gradeRequests,
-      taskRequests: firebaseFamily.taskRequests,
-      actionLog: firebaseFamily.actionLog,
+      questList: ensureArray(firebaseFamily.questList),
+      proposals: ensureArray(firebaseFamily.proposals),
+      sanctionsList: ensureArray(firebaseFamily.sanctionsList),
+      rewards: ensureArray(firebaseFamily.rewards),
+      requests: ensureArray(firebaseFamily.requests),
+      gradeRequests: ensureArray(firebaseFamily.gradeRequests),
+      taskRequests: ensureArray(firebaseFamily.taskRequests),
+      actionLog: ensureArray(firebaseFamily.actionLog),
       updatedAt: Date.now()
     };
 
     // Log what's being written to Firebase
     console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - requests:`, JSON.stringify(famPayload.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
     console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - sanctionsList:`, JSON.stringify(famPayload.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
-    console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - actionLog entries:`, famPayload.actionLog?.length || 0, 'actions');
+    console.log(`[SAVEFAMILY-WRITE-ACTIONLOG-${saveId}] Writing to Firebase - actionLog:`, famPayload.actionLog?.length || 0, 'entries, type:', typeof famPayload.actionLog, 'value:', JSON.stringify(famPayload.actionLog?.slice(0, 1) || []));
 
     await db.ref(`families/${inc.id}`).set(famPayload);
 
@@ -690,6 +695,7 @@ async function saveFamily(store, email, b) {
   // Log what we're returning to frontend
   console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
+  console.log(`[SAVEFAMILY-RETURN-ACTIONLOG-${saveId}] Returning to frontend - actionLog:`, merged.actionLog?.length || 0, 'entries');
 
   return { status: 200, body: { family: merged } };
 }
