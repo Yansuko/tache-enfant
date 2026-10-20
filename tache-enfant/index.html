@@ -1969,7 +1969,7 @@ document.body.addEventListener('click', async e => {
   const c0 = state.children[state.activeChild];
   const lvl0 = c0 ? level(c0.xp) : 1;
   const bonus0 = c0 ? c0.dailyBonusDay : null;
-  fn(el);
+  await Promise.resolve(fn(el));
   state.activeChild = Math.max(0, Math.min(state.activeChild, state.children.length - 1));
   maybeAwardDailyBonus();
   const c = state.children[state.activeChild];
