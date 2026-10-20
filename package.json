@@ -11,14 +11,26 @@
     "test:actions": "node test-all-actions.mjs",
     "test:firebase": "node test-firebase-integration.mjs",
     "test:all": "node test-backend.mjs && node test-extended.mjs && node test-all-actions.mjs && node test-firebase-integration.mjs",
-    "migrate:firebase": "node migrate-to-firebase.mjs"
+    "migrate:firebase": "node migrate-to-firebase.mjs",
+    "start": "node server.js",
+    "dev:docker": "docker-compose -f docker-compose.dev.yml up",
+    "dev:docker:build": "docker-compose -f docker-compose.dev.yml build",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
     "firebase": "^13.0.0",
-    "firebase-admin": "^12.0.0"
+    "firebase-admin": "^12.0.0",
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "better-sqlite3": "^9.2.2",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "vitest": "^1.0.4",
+    "supertest": "^6.3.3",
+    "@playwright/test": "^1.40.1"
   }
 }
