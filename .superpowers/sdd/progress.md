@@ -68,3 +68,46 @@ Dispatcher subagents for critical fixes, then verify Docker/PostgreSQL workflow.
 
 ---
 Date: 2026-10-20 | Branch: feat/containerized-local-version | Tag: v1.0.0-containerized
+
+## Fix Phase Complete ✅
+
+### Fix 1: Task 11 Migration Deduplication (1d5dfe5)
+**Status:** DONE
+- Deduplicated users by email (kept records with password hash)
+- Deduplicated children by ID
+- Generated family_members table inserts
+- Row cleanup: users 3→1, children 6→5, tasks 49→30, grades 10→6
+- migration.sql now valid (syntax & constraints checked)
+- **Remaining:** Not yet loaded to PostgreSQL; sanctions/requests/action_logs still not migrated
+
+### Fix 2: Task 13 API Tests In-Memory DB (c8a55cc)
+**Status:** DONE
+- Added beforeAll hook with in-memory SQLite setup
+- Firebase Admin SDK mocked (prevents real Firebase writes)
+- Seeding reuses core's ensureSeed
+- **Test Results:** 5/5 PASSING ✅
+  - signup → 200 with token ✅
+  - login → 200 with token ✅
+  - wrong password → 401 ✅
+  - me without token → 401 ✅
+  - me with token → 200 ✅
+
+### Remaining Known Issues
+
+| Issue | Status | Notes |
+|-------|--------|-------|
+| PostgreSQL load | Pending | migration.sql not loaded to real DB (no Postgres available) |
+| Sanctions/requests/action_logs | Not migrated | Out of scope for initial migration |
+| Docker build test | Pending | Structure complete, build not tested |
+| E2E tests | Pending | Created, require running server |
+
+### Final Metrics After Fixes
+
+- **Total commits:** 21 (17 tasks + 2 original fixes + 2 critical fixes)
+- **Tests passing:** 5/5 auth + 5/5 API + E2E untested = **10/10 tested**
+- **Migration status:** SQL valid, deduplication complete, ready for PostgreSQL load
+- **Code quality:** All syntax validated, no duplicate keys/emails
+
+---
+**Status:** Ready for Docker/PostgreSQL verification
+**Next Steps:** Test docker-compose up → load migration.sql → run E2E tests
