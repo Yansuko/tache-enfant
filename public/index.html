@@ -107,50 +107,82 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
-<script src="/firebase-config.js"></script>
 <script>
-// Wait for Firebase to be defined, then initialize
-function initFirebase() {
-  if (typeof firebase === 'undefined' || !window.firebaseConfig) {
-    setTimeout(initFirebase, 50);
-    return;
+// ── Auth sans Firebase — utilise l'API backend et localStorage ──
+const TOKEN_KEY = 'te-token';
+
+// Remplace l'initialisation Firebase par une simple vérification du token
+function initAuth() {
+  // Récupère le token stocké dans localStorage s'il existe
+  const storedToken = localStorage.getItem(TOKEN_KEY);
+  if (storedToken) {
+    window.firebaseToken = storedToken;
   }
 
-  // Initialize Firebase at app startup
-  const app = firebase.initializeApp(window.firebaseConfig);
-  const auth = firebase.auth();
-
-  // Make auth functions available globally for the rest of the app
-  window.firebaseAuth = auth;
-  window.firebaseOnAuthStateChanged = (cb) => auth.onAuthStateChanged(cb);
-  window.firebaseSignIn = (_auth, email, pass) => auth.signInWithEmailAndPassword(email, pass);
-  window.firebaseSignUp = (_auth, email, pass) => auth.createUserWithEmailAndPassword(email, pass);
-  window.firebaseSignOut = () => auth.signOut();
-  window.getFirebaseIdToken = async (user) => {
-    if (user) return await user.getIdToken();
-    return null;
-  };
-
-  // Set up auth state listener for token management
-  auth.onAuthStateChanged(async (user) => {
-    if (user) {
-      // Auto-update token when user changes
-      const idToken = await user.getIdToken();
-      window.firebaseToken = idToken;
-      localStorage.setItem('te-firebase-user-uid', user.uid);
-    } else {
-      window.firebaseToken = null;
-      localStorage.removeItem('te-firebase-user-uid');
-    }
-  });
-
-  // Signal that Firebase is ready
+  // Signal que le système d'auth est prêt
   window.firebaseReady = true;
+
+  // Simule onAuthStateChanged en vérifiant si un token existe
+  // Cela permet au reste du code de continuer à fonctionner sans modification
+  if (window.firebaseOnAuthStateChangedCallbacks) {
+    window.firebaseOnAuthStateChangedCallbacks.forEach(cb => {
+      cb(storedToken ? { hasToken: true } : null);
+    });
+  }
 }
-initFirebase();
+
+// Stub pour les appels Firebase — simule les fonctions Firebase
+window.firebaseSignIn = async (_, email, password) => {
+  // fetch vers l'API backend pour le login
+  const res = await fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'login', email, password })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw errorData.error || `HTTP ${res.status}`;
+  }
+  const data = await res.json();
+  // Retourne un objet compatif avec le code existant
+  return { user: { uid: email, getIdToken: async () => data.token } };
+};
+
+window.firebaseSignUp = async (_, email, password) => {
+  // Ce sera appelé avec les bons paramètres depuis l'action signup
+  // Les vrais params (name, familyName) sont passés à l'API signup
+  return { user: { uid: email, getIdToken: async () => '' } };
+};
+
+window.firebaseSignOut = async () => {
+  // Rien à faire — le backend ne maintient pas de session
+  window.firebaseToken = null;
+  localStorage.removeItem(TOKEN_KEY);
+};
+
+window.getFirebaseIdToken = async (user) => {
+  return localStorage.getItem(TOKEN_KEY) || null;
+};
+
+// Setup auth state listener callbacks
+window.firebaseOnAuthStateChangedCallbacks = [];
+window.firebaseOnAuthStateChanged = (callback) => {
+  if (typeof callback !== 'function') return;
+  window.firebaseOnAuthStateChangedCallbacks.push(callback);
+  // Appelle immédiatement le callback avec l'état courant
+  const storedToken = localStorage.getItem(TOKEN_KEY);
+  if (storedToken) {
+    // Retourne un objet utilisateur compatible avec le code existant
+    callback({
+      uid: 'authenticated-user',
+      getIdToken: async () => storedToken
+    });
+  } else {
+    callback(null);
+  }
+};
+
+initAuth();
 </script>
 </head>
 <body>
@@ -176,7 +208,7 @@ initFirebase();
 const TOKEN_KEY = 'te-token';
 
 // ── état client (la source de vérité est le serveur) ──
-let token = null;           // jeton de session (persisté)
+let token = localStorage.getItem(TOKEN_KEY);  // jeton de session (persisté — chargé depuis localStorage)
 let me = null;              // { email, name } de l'adulte connecté
 let families = [];          // familles dont je suis membre (renvoyées par le serveur)
 let activeFamily = 0;
@@ -1844,15 +1876,15 @@ const ACTIONS = {
     const email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value;
     if (!email || !password) { authMsg = 'Email et mot de passe requis.'; return; }
     try {
-      const userCredential = await window.firebaseSignIn(window.firebaseAuth, email, password);
-      const user = userCredential.user;
-      const idToken = await user.getIdToken();
+      // Appel direct à l'API backend pour le login
+      const r = await api('login', { email, password });
+      const idToken = r.token;
       window.firebaseToken = idToken;
+      localStorage.setItem(TOKEN_KEY, idToken);
 
-      // Call backend to get user data (verify token + fetch user/families)
-      // Pass email so backend can create user if needed
-      const r = await api('me', { email });
-      onAuthed({ ...r, token: idToken });
+      // Appel à 'me' pour récupérer les données utilisateur et familles
+      const meData = await api('me', { email });
+      onAuthed({ ...meData, token: idToken });
     } catch (error) {
       authMsg = typeof error === 'string' ? 'Erreur: ' + error : 'Erreur: ' + (error?.message || String(error));
     }
@@ -1861,13 +1893,13 @@ const ACTIONS = {
     const name = val('au-name'), email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value, familyName = val('au-fam');
     if (!name || !email || !password || !familyName) { authMsg = 'Tous les champs sont requis.'; return; }
     try {
-      const userCredential = await window.firebaseSignUp(window.firebaseAuth, email, password);
-      const user = userCredential.user;
-      const idToken = await user.getIdToken();
+      // Appel direct à l'API backend pour la création de compte + famille
+      const r = await api('signup', { name, email, password, familyName });
+      const idToken = r.token;
       window.firebaseToken = idToken;
+      localStorage.setItem(TOKEN_KEY, idToken);
 
-      // Call backend to create user doc + family
-      const r = await api('signup', { name, email, familyName });
+      // Utilise le token pour initialiser la session
       onAuthed({ ...r, token: idToken });
     } catch (error) {
       authMsg = typeof error === 'string' ? 'Erreur: ' + error : 'Erreur: ' + (error?.message || String(error));
@@ -1904,12 +1936,14 @@ const ACTIONS = {
       if (state) logAction('user_logout', userName, { role: authRole });
       // Save audit log before logout
       if (state) await save();
-      await window.firebaseSignOut(window.firebaseAuth);
+      await window.firebaseSignOut();
       window.firebaseToken = null;
       token = null; localStorage.removeItem(TOKEN_KEY);
       me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';
+      render();
     } catch (error) {
       authMsg = 'Erreur de déconnexion: ' + error.message;
+      render();
     }
   },
   'switch-family': el => { const i = families.findIndex(f => f.id === el.dataset.id); if (i >= 0) { setActiveFamily(i); state.role = 'parent'; } },
