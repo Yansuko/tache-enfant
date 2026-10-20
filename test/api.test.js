@@ -1,18 +1,25 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
-import Database from 'better-sqlite3';
-import { app } from '../server.js';
 
-let testDb;
+// Never touch real Firebase from tests (firebase-service-account.json is in the repo root).
+// Stubs mirror the "not configured" fallback in firebase-admin.mjs, so _core uses the legacy store only.
+vi.mock('../netlify/functions/firebase-admin.mjs', () => ({
+  db: { ref: () => ({ set: async () => {}, once: async () => ({ exists: () => false, val: () => null }) }) },
+  auth: {
+    createUser: async () => { throw new Error('firebase disabled in tests'); },
+    getUserByEmail: async () => { throw new Error('firebase disabled in tests'); },
+    verifyIdToken: async () => { throw new Error('firebase disabled in tests'); }
+  }
+}));
 
-beforeAll(() => {
-  // Create in-memory SQLite for tests
-  testDb = new Database(':memory:');
-  // Initialize schema...
-});
+let app;
 
-afterAll(() => {
-  testDb.close();
+beforeAll(async () => {
+  // Must be set before server.js is imported: it initializes the DB and listens at import time.
+  process.env.DATABASE_URL = 'sqlite://:memory:';
+  process.env.PORT = '0';
+  ({ app } = await import('../server.js'));
+  // Demo user (parent@demo.fr / demo, hashed) is seeded by _core's ensureSeed on the first API call.
 });
 
 describe('API - Authentication', () => {
@@ -23,25 +30,30 @@ describe('API - Authentication', () => {
         action: 'signup',
         email: 'newuser@test.com',
         password: 'test123',
-        name: 'Test User'
+        name: 'Test User',
+        familyName: 'Test Family'
       });
 
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
-    expect(res.body.email).toBe('newuser@test.com');
+    expect(res.body.me.email).toBe('newuser@test.com');
   });
 
   it('POST /api login authenticates user', async () => {
     const res = await request(app)
       .post('/api')
-      .send({
-        action: 'login',
-        email: 'parent@demo.fr',
-        password: 'demo'
-      });
+      .send({ action: 'login', email: 'parent@demo.fr', password: 'demo' });
 
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
+  });
+
+  it('POST /api login rejects wrong password', async () => {
+    const res = await request(app)
+      .post('/api')
+      .send({ action: 'login', email: 'parent@demo.fr', password: 'wrong' });
+
+    expect(res.status).toBe(401);
   });
 
   it('Missing token on protected action returns 401', async () => {
@@ -59,21 +71,17 @@ describe('API - Families', () => {
   beforeAll(async () => {
     const res = await request(app)
       .post('/api')
-      .send({
-        action: 'login',
-        email: 'parent@demo.fr',
-        password: 'demo'
-      });
+      .send({ action: 'login', email: 'parent@demo.fr', password: 'demo' });
     token = res.body.token;
   });
 
-  it('GET /api me returns current user', async () => {
+  it('POST /api me returns current user', async () => {
     const res = await request(app)
       .post('/api')
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
     expect(res.status).toBe(200);
-    expect(res.body.email).toBe('parent@demo.fr');
+    expect(res.body.me.email).toBe('parent@demo.fr');
   });
 });
