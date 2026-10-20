@@ -1583,7 +1583,7 @@ const ACTIONS = {
       logAction('reward_refused', q.name, { child: q.child, cost: q.cost, refuser: me?.name });
     }
   },
-  'apply-sanction': el => {
+  'apply-sanction': async el => {
     // Defensive: ensure arrays are normalized
     console.log(`[SANCTION-BEFORE] child.sanctions:`, JSON.stringify(child()?.sanctions || []));
     if (!state.sanctionsList || !Array.isArray(state.sanctionsList)) { console.log(`[SANCTION-ERROR] sanctionsList not array`); return; }
@@ -1600,6 +1600,7 @@ const ACTIONS = {
     console.log(`[SANCTION-AFTER] child.sanctions:`, JSON.stringify(c.sanctions || []));
     console.log(`[SANCTION-ACTIONLOG-AFTER] state.actionLog after logAction:`, state.actionLog?.length || 0, 'entries');
     console.log(`[SANCTION-APPLIED] Applied "${s.name}" to ${c.name}: gold ${c.gold + s.gold} → ${c.gold}, sanctions now: ${c.sanctions.length}`);
+    await save();
   },
   'add-sanction-def': () => {
     const name = val('sanction-motif'), gold = parseInt(val('sanction-pts'), 10);
