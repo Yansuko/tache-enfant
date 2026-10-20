@@ -15,9 +15,14 @@ function escapeSql(str) {
   return "'" + str.toString().replace(/'/g, "''") + "'";
 }
 
-// Process users
+// Process users: Firebase has several records per email (auth uid, legacy uid, email-key).
+// Keep one per email, and only ones with salt+hash (password columns are NOT NULL).
+const usersByEmail = new Map();
+for (const user of Object.values(firebaseExport.users || {})) {
+  if (user.email && user.salt && user.hash && !usersByEmail.has(user.email)) usersByEmail.set(user.email, user);
+}
 const usersMap = {}; // email → UUID
-Object.entries(firebaseExport.users || {}).forEach(([key, user]) => {
+usersByEmail.forEach((user) => {
   const userId = crypto.randomUUID();
   usersMap[user.email] = userId;
   
@@ -34,8 +39,19 @@ Object.entries(firebaseExport.families || {}).forEach(([familyId, family]) => {
 VALUES (${escapeSql(familyId)}, ${escapeSql(ownerId)}, ${escapeSql(family.name)}, 
 ${family.dailyBonus?.xp || 30}, ${family.dailyBonus?.gold || 15}, NOW());`);
 
-  // Process children
-  Object.values(family.children || {}).forEach((child) => {
+  // Owner + members that exist in users (unknown emails would break the FK)
+  const memberIds = new Set([ownerId]);
+  (family.members || []).forEach((email) => usersMap[email] && memberIds.add(usersMap[email]));
+  memberIds.forEach((userId) => {
+    sql.push(`INSERT INTO family_members (family_id, user_id, role)
+VALUES (${escapeSql(familyId)}, ${escapeSql(userId)}, ${escapeSql(userId === ownerId ? 'owner' : 'member')});`);
+  });
+
+  // Children are stored under both array indices ("0") and their id ("child-emma-demo").
+  // Dedupe by child.id; id-keyed entries iterate last, so the newer copy wins.
+  const children = new Map();
+  Object.values(family.children || {}).forEach((child) => children.set(child.id, child));
+  children.forEach((child) => {
     sql.push(`INSERT INTO children (id, family_id, name, xp, gold, pin, created_at)
 VALUES (${escapeSql(child.id)}, ${escapeSql(familyId)}, ${escapeSql(child.name)}, 
 ${child.xp || 0}, ${child.gold || 0}, ${escapeSql(child.pin || '0000')}, NOW());`);
