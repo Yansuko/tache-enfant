@@ -19,7 +19,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./netlify/functions:/app/src:ro
+      - ./netlify/functions:/app/netlify/functions:ro
       - ./tache-enfant:/app/public:ro
       - ./server.js:/app/server.js:ro
     networks:
@@ -38,7 +38,9 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./seed-demo.sql:/docker-entrypoint-initdb.d/02-seed-demo.sql
+      # seed-demo.sql collides with migration.sql (same parent@demo.fr user). Demo data: `npm run dev:seed`.
+      # Real data: `npm run migrate`. Pick one per fresh volume (`docker-compose -f docker-compose.dev.yml down -v` to reset).
+      # - ./seed-demo.sql:/docker-entrypoint-initdb.d/02-seed-demo.sql
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U dailykids -d dailykids" ]
       interval: 10s

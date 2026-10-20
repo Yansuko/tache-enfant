@@ -23,6 +23,26 @@ docker-compose -f docker-compose.dev.yml up
 # Database admin: http://localhost:5050 (pgAdmin)
 ```
 
+Then load data into the fresh database. **Pick one workflow per database volume** — the demo seed and
+`migration.sql` both create `parent@demo.fr`, so they must not be combined
+(reset with `docker-compose -f docker-compose.dev.yml down -v`).
+
+**Fresh dev (demo data):**
+
+```bash
+docker-compose -f docker-compose.dev.yml up -d
+npm run dev:seed      # creates parent@demo.fr / demo through the API (idempotent)
+```
+
+**Migration load (real data):**
+
+```bash
+docker-compose -f docker-compose.dev.yml up -d
+npm run migrate       # loads migration.sql into the db container (see "Migration from Firebase")
+```
+
+`seed-demo.sql` is no longer auto-loaded by `docker-compose.dev.yml`; the volume line is commented out there.
+
 ### Option 2: Local Node.js
 
 ```bash
@@ -125,8 +145,8 @@ node migrate-firebase-export.mjs
 # Transform to SQL
 node migrate-transform.mjs
 
-# Load into PostgreSQL
-psql -h localhost -U dailykids -d dailykids < migration.sql
+# Load into PostgreSQL (fresh volume, without the demo seed)
+npm run migrate
 ```
 
 ## Testing

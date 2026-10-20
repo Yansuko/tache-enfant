@@ -15,6 +15,8 @@
     "start": "node server.js",
     "dev:docker": "docker-compose -f docker-compose.dev.yml up",
     "dev:docker:build": "docker-compose -f docker-compose.dev.yml build",
+    "dev:seed": "DATABASE_URL=${DATABASE_URL:-postgresql://dailykids:dailykids@localhost:5432/dailykids} node seed-demo-only.mjs",
+    "migrate": "docker-compose -f docker-compose.dev.yml exec -T db psql -v ON_ERROR_STOP=1 -U dailykids -d dailykids < migration.sql",
     "test:watch": "vitest"
   },
   "dependencies": {
