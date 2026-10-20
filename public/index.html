@@ -167,7 +167,7 @@ window.getFirebaseIdToken = async (user) => {
 // Setup auth state listener callbacks
 window.firebaseOnAuthStateChangedCallbacks = [];
 window.firebaseOnAuthStateChanged = (callback) => {
-  if (typeof callback !== 'function') return;
+  if (typeof callback !== 'function') return () => {};
   window.firebaseOnAuthStateChangedCallbacks.push(callback);
   // Appelle immédiatement le callback avec l'état courant
   const storedToken = localStorage.getItem(TOKEN_KEY);
@@ -180,6 +180,8 @@ window.firebaseOnAuthStateChanged = (callback) => {
   } else {
     callback(null);
   }
+  // Retourne une fonction unsubscribe (no-op pour le remplacement Firebase)
+  return () => {};
 };
 
 initAuth();
@@ -2238,7 +2240,9 @@ async function boot() {
 
   // Wait for Firebase auth state to be ready
   await new Promise((resolve) => {
+    console.log('[BOOT] Waiting for auth state...');
     const unsubscribe = window.firebaseOnAuthStateChanged(async (user) => {
+      console.log('[BOOT-AUTH] Auth callback called, user:', !!user);
       unsubscribe(); // Unsubscribe from initial check
 
       if (user) {

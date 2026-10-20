@@ -65,8 +65,10 @@ app.post('/api', async (req, res) => {
   const { action, ...body } = req.body || {};
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  console.log('[API-REQUEST]', { action, hasToken: !!token, timestamp: new Date().toISOString() });
   try {
     const r = await handleApi({ action, token, body }, store);
+    console.log('[API-SUCCESS]', { action, status: r.status || 200 });
     res.status(r.status || 200).json(r.body);
   } catch (error) {
     console.error('[API-ERROR]', { action, error: error.message });
