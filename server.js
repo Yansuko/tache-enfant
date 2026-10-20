@@ -4,6 +4,8 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import morgan from 'morgan';
+import { handleApi } from './netlify/functions/_core.mjs';
+import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -28,6 +30,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ============ Database initialization ============
 let db = null;
+let store = null;
 
 async function initializeDatabase() {
   const dbUrl = process.env.DATABASE_URL;
@@ -43,6 +46,7 @@ async function initializeDatabase() {
     db.pragma('journal_mode = WAL');
     console.log('[DB] SQLite database initialized at', dbPath);
   }
+  store = createDatabaseAdapter(db, db instanceof Pool);
 }
 
 // ============ Health check endpoint ============
@@ -54,9 +58,20 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ============ API endpoint stub (will be implemented in Task 8) ============
+// ============ API endpoint ============
+// handleApi (_core.mjs) verifies the Bearer token for every non-public action (401 'Non authentifié.')
+// and returns a signed token in the body of login/signup — same HMAC scheme as auth.js, secret kept in the store.
 app.post('/api', async (req, res) => {
-  res.status(501).json({ error: 'API not yet implemented' });
+  const { action, ...body } = req.body || {};
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  try {
+    const r = await handleApi({ action, token, body }, store);
+    res.status(r.status || 200).json(r.body);
+  } catch (error) {
+    console.error('[API-ERROR]', { action, error: error.message });
+    res.status(500).json({ error: 'Erreur serveur : ' + error.message });
+  }
 });
 
 // ============ Fallback to SPA ============
