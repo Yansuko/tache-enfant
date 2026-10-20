@@ -1,50 +1,145 @@
-# DailyKids Quest IV
+# DailyKids Quest IV - Containerized Version
 
-Appli familiale de quêtes/XP/or pour enfants, avec espace parent protégé,
-multi-famille et partage d'accès entre adultes. Front statique + backend
-serverless sur **Netlify Functions + Netlify Blobs**.
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green)](https://nodejs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-blue)](https://www.docker.com/)
 
-## Structure
+A fully containerized family task management system with real-time synchronization, offline support, and complete data ownership.
 
-```
-tache-enfant/           # front statique (publié par Netlify)
-  index.html            # l'app (appelle POST /api)
-  styles.css            # design system "Organic"
-netlify/functions/
-  api.mjs               # fonction Netlify → Netlify Blobs
-  _core.mjs             # logique d'API partagée (auth, familles) — pure
-dev-server.mjs          # serveur local (statique + /api, store fichier)
-test-backend.mjs        # tests du cœur d'API (node test-backend.mjs)
-netlify.toml            # publish + redirection /api
-package.json
-```
+## Quick Start (Local Development)
 
-## Développer en local
+### Option 1: Docker (Recommended)
 
 ```bash
-npm run dev      # http://localhost:8123  (front + /api, données dans .data/)
-npm test         # tests du backend
+# Clone and navigate
+git clone <repo>
+cd dailykids-quest
+
+# Build and start
+docker-compose -f docker-compose.dev.yml build
+docker-compose -f docker-compose.dev.yml up
+
+# Access at http://localhost:3000
+# Database admin: http://localhost:5050 (pgAdmin)
 ```
 
-Aucune dépendance n'est nécessaire pour `dev`/`test` (Node pur). `@netlify/blobs`
-n'est utilisé qu'en production par la fonction.
+### Option 2: Local Node.js
 
-## Déployer sur Netlify
+```bash
+npm install
 
-1. Pousser ce dossier sur un dépôt Git, puis « Add new site » → « Import » sur Netlify
-   (ou `netlify deploy` avec la CLI). Aucune commande de build n'est requise ;
-   `netlify.toml` fixe `publish = "tache-enfant"` et `functions = "netlify/functions"`.
-2. Netlify **Blobs** est activé par défaut — rien à configurer. Le secret de
-   signature des jetons est auto-généré et stocké dans Blobs au premier appel.
-3. L'API est servie sur `/api`. Un compte de démo est créé automatiquement :
-   `parent@demo.fr` / `demo`.
+# Create .env.local
+cat > .env.local << EOF
+NODE_ENV=development
+DATABASE_URL=sqlite://./data/dailykids.db
+ADMIN_KEY=dev-secret
+EOF
 
-## Sécurité (état actuel)
+npm run dev
+# Opens http://localhost:3000
+```
 
-- Mots de passe : hachés **scrypt** + sel côté serveur (jamais stockés en clair).
-- Sessions : jetons **HMAC** signés, expiration 30 j, vérifiés à chaque appel.
-- Le serveur est seul maître de `owner`/`members`/`id` d'une famille : un membre
-  ne peut pas s'auto-promouvoir via `saveFamily`.
-- PIN enfants : simple barrière anti-fratrie sur l'appareil (pas un secret fort).
-- `ponytail:` la persistance famille est en « dernier-écrit-gagne » (pas d'etag) —
-  suffisant à l'échelle d'une famille ; ajouter un merge/etag si conflits multi-appareils.
+## Login Credentials (Demo)
+
+**Parent:**
+- Email: parent@demo.fr
+- Password: demo
+
+**Children:**
+- Emma: PIN 0000
+- Lucas: PIN 1111
+- Test: PIN 2222
+
+## Architecture
+
+```
+Client (HTML/CSS/JS)
+       ↓
+Express.js Backend (Port 3000)
+       ↓
+PostgreSQL/SQLite Database
+```
+
+## Development
+
+```bash
+npm install          # Install dependencies
+npm run dev:docker   # Run with Docker Compose
+npm run test         # Run all tests
+npm run test:watch   # Watch mode
+npm run test:e2e     # Run E2E tests
+```
+
+## Deployment
+
+### Production Docker
+
+```bash
+docker build -t dailykids-quest:latest .
+
+docker run -d \
+  --name dailykids \
+  -p 3000:3000 \
+  -e NODE_ENV=production \
+  -e DATABASE_URL=postgresql://user:pass@db.example.com:5432/dailykids \
+  -e ADMIN_KEY=<your-secret> \
+  -v /data/backups:/app/data/backups \
+  dailykids-quest:latest
+```
+
+### Environment Variables
+
+```bash
+NODE_ENV              # development|production
+PORT                  # Default: 3000
+DATABASE_URL          # postgresql://... or sqlite://...
+ADMIN_KEY             # Secret for admin operations
+JWT_SECRET            # Auto-generated if not set
+BREVO_API_KEY         # Optional: for email features
+LOG_LEVEL             # debug|info|warn|error
+```
+
+## Features
+
+- ✅ Real-time family task management
+- ✅ Multi-child household support
+- ✅ Parent approval workflow for tasks/grades
+- ✅ XP/gold reward system with levels
+- ✅ Grade tracking and statistics
+- ✅ Sanctions and reward catalog
+- ✅ Admin panel with audit logs
+- ✅ Offline-capable (SQLite)
+- ✅ Self-hosted (no cloud dependency)
+- ✅ JWT authentication
+
+## Migration from Firebase
+
+To migrate existing Firebase data:
+
+```bash
+# Export Firebase
+export FIREBASE_DATABASE_URL="https://your-project.firebaseio.com"
+export FIREBASE_SERVICE_ACCOUNT_PATH="./firebase-service-account.json"
+node migrate-firebase-export.mjs
+
+# Transform to SQL
+node migrate-transform.mjs
+
+# Load into PostgreSQL
+psql -h localhost -U dailykids -d dailykids < migration.sql
+```
+
+## Testing
+
+```bash
+# Unit tests
+npm test
+
+# E2E tests (requires running server)
+npm run dev &
+npm run test:e2e
+```
+
+## License
+
+MIT
