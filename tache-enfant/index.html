@@ -297,7 +297,12 @@ function normalizeFamilyData(f) {
   for (const field of arrayFields) {
     const before = f[field];
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
-      const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
+      // Filter out numeric keys that look like array indices, and exclude 'length'
+      const arr = Object.entries(f[field])
+        .filter(([k, v]) => isNaN(Number(k)) || v === null || v === undefined ? false : true)
+        .filter(([k, v]) => k !== 'length' && v !== null && v !== undefined)
+        .sort((a, b) => Number(a[0]) - Number(b[0]))
+        .map(([k, v]) => v);
       f[field] = arr;
       console.log(`[NORMALIZE] ${field}: converted object to array (${arr.length} items)`);
     }
@@ -306,7 +311,7 @@ function normalizeFamilyData(f) {
         f[field] = [];
         console.log(`[NORMALIZE] ${field}: initialized empty array`);
       } else if (before && !Array.isArray(f[field])) {
-        console.warn(`[NORMALIZE] ${field}: still not array after normalization!`, typeof f[field]);
+        console.warn(`[NORMALIZE] ${field}: still not array after normalization!`, typeof f[field], 'value:', f[field]);
       }
     }
 
@@ -379,6 +384,7 @@ async function persistFamily() {
   const persistId = Math.random().toString(36).substring(7);
   const persistTime = new Date().toISOString();
   console.log(`[PERSIST-START-${persistId}] ${persistTime} Starting persistFamily`);
+  console.log(`[PERSIST-DEBUG-${persistId}] state.children AT START:`, state?.children?.map(c => ({ name: c.name, id: c.id })));
   while (dirty) {
     dirty = false;
     try {
@@ -1881,7 +1887,7 @@ const ACTIONS = {
       window.firebaseToken = idToken;
 
       // Call backend to create user doc + family
-      const r = await api('signup', { name, email, familyName });
+      const r = await api('signup', { name, email, password, familyName });
       onAuthed({ ...r, token: idToken });
     } catch (error) {
       authMsg = typeof error === 'string' ? 'Erreur: ' + error : 'Erreur: ' + (error?.message || String(error));

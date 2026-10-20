@@ -212,20 +212,6 @@ function seedFamily() {
 async function ensureSeed(store) {
   if (await store.get('seeded')) {
     // Already seeded, don't overwrite user changes
-    // But refresh demo tasks to have current timestamps
-    try {
-      const fam = seedFamily();
-      const current = await store.get('family:' + fam.id);
-      if (current) {
-        // Refresh Emma's tasks with current timestamps
-        if (current.children && current.children.length > 0) {
-          current.children[0].tasks = fam.children[0].tasks;
-          await store.set('family:' + fam.id, current);
-        }
-      }
-    } catch (e) {
-      // Silently ignore refresh errors
-    }
     return;
   }
   const fam = seedFamily();
@@ -298,23 +284,20 @@ async function signup(store, secret, b) {
   if (await store.get('account:' + email)) return err(409, 'Un compte existe déjà avec cet email.');
 
   let uid = null;
+  // Try Firebase auth (optional, for backward compatibility)
+  // Silently fail if Firebase is not configured or credentials are invalid
   try {
-    // Try Firebase auth (requires env config)
-    try {
-      const user = await auth.createUser({
-        email,
-        password
-      });
-      uid = user.uid;
-    } catch (fbErr) {
-      if (fbErr.message?.includes('auth/email-already-exists')) {
-        return err(409, 'Un compte existe déjà avec cet email.');
-      }
-      // Firebase not configured - use legacy store only
+    const user = await auth.createUser({
+      email,
+      password
+    });
+    uid = user.uid;
+  } catch (fbErr) {
+    if (fbErr.message?.includes('auth/email-already-exists')) {
+      return err(409, 'Un compte existe déjà avec cet email.');
     }
-  } catch (error) {
-    console.error('[SIGNUP-ERROR]', error.message);
-    return err(500, error.message);
+    // Firebase not configured or credentials invalid - use legacy store only
+    console.log('[SIGNUP] Firebase createUser failed:', fbErr.message);
   }
 
   // Create family in store
@@ -366,35 +349,39 @@ async function login(store, secret, b) {
   if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
 
   let uid = null;
+  // Try to sync with Firebase (optional, for backward compatibility)
+  // Silently fail if Firebase is not configured or credentials are invalid
   try {
-    // Try to sync with Firebase (optional, for backward compatibility)
+    let firebaseUser;
     try {
-      let firebaseUser;
-      try {
-        firebaseUser = await auth.getUserByEmail(email);
-      } catch (err) {
-        if (err.message?.includes('user-not-found')) {
-          // Create Firebase user if doesn't exist (migration scenario)
+      firebaseUser = await auth.getUserByEmail(email);
+    } catch (getErr) {
+      if (getErr.message?.includes('user-not-found')) {
+        // Create Firebase user if doesn't exist (migration scenario)
+        try {
           firebaseUser = await auth.createUser({
             email,
             password: b.password
           });
-        } else {
-          throw err;
+        } catch (createErr) {
+          // Firebase creation failed, continue with legacy auth only
+          console.log('[LOGIN] Firebase createUser failed:', createErr.message);
         }
+      } else {
+        // Firebase not configured or credentials invalid, continue with legacy auth
+        console.log('[LOGIN] Firebase getUserByEmail failed:', getErr.message);
       }
+    }
 
+    if (firebaseUser) {
       uid = firebaseUser.uid;
-
       // Update legacy account with Firebase UID
       acc.firebaseUid = uid;
       await store.set('account:' + email, acc);
-    } catch (fbErr) {
-      // Firebase not configured - use legacy store only
     }
-  } catch (error) {
-    console.error('[LOGIN-ERROR]', error.message);
-    return err(500, error.message);
+  } catch (fbErr) {
+    // Catch any unexpected errors from Firebase operations
+    console.log('[LOGIN] Firebase sync failed:', fbErr.message);
   }
 
   // Log activity
@@ -1391,8 +1378,8 @@ export async function handleApi({ action, token, body = {} }, store) {
         console.log('[GET-ADMIN-STATS] Sample familyIds:', metadata.familyIds.slice(0, 3));
       }
 
-      // If metadata empty, scan store to populate it (first access after migration)
-      if ((!metadata.familyIds || metadata.familyIds.length === 0) && store.list) {
+      // Always ensure metadata is complete by scanning the store (handles cases where families were created before metadata tracking)
+      if (store.list) {
         const keys = await store.list();
         const scannedFamilyIds = [];
         const scannedEmails = [];
@@ -1400,7 +1387,14 @@ export async function handleApi({ action, token, body = {} }, store) {
           if (key.startsWith('family:')) scannedFamilyIds.push(key.slice(7));
           if (key.startsWith('account:')) scannedEmails.push(key.slice(8));
         }
-        if (scannedFamilyIds.length > 0 || scannedEmails.length > 0) {
+        // Update metadata if scan found different items than what's recorded
+        const metaFamilyIds = metadata.familyIds || [];
+        const metaEmails = metadata.accountEmails || [];
+        if (scannedFamilyIds.length !== metaFamilyIds.length ||
+            scannedEmails.length !== metaEmails.length ||
+            !scannedFamilyIds.every(id => metaFamilyIds.includes(id)) ||
+            !scannedEmails.every(email => metaEmails.includes(email))) {
+          console.log('[GET-ADMIN-STATS] Metadata stale - updating from scan:', { before: { families: metaFamilyIds.length, accounts: metaEmails.length }, after: { families: scannedFamilyIds.length, accounts: scannedEmails.length } });
           metadata = { familyIds: scannedFamilyIds, accountEmails: scannedEmails };
           await store.set('_admin_metadata', metadata);
         }
