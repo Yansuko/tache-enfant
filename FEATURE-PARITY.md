@@ -39,7 +39,7 @@ Authenticated (Bearer JWT):
 - [x] Seed data (`seed-demo.sql`)
 - [ ] Docker build / docker-compose run: not executed
 - [ ] Login flow + /health curl against running container: not executed
-- [ ] Data migration executed against real Firebase export: not confirmed (see migration-verification.txt)
+- [ ] Data migration: see migration-verification.txt (Task 11): transform output has blocking issues
 
 ## Tests
 - [x] `test/auth.test.js` (vitest): passes

@@ -1,6 +1,42 @@
-Migration verification (Task 11) - status as of Task 17
+Task 11: Firebase -> PostgreSQL migration verification
+Date: 2026-10-20
 
-NOT VERIFIED. No Task 11 commit exists and no migration report was produced.
-Present: export script (d6edf75), transform script (3c8090f).
-Untracked in working tree: firebase-export.json, migration.sql (not committed; may contain production data, review before committing).
-Not run: loading migration.sql into PostgreSQL and comparing row counts (no docker/psql available).
+CREDENTIALS
+- firebase-service-account.json present (gitignored); FIREBASE_DATABASE_URL present in .env (gitignored).
+- Scripts do not load .env themselves; run with: set -a; . ./.env; set +a; node migrate-firebase-export.mjs
+
+STEP 1 EXPORT (migrate-firebase-export.mjs): OK, read-only. firebase-export.json = 111710 bytes.
+  Top-level: _metadata, _other, activityHistory (183), families (4), levelConfigs (1), users (3)
+STEP 2 TRANSFORM (migrate-transform.mjs): OK, migration.sql = 93 statements.
+STEP 3 LOAD INTO POSTGRES: NOT RUN (no psql / PostgreSQL available here).
+
+STATEMENT COUNTS (migration.sql vs source)
+  users 3 (source 3) | families 4 (4) | children 6 (source 5 unique + 1 duplicate) 
+  tasks 49 | grades 10 | rewards 21 (6+6+3+6)
+  No 'undefined'/'NaN' literals. 0 orphan tasks/grades (child_id/family_id all resolve to emitted rows).
+  Not migrated (no transform code): family_members, sanctions, task_requests, grade_requests, action log,
+  quests, levelConfigs, activityHistory, _metadata/_other.
+
+BLOCKING PROBLEMS - migration.sql would FAIL on load as generated
+ 1. Duplicate users: 3 Firebase user records share email parent@demo.fr (keys XdXasnF7..., demo-uid,
+    email-parent_demo_fr). users.email is UNIQUE -> violation. Only email-parent_demo_fr has salt/hash.
+ 2. 2 of those user rows have salt/hash NULL; schema has password_salt/password_hash NOT NULL -> violation.
+ 3. Duplicate child id: fam-demo.children has keys 0,1,2,child-emma-demo (array/object mix) so
+    child-emma-demo is inserted twice -> PK violation (and its tasks/grades duplicated).
+
+NON-BLOCKING ISSUES
+ 4. Family owners a@x.fr and b@x.fr (fam-60f8..., fam-d874..., fam-e546...) have no user record;
+    script silently falls back to the first user (parent@demo.fr). Wrong ownership, not an error.
+ 5. Children without pin (the two 'Zoe' children) get default '0000'.
+ 6. family.members is ignored, so family_members table stays empty.
+
+RECOMMENDED FIXES to migrate-transform.mjs (not applied; outside Task 11 scope)
+ - Dedupe users by email, keeping the record that has salt/hash.
+ - Dedupe children by id (Map keyed on child.id).
+ - Emit family_members from family.members / user.familyIds.
+ - Decide handling for orphan owners (skip family or create placeholder user).
+
+SEMANTIC CHECK of plan Step 4 (fam-demo join): fam-demo yields 3 distinct children (Emma, Lucas, Test) after dedupe.
+
+STATUS: export + transform verified working mechanically; data integrity checks FAIL pending fixes above.
+Local-only artifacts (gitignored, contain password hashes): firebase-export.json, migration.sql

@@ -17,15 +17,16 @@ Containerized, self-hosted version of DailyKids Quest: Express + PostgreSQL/SQLi
 | 8 | POST /api on SQL key/value store | 3f69c4c |
 | 9 | Firebase export script | d6edf75 |
 | 10 | Firebase -> PostgreSQL transform | 3c8090f |
+| 11 | Migration verification report | 08a35dd |
 | 12 | JWT unit tests | 136a1f8 |
 | 14 | Playwright E2E tests | 7444665 |
 | 15 | README quickstart | fa58b57 |
-| 17 | CHANGELOG, FEATURE-PARITY.md, migration-verification.txt | this commit |
+| 16 | Environment documentation | a39314a |
+| 17 | CHANGELOG, FEATURE-PARITY.md | this commit |
 
 ### Not complete / not verified
-- Task 11 (run + verify data migration): no commit; see migration-verification.txt.
-- Task 13 (API integration tests): `test/api.test.js` exists but is uncommitted and fails at startup.
-- Task 16 (.env.example / docs/ENVIRONMENT.md): in progress, uncommitted at time of tagging.
+- Task 11 migration: export + transform run, but generated migration.sql would FAIL on load (duplicate user emails, NULL password hashes, duplicate child id); load into PostgreSQL not run. See migration-verification.txt.
+- Task 13 (API integration tests): `test/api.test.js` exists but is uncommitted and fails at startup (needs a database).
 - Docker build, docker-compose, curl login/health, and E2E suite were not run (no Docker in this environment).
 
 See FEATURE-PARITY.md for the action checklist.
