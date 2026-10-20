@@ -506,7 +506,7 @@ async function resetPassword(store, secret, b) {
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
   const saveTime = new Date().toISOString();
-  console.log(`[SAVEFAMILY-START-${saveId}] ${saveTime} saveFamily called`);
+  console.log(`[SAVEFAMILY-START-${saveId}] ${saveTime} saveFamily called, email: ${email}`);
   let inc = b.family;
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
 
@@ -514,6 +514,9 @@ async function saveFamily(store, email, b) {
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] requests:`, JSON.stringify(inc.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] sanctionsList:`, JSON.stringify(inc.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RECV-ACTIONLOG-${saveId}] incoming actionLog:`, inc.actionLog?.length || 0, 'entries, type:', typeof inc.actionLog);
+  if (inc.actionLog?.length > 0) {
+    console.log(`[SAVEFAMILY-RECV-ACTIONLOG-DETAIL-${saveId}] First entry:`, JSON.stringify(inc.actionLog[0]));
+  }
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] children count:`, inc.children?.length || 0);
   if (inc.children?.[0]) {
     console.log(`[SAVEFAMILY-RECV-CHILD0-${saveId}] name=${inc.children[0].name}, gold=${inc.children[0].gold}, sanctions=${JSON.stringify(inc.children[0].sanctions?.slice(0, 2) || [])}`);
@@ -632,7 +635,9 @@ async function saveFamily(store, email, b) {
     console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to Firebase - sanctionsList:`, JSON.stringify(famPayload.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
     console.log(`[SAVEFAMILY-WRITE-ACTIONLOG-${saveId}] Writing to Firebase - actionLog:`, famPayload.actionLog?.length || 0, 'entries, type:', typeof famPayload.actionLog, 'value:', JSON.stringify(famPayload.actionLog?.slice(0, 1) || []));
 
+    console.log(`[SAVEFAMILY-WRITE-FIREBASE-${saveId}] Calling db.ref().set() with actionLog:`, famPayload.actionLog?.length || 0, 'entries');
     await db.ref(`families/${inc.id}`).set(famPayload);
+    console.log(`[SAVEFAMILY-WRITE-FIREBASE-${saveId}] db.ref().set() returned successfully`);
 
     // Write each child separately under /families/{familyId}/children/{childId}
     for (const child of (merged.children || [])) {
@@ -1560,6 +1565,10 @@ export async function handleApi({ action, token, body = {} }, store) {
       let totalTasksCompleted = 0;
 
       let metadata = (await store.get('_admin_metadata')) || { familyIds: [], accountEmails: [] };
+      console.log('[GET-ADMIN-STATS] Metadata loaded:', { familyIds: metadata.familyIds?.length || 0, accountEmails: metadata.accountEmails?.length || 0 });
+      if (metadata.familyIds?.length > 0) {
+        console.log('[GET-ADMIN-STATS] Sample familyIds:', metadata.familyIds.slice(0, 3));
+      }
 
       // If metadata empty, scan store to populate it (first access after migration)
       if ((!metadata.familyIds || metadata.familyIds.length === 0) && store.list) {
@@ -1621,15 +1630,23 @@ export async function handleApi({ action, token, body = {} }, store) {
 
       // Collect audit logs from all families
       const allAuditLogs = [];
+      console.log('[GET-ADMIN-STATS-AUDIT] Starting audit log collection from', metadata.familyIds?.length || 0, 'families');
       for (const famId of metadata.familyIds || []) {
         try {
           const fbSnap = await db.ref(`families/${famId}`).once('value');
           const fam = fbSnap.val();
+          console.log(`[GET-ADMIN-STATS-AUDIT-${famId}] Family found: ${!!fam}, hasActionLog: ${!!fam?.actionLog}, isArray: ${Array.isArray(fam?.actionLog)}, length: ${fam?.actionLog?.length || 0}`);
           if (fam && fam.actionLog && Array.isArray(fam.actionLog)) {
+            console.log(`[GET-ADMIN-STATS-AUDIT-${famId}] Adding ${fam.actionLog.length} entries`);
+            if (fam.actionLog.length > 0) {
+              console.log(`[GET-ADMIN-STATS-AUDIT-${famId}] Sample entry:`, JSON.stringify(fam.actionLog[0]));
+            }
             allAuditLogs.push(...fam.actionLog);
+          } else {
+            console.log(`[GET-ADMIN-STATS-AUDIT-${famId}] Skipped - fam:${!!fam}, actionLog:${!!fam?.actionLog}, isArray:${Array.isArray(fam?.actionLog)}`);
           }
         } catch (fbErr) {
-          console.log('[GET-ADMIN-STATS] Error reading audit logs for family:', famId, fbErr.message);
+          console.log('[GET-ADMIN-STATS-AUDIT-ERROR]', famId, fbErr.message);
         }
       }
       // Sort by timestamp descending (most recent first) and keep last 5000 entries

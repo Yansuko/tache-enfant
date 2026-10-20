@@ -1596,11 +1596,18 @@ const ACTIONS = {
     console.log(`[SANCTION-APPLY] Applying "${s.name}" (${s.gold}🪙) to ${c.name}`);
     c.sanctions.unshift({ motif: s.name, gold: s.gold });
     c.gold = Math.max(0, c.gold - s.gold);
+    console.log(`[SANCTION-BEFORE-LOGACTION] state.actionLog:`, state.actionLog?.length || 0, 'entries');
     logAction('sanction_applied', s.name, { child: c.name, goldDeducted: s.gold, applier: me?.name });
+    console.log(`[SANCTION-AFTER-LOGACTION] state.actionLog:`, state.actionLog?.length || 0, 'entries');
+    if (state.actionLog?.length > 0) {
+      console.log(`[SANCTION-LOG-CONTENT] Last entry:`, JSON.stringify(state.actionLog[state.actionLog.length - 1]));
+    }
     console.log(`[SANCTION-AFTER] child.sanctions:`, JSON.stringify(c.sanctions || []));
     console.log(`[SANCTION-ACTIONLOG-AFTER] state.actionLog after logAction:`, state.actionLog?.length || 0, 'entries');
     console.log(`[SANCTION-APPLIED] Applied "${s.name}" to ${c.name}: gold ${c.gold + s.gold} → ${c.gold}, sanctions now: ${c.sanctions.length}`);
+    console.log(`[SANCTION-BEFORE-SAVE] About to call save(), actionLog has:`, state.actionLog?.length || 0, 'entries');
     await save();
+    console.log(`[SANCTION-AFTER-SAVE] save() returned, actionLog still has:`, state.actionLog?.length || 0, 'entries');
   },
   'add-sanction-def': () => {
     const name = val('sanction-motif'), gold = parseInt(val('sanction-pts'), 10);

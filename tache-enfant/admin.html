@@ -219,6 +219,10 @@
           body: JSON.stringify({ action: 'getAdminStats', adminKey })
         });
         const data = await res.json();
+        console.log('[ADMIN-LOGIN] Response received:', { ok: res.ok, hasAuditLogs: !!data.auditLogs, auditLogsCount: data.auditLogs?.length || 0 });
+        if (data.auditLogs) {
+          console.log('[ADMIN-LOGIN] Sample audit logs:', data.auditLogs.slice(0, 3).map(a => ({ actionType: a.actionType, userId: a.userId, timestamp: new Date(a.timestamp).toISOString() })));
+        }
         if (res.ok) {
           showDashboard(data);
           document.getElementById('login-section').classList.add('hidden');
@@ -611,6 +615,10 @@
         document.getElementById('admin-key').value = savedKey;
         // Don't auto-login for security
       }
+      // Add Enter key support to login
+      document.getElementById('admin-key').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') login();
+      });
     });
   </script>
 </body>
