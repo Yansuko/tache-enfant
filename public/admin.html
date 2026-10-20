@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: #333; margin-bottom: 30px; }
+    .login-form { background: white; padding: 30px; border-radius: 8px; max-width: 400px; margin: 50px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .login-form input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .login-form button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+    .login-form button:hover { background: #0056b3; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .stat-card h3 { font-size: 14px; color: #666; margin-bottom: 10px; }
+    .stat-card .value { font-size: 32px; font-weight: bold; color: #007bff; }
+    table { width: 100%; background: white; border-collapse: collapse; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    th { background: #f8f9fa; padding: 15px; text-align: left; font-weight: 600; color: #333; }
+    td { padding: 12px 15px; border-top: 1px solid #eee; }
+    tr:hover { background: #f9f9f9; }
+    .section { margin-bottom: 40px; }
+    .section h2 { font-size: 20px; color: #333; margin-bottom: 20px; }
+    .hidden { display: none; }
+    .action-btn { padding: 6px 12px; margin: 0 4px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .btn-reset { background: #ffc107; color: #333; }
+    .btn-reset:hover { background: #e0a800; }
+    .btn-delete { background: #dc3545; color: white; }
+    .btn-delete:hover { background: #c82333; }
+    .btn-reset-pin { background: #28a745; color: white; font-size: 11px; padding: 4px 8px; }
+    .btn-reset-pin:hover { background: #218838; }
+    .children-list { font-size: 13px; color: #555; line-height: 1.6; }
+    .child-item { margin-bottom: 8px; }
+    .child-name { font-weight: 500; }
+    .child-pin { color: #007bff; font-family: monospace; margin-left: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="login-section" class="login-form">
+      <h2 style="margin-bottom: 20px;">Admin Dashboard</h2>
+      <input type="password" id="admin-key" placeholder="Clé admin" />
+      <button onclick="login()">Se connecter</button>
+    </div>
+
+    <div id="dashboard-section" class="hidden">
+      <h1>Dashboard Admin 📊</h1>
+      <button onclick="logout()" style="margin-bottom: 20px; padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Déconnexion</button>
+
+      <div class="section">
+        <h2>Statistiques d'utilisation</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Utilisateurs</h3>
+            <div class="value" id="stat-users">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Familles</h3>
+            <div class="value" id="stat-families">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Enfants</h3>
+            <div class="value" id="stat-children">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Tâches complétées</h3>
+            <div class="value" id="stat-tasks">-</div>
+          </div>
+          <div class="stat-card">
+            <h3>Moy. par enfant</h3>
+            <div class="value" id="stat-avg">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Familles créées</h2>
+        <table id="families-table">
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Propriétaire</th>
+              <th>Enfants & PIN</th>
+              <th>Tâches complétées</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="families-body">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>Utilisateurs</h2>
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Nom</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-body">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>Historique des actions admin</h2>
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Date/Heure</th>
+              <th>Action</th>
+              <th>Cible</th>
+              <th>Détails</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>📋 Journal d'audit complet</h2>
+        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+          <h3 style="margin-bottom: 12px; font-size: 16px;">Filtres</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Type d'action:</label>
+              <select id="filter-action-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                <option value="">-- Tous --</option>
+                <option value="task_submitted">Tâche soumise</option>
+                <option value="task_cancelled">Tâche annulée</option>
+                <option value="task_approved">Tâche approuvée</option>
+                <option value="task_rejected">Tâche refusée</option>
+                <option value="task_proposed">Tâche proposée</option>
+                <option value="reward_requested">Récompense demandée</option>
+                <option value="reward_approved">Récompense approuvée</option>
+                <option value="reward_refused">Récompense refusée</option>
+                <option value="sanction_applied">Sanction appliquée</option>
+                <option value="grade_submitted">Note soumise</option>
+                <option value="user_login">Connexion</option>
+                <option value="user_logout">Déconnexion</option>
+              </select>
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Utilisateur:</label>
+              <input type="text" id="filter-user" placeholder="Nom ou email" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Cible/Enfant:</label>
+              <input type="text" id="filter-target" placeholder="Nom de tâche, enfant..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Depuis:</label>
+              <input type="date" id="filter-date-from" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px;">Jusqu'à:</label>
+              <input type="date" id="filter-date-to" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" />
+            </div>
+            <div style="display: flex; align-items: flex-end; gap: 8px;">
+              <button onclick="applyAuditFilters()" style="flex: 1; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">Appliquer filtres</button>
+              <button onclick="clearAuditFilters()" style="flex: 1; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Réinitialiser</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 10px; color: #666; font-size: 13px;">
+          <strong id="audit-log-count">-</strong> entrées
+        </div>
+
+        <table id="activity-table" style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th style="width: 140px;">Date/Heure</th>
+              <th style="width: 120px;">Type d'action</th>
+              <th style="width: 100px;">Utilisateur</th>
+              <th style="width: 100px;">Cible</th>
+              <th>Détails</th>
+              <th style="width: 80px;">Statut</th>
+            </tr>
+          </thead>
+          <tbody id="activity-body">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>📊 Paramètres de niveaux</h2>
+        <div style="margin-bottom: 15px;">
+          <label for="family-selector" style="display: block; margin-bottom: 8px; font-weight: 500;">Sélectionner une famille:</label>
+          <select id="family-selector" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 100%; max-width: 400px;">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+
+        <div id="levelConfigContent">
+          <p>Sélectionnez une famille pour configurer ses niveaux.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let adminKey = '';
+
+    async function login() {
+      adminKey = document.getElementById('admin-key').value;
+      if (!adminKey) return alert('Clé requise');
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getAdminStats', adminKey })
+        });
+        const data = await res.json();
+        console.log('[ADMIN-LOGIN] Response received:', { ok: res.ok, hasAuditLogs: !!data.auditLogs, auditLogsCount: data.auditLogs?.length || 0 });
+        if (data.auditLogs) {
+          console.log('[ADMIN-LOGIN] Sample audit logs:', data.auditLogs.slice(0, 3).map(a => ({ actionType: a.actionType, userId: a.userId, timestamp: new Date(a.timestamp).toISOString() })));
+        }
+        if (res.ok) {
+          showDashboard(data);
+          document.getElementById('login-section').classList.add('hidden');
+          document.getElementById('dashboard-section').classList.remove('hidden');
+        } else {
+          alert('Erreur: ' + (data.error || 'Clé invalide'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    function logout() {
+      adminKey = '';
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('dashboard-section').classList.add('hidden');
+      document.getElementById('admin-key').value = '';
+    }
+
+    let currentDashboardData = null;
+
+    function showDashboard(data) {
+      currentDashboardData = data;
+      const { stats, families, accounts, history } = data;
+      document.getElementById('stat-users').textContent = stats.totalAccounts;
+      document.getElementById('stat-families').textContent = stats.totalFamilies;
+      document.getElementById('stat-children').textContent = stats.totalChildren;
+      document.getElementById('stat-tasks').textContent = stats.totalTasksCompleted;
+      document.getElementById('stat-avg').textContent = stats.averageTasksPerChild;
+
+      const fbody = document.getElementById('families-body');
+      fbody.innerHTML = families.map(f => `
+        <tr>
+          <td>${f.name}</td>
+          <td>${f.owner}</td>
+          <td>
+            <div class="children-list">
+              ${f.children.map(c => `
+                <div class="child-item">
+                  <span class="child-name">${c.name}</span>
+                  <span class="child-pin">PIN: ${c.pin}</span>
+                  <button class="action-btn btn-reset-pin" onclick="resetChildPin('${f.id}', '${c.id}', '${c.name}')">Réinit. PIN</button>
+                </div>
+              `).join('')}
+            </div>
+          </td>
+          <td>${f.tasksCompleted}</td>
+          <td>
+            <button class="action-btn btn-delete" onclick="deleteFamily('${f.id}', '${f.name}')">Supprimer</button>
+          </td>
+        </tr>
+      `).join('');
+
+      const ubody = document.getElementById('users-body');
+      ubody.innerHTML = accounts.map(a => `
+        <tr>
+          <td>${a.email}</td>
+          <td>${a.name}</td>
+          <td>
+            <button class="action-btn btn-reset" onclick="resetPassword('${a.email}')">Réinit. MDP</button>
+            <button class="action-btn btn-delete" onclick="deleteAccount('${a.email}')">Supprimer</button>
+          </td>
+        </tr>
+      `).join('');
+
+      const hbody = document.getElementById('history-body');
+      hbody.innerHTML = (history || []).map(h => `
+        <tr>
+          <td>${new Date(h.timestamp).toLocaleString('fr-FR')}</td>
+          <td>${h.action}</td>
+          <td>${h.target}</td>
+          <td>${h.details || '-'}</td>
+        </tr>
+      `).join('');
+
+      // Store audit logs globally for filtering
+      window.allAuditLogs = data.auditLogs || [];
+      console.log('[ADMIN-DASHBOARD] Received auditLogs:', window.allAuditLogs?.length || 0, 'entries');
+      if (window.allAuditLogs?.length > 0) {
+        console.log('[ADMIN-DASHBOARD] Sample audit logs:', window.allAuditLogs.slice(0, 3).map(a => ({ actionType: a.actionType, userId: a.userId, timestamp: new Date(a.timestamp).toISOString() })));
+      }
+      displayAuditLogs(window.allAuditLogs);
+
+      // Populate family selector
+      const familySelector = document.getElementById('family-selector');
+      familySelector.innerHTML = '<option value="">-- Sélectionner --</option>' +
+        families.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      familySelector.addEventListener('change', (e) => {
+        if (e.target.value) {
+          loadLevelConfig(e.target.value);
+        } else {
+          document.getElementById('levelConfigContent').innerHTML = '<p>Sélectionnez une famille pour configurer ses niveaux.</p>';
+        }
+      });
+    }
+
+    async function loadLevelConfig(familyId) {
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'getLevelConfig', familyId, adminKey })
+        });
+        const data = await res.json();
+        if (res.ok && data.levelConfig) {
+          displayLevelConfig(familyId, data.levelConfig);
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de charger la configuration'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    function displayLevelConfig(familyId, config) {
+      const content = document.getElementById('levelConfigContent');
+
+      let html = `
+        <div style="overflow-x: auto; margin-bottom: 20px;">
+          <table style="width: 100%; border-collapse: collapse; background: white;">
+            <thead>
+              <tr style="background: #f8f9fa;">
+                <th style="padding: 12px; text-align: center; border: 1px solid #ddd; width: 80px;">Niveau</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">XP requis</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #ddd; width: 60px;">Diff</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      config.levels.forEach((level, idx) => {
+        const diff = idx > 0 ? level.xpRequired - config.levels[idx - 1].xpRequired : level.xpRequired;
+        html += `
+          <tr style="border-bottom: 1px solid #ddd;">
+            <td style="padding: 10px; text-align: center; border: 1px solid #ddd; font-weight: 500;">${level.level}</td>
+            <td style="padding: 10px; text-align: center; border: 1px solid #ddd;">
+              <input type="number" class="level-xp-input" data-level="${level.level}" value="${level.xpRequired}"
+                     style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; text-align: center;" />
+            </td>
+            <td style="padding: 10px; text-align: center; border: 1px solid #ddd; color: #666;">${diff}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <button onclick="saveLevelConfig('${familyId}')" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; font-weight: 500;">
+            💾 Sauvegarder
+          </button>
+          <button onclick="resetLevelConfig('${familyId}')" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+            ↻ Réinitialiser par défaut
+          </button>
+        </div>
+      `;
+
+      content.innerHTML = html;
+    }
+
+    async function saveLevelConfig(familyId) {
+      const inputs = document.querySelectorAll('.level-xp-input');
+      const levels = Array.from(inputs).map((input, idx) => ({
+        level: idx + 1,
+        xpRequired: parseInt(input.value)
+      }));
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'updateLevelConfig',
+            familyId,
+            adminKey,
+            levelConfig: {
+              name: 'Configuration personnalisée',
+              levels
+            }
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Configuration sauvegardée!');
+          // Reload dashboard
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de sauvegarder'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function resetLevelConfig(familyId) {
+      if (!confirm('Réinitialiser cette famille à la configuration par défaut (50 niveaux × 100 XP)?')) return;
+
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'resetLevelConfig',
+            familyId,
+            adminKey
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Configuration réinitialisée!');
+          // Reload dashboard
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de réinitialiser'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function resetPassword(email) {
+      if (!confirm(`Réinitialiser le mot de passe de ${email} ?`)) return;
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminResetPassword', adminKey, email })
+        });
+        const data = await res.json();
+        if (res.status === 200) {
+          alert(`Mot de passe réinitialisé pour ${email}`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de réinitialiser'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function deleteAccount(email) {
+      if (!confirm(`ATTENTION: Supprimer définitivement le compte ${email} et toutes ses familles ?`)) return;
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminDeleteAccount', adminKey, email })
+        });
+        const data = await res.json();
+        if (res.status === 200) {
+          alert(`Compte ${email} supprimé`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de supprimer'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function resetChildPin(familyId, childId, childName) {
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminResetPin', adminKey, familyId, childId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(data.message || `PIN de ${childName} réinitialisé`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de réinitialiser le PIN'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    async function deleteFamily(familyId, familyName) {
+      if (!confirm(`ATTENTION: Supprimer définitivement la famille "${familyName}" et toutes ses données ?`)) return;
+      try {
+        const res = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'adminDeleteFamily', adminKey, familyId })
+        });
+        const data = await res.json();
+        if (res.status === 200) {
+          alert(`Famille "${familyName}" supprimée`);
+          location.reload();
+        } else {
+          alert('Erreur: ' + (data.error || 'Impossible de supprimer la famille'));
+        }
+      } catch (e) {
+        alert('Erreur: ' + e.message);
+      }
+    }
+
+    // Audit log display and filtering
+    window.allAuditLogs = [];
+
+    function formatDetailsForDisplay(details) {
+      if (!details || typeof details !== 'object') return details || '-';
+      return Object.entries(details)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' | ');
+    }
+
+    function formatActionType(actionType) {
+      const labels = {
+        'task_submitted': '📋 Tâche soumise',
+        'task_cancelled': '❌ Tâche annulée',
+        'task_approved': '✅ Tâche approuvée',
+        'task_rejected': '🚫 Tâche refusée',
+        'task_proposed': '💭 Tâche proposée',
+        'reward_requested': '🎁 Récompense demandée',
+        'reward_approved': '🎉 Récompense approuvée',
+        'reward_refused': '💔 Récompense refusée',
+        'sanction_applied': '⚠️ Sanction appliquée',
+        'grade_submitted': '📝 Note soumise',
+        'user_login': '🔓 Connexion',
+        'user_logout': '🚪 Déconnexion'
+      };
+      return labels[actionType] || actionType;
+    }
+
+    function displayAuditLogs(logs) {
+      const abody = document.getElementById('activity-body');
+      if (!logs || logs.length === 0) {
+        abody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #666;">Aucune activité enregistrée</td></tr>';
+        document.getElementById('audit-log-count').textContent = '0';
+        return;
+      }
+
+      // Sort by timestamp descending (newest first)
+      const sorted = [...logs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      abody.innerHTML = sorted.map(a => `
+        <tr>
+          <td>${new Date(a.timestamp || 0).toLocaleString('fr-FR')}</td>
+          <td>${formatActionType(a.actionType)}</td>
+          <td><strong>${a.userId || '-'}</strong></td>
+          <td>${a.target || '-'}</td>
+          <td style="font-size: 12px; color: #666;">${formatDetailsForDisplay(a.details)}</td>
+          <td><span style="padding: 4px 8px; border-radius: 3px; font-size: 12px; background: ${a.status === 'success' ? '#d4edda' : '#f8d7da'}; color: ${a.status === 'success' ? '#155724' : '#721c24'};">${a.status === 'success' ? '✓' : '✗'}</span></td>
+        </tr>
+      `).join('');
+
+      document.getElementById('audit-log-count').textContent = sorted.length;
+    }
+
+    function applyAuditFilters() {
+      const actionType = document.getElementById('filter-action-type').value;
+      const user = document.getElementById('filter-user').value.toLowerCase();
+      const target = document.getElementById('filter-target').value.toLowerCase();
+      const dateFrom = document.getElementById('filter-date-from').value;
+      const dateTo = document.getElementById('filter-date-to').value;
+
+      const dateFromMs = dateFrom ? new Date(dateFrom).getTime() : 0;
+      const dateToMs = dateTo ? new Date(dateTo).getTime() + 86400000 : Infinity;
+
+      const filtered = (window.allAuditLogs || []).filter(log => {
+        if (actionType && log.actionType !== actionType) return false;
+        if (user && !log.userId?.toLowerCase().includes(user)) return false;
+        if (target && !log.target?.toLowerCase().includes(target) && !JSON.stringify(log.details || {}).toLowerCase().includes(target)) return false;
+        const logTime = log.timestamp || 0;
+        if (logTime < dateFromMs || logTime > dateToMs) return false;
+        return true;
+      });
+
+      displayAuditLogs(filtered);
+    }
+
+    function clearAuditFilters() {
+      document.getElementById('filter-action-type').value = '';
+      document.getElementById('filter-user').value = '';
+      document.getElementById('filter-target').value = '';
+      document.getElementById('filter-date-from').value = '';
+      document.getElementById('filter-date-to').value = '';
+      displayAuditLogs(window.allAuditLogs || []);
+    }
+
+    // Try to load from localStorage if key exists
+    window.addEventListener('load', () => {
+      const savedKey = localStorage.getItem('admin-key');
+      if (savedKey) {
+        document.getElementById('admin-key').value = savedKey;
+        // Don't auto-login for security
+      }
+      // Add Enter key support to login
+      document.getElementById('admin-key').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') login();
+      });
+    });
+  </script>
+</body>
+</html>
