@@ -399,13 +399,33 @@ async function persistFamily() {
         let mergedChild = { ...remoteChild };
         if (state.children && state.children[i]) {
           const localChild = state.children[i];
-          // Merge tasks array
+          // Merge tasks array - use name+xp matching for safety (not just index)
+          const localTasksByNameXp = new Map();
+          (localChild.tasks || []).forEach(t => {
+            const key = `${t.name}|${t.xp}`;
+            if (t.done && t.completedAt) {
+              localTasksByNameXp.set(key, t.completedAt);
+            }
+          });
+
           mergedChild.tasks = (remoteChild.tasks || []).map((remoteTask, j) => {
+            // Try to find matching local task by name+xp (more reliable than index)
+            const key = `${remoteTask.name}|${remoteTask.xp}`;
+            const localCompletedAt = localTasksByNameXp.get(key);
+
+            if (localCompletedAt) {
+              // Preserve local approved tasks even if server returns them as unapproved
+              console.log(`[MERGE] Preserving completedAt for ${remoteTask.name}: ${new Date(localCompletedAt).toISOString()}`);
+              return { ...remoteTask, done: true, completedAt: Number(localCompletedAt) };
+            }
+
+            // Also fall back to index-based match for backward compatibility
             const localTask = localChild.tasks?.[j];
             if (localTask && localTask.done && localTask.completedAt) {
-              // Preserve local approved tasks even if server returns them as unapproved
-              return { ...remoteTask, done: true, completedAt: localTask.completedAt };
+              console.log(`[MERGE] Preserving completedAt by index for ${remoteTask.name}: ${new Date(localTask.completedAt).toISOString()}`);
+              return { ...remoteTask, done: true, completedAt: Number(localTask.completedAt) };
             }
+
             return remoteTask;
           });
         }
@@ -1483,29 +1503,50 @@ const ACTIONS = {
     let childIndex = -1;
     for (let i = 0; i < (state.children || []).length; i++) {
       const c = state.children[i];
-      if (c.name === req.child && c.tasks && c.tasks[req.taskIndex]) {
-        console.log(`[APPROVE] Found child ${c.name}, task at index ${req.taskIndex}`);
-        const task = c.tasks[req.taskIndex];
-        console.log(`[APPROVE] Before: task.done=${task.done}, completedAt=${task.completedAt}`);
-        task.done = true;
-        task.completedAt = Date.now();
-        const oldLevel = level(c.xp || 0);
-        c.xp = (c.xp || 0) + req.xp;
-        const newLevel = level(c.xp);
-        if (newLevel > oldLevel) {
-          c.gold = (c.gold || 0) + req.gold + (newLevel - oldLevel) * 50;
+      if (c.name === req.child && c.tasks) {
+        // CRITICAL FIX: Use task name + xp to find the task, not just index
+        // Task index can become invalid if tasks are reordered or added
+        let taskIndex = -1;
+
+        // First try index-based match (backward compatibility)
+        if (c.tasks[req.taskIndex] && c.tasks[req.taskIndex].name === req.taskName && c.tasks[req.taskIndex].xp === req.xp) {
+          taskIndex = req.taskIndex;
+          console.log(`[APPROVE] Found task by index match at ${taskIndex}`);
         } else {
-          c.gold = (c.gold || 0) + req.gold;
+          // Fall back to name+xp match (safer approach)
+          for (let j = 0; j < c.tasks.length; j++) {
+            if (c.tasks[j].name === req.taskName && c.tasks[j].xp === req.xp && !c.tasks[j].done) {
+              taskIndex = j;
+              console.log(`[APPROVE] Found task by name+xp match at index ${j}`);
+              break;
+            }
+          }
         }
-        console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
-        found = true;
-        childIndex = i;
-        logAction('task_approved', req.taskName, { child: req.child, xp: req.xp, gold: req.gold, approver: me?.name });
-        break;
+
+        if (taskIndex >= 0) {
+          console.log(`[APPROVE] Found child ${c.name}, task at index ${taskIndex}: "${req.taskName}"`);
+          const task = c.tasks[taskIndex];
+          console.log(`[APPROVE] Before: task.done=${task.done}, completedAt=${task.completedAt}`);
+          task.done = true;
+          task.completedAt = Date.now();
+          const oldLevel = level(c.xp || 0);
+          c.xp = (c.xp || 0) + req.xp;
+          const newLevel = level(c.xp);
+          if (newLevel > oldLevel) {
+            c.gold = (c.gold || 0) + req.gold + (newLevel - oldLevel) * 50;
+          } else {
+            c.gold = (c.gold || 0) + req.gold;
+          }
+          console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
+          found = true;
+          childIndex = i;
+          logAction('task_approved', req.taskName, { child: req.child, xp: req.xp, gold: req.gold, approver: me?.name });
+          break;
+        }
       }
     }
     if (!found) {
-      console.log(`[APPROVE] FAILED: req.child=${req.child}, children=${state.children?.map(c => c.name).join(',')}, taskIndex=${req.taskIndex}`);
+      console.log(`[APPROVE] FAILED: req.child=${req.child}, taskName="${req.taskName}", xp=${req.xp}, children=${state.children?.map(c => c.name).join(',')}`);
       logAction('task_approved', req.taskName, { child: req.child }, 'failed');
     }
     req.status = 'approved';

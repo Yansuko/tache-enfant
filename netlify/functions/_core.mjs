@@ -1145,11 +1145,25 @@ function dateToISO(ms) {
 }
 
 function getDateRange(period, endDate = Date.now()) {
-  // France timezone offset: UTC+2 (CEST, late March to late October)
-  // For October 19, 2026, we use UTC+2. This is the canonical offset for France.
-  // Note: In winter (CET), France uses UTC+1, but we use +2 as a reasonable approximation
-  // that keeps data consistent year-round.
-  const FRANCE_OFFSET_MS = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+  // Dynamic France timezone offset: UTC+2 (CEST) or UTC+1 (CET)
+  // CEST: late March to late October
+  // CET: late October to late March
+  function getFranceOffset(dateMs) {
+    const d = new Date(dateMs);
+    const year = d.getUTCFullYear();
+    // Last Sunday of March at 02:00 UTC = start of CEST
+    const march = new Date(Date.UTC(year, 2, 31, 2, 0, 0));
+    const lastSunMarch = new Date(march - (march.getUTCDay() * 86400000));
+    // Last Sunday of October at 03:00 UTC = end of CEST (return to CET)
+    const october = new Date(Date.UTC(year, 9, 31, 3, 0, 0));
+    const lastSunOct = new Date(october - (october.getUTCDay() * 86400000));
+
+    // If date is between last Sunday March (02:00) and last Sunday October (03:00), use UTC+2 (CEST)
+    // Otherwise use UTC+1 (CET)
+    return (dateMs >= lastSunMarch && dateMs < lastSunOct) ? 7200000 : 3600000;  // 2h or 1h in ms
+  }
+
+  const FRANCE_OFFSET_MS = getFranceOffset(endDate);
 
   // Convert current time to France timezone to get the correct calendar date
   const timeInFrance = endDate + FRANCE_OFFSET_MS;
@@ -1187,7 +1201,7 @@ function getDateRange(period, endDate = Date.now()) {
   const start = startDateUTC - FRANCE_OFFSET_MS;
   const end = endDateUTC - FRANCE_OFFSET_MS;
 
-  console.log('[AGGREGATE-STATS] Period:', period, 'France date:', { y, m: m+1, d }, 'Range:', { start: new Date(start).toISOString(), end: new Date(end).toISOString() });
+  console.log('[AGGREGATE-STATS] Period:', period, 'France offset:', FRANCE_OFFSET_MS/3600000 + 'h', 'France date:', { y, m: m+1, d }, 'Range:', { start: new Date(start).toISOString(), end: new Date(end).toISOString() });
   return { start, end };
 }
 
@@ -1201,7 +1215,7 @@ function aggregateTaskStats(child, period = 'week') {
   if (rawTasks && typeof rawTasks === 'object' && !Array.isArray(rawTasks)) {
     rawTasks = Object.values(rawTasks).filter(v => v !== null && v !== undefined);
   }
-  console.log('[AGGREGATE-STATS] Total tasks:', rawTasks.length);
+  console.log('[AGGREGATE-STATS] Child:', child.name, 'Total tasks:', rawTasks.length);
 
   const tasks = rawTasks.filter(t => t && typeof t === 'object').map(t => {
     let completedAt = null;
@@ -1212,6 +1226,13 @@ function aggregateTaskStats(child, period = 'week') {
     }
     return { ...t, completedAt };
   });
+
+  // Log any tasks that have completedAt but might be outside range
+  const completedTasks = tasks.filter(t => t.completedAt);
+  if (completedTasks.length > 0) {
+    console.log('[AGGREGATE-STATS] Tasks with completedAt:', completedTasks.length,
+      'Sample:', completedTasks.slice(0, 2).map(t => ({ name: t.name, done: t.done, completedAt: new Date(t.completedAt).toISOString(), inRange: t.completedAt >= start && t.completedAt <= end })));
+  }
 
 
   const dailyBreakdown = {};
