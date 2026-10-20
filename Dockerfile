@@ -9,6 +9,8 @@ COPY tache-enfant/styles.css .
 # ============ Stage 2: Backend dependencies ============
 FROM node:18-alpine AS backend-build
 WORKDIR /app/backend
+# better-sqlite3 falls back to node-gyp when no prebuilt musl binary matches (Alpine has no build-essential; build-base is its equivalent)
+RUN apk add --no-cache python3 build-base
 COPY package.json package-lock.json ./
 RUN npm ci --only=production
 # Copy backend code will happen in stage 3
@@ -29,8 +31,9 @@ COPY --from=backend-build /app/backend/node_modules ./node_modules/
 
 # Copy application files
 COPY package.json package-lock.json ./
-COPY netlify/functions/_core.mjs ./src/_core.mjs
-COPY server.js ./
+COPY server.js auth.js database.js ./
+# server.js imports ./netlify/functions/_core.mjs, which imports ./firebase-admin.mjs: keep the paths as-is
+COPY netlify/functions/ ./netlify/functions/
 
 # Create data directory for SQLite backups
 RUN mkdir -p ./data/backups
