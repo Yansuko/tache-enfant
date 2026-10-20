@@ -27,7 +27,7 @@ services:
 
   # ============ PostgreSQL Database ============
   db:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres:16-alpine
     container_name: dailykids-db-dev
     environment:
       POSTGRES_DB: dailykids
@@ -51,7 +51,7 @@ services:
 
   # ============ PgAdmin for database inspection ============
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: docker.io/dpage/pgadmin4:latest
     container_name: dailykids-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
