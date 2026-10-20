@@ -232,7 +232,7 @@ async function createFamily() {
   }
 
   try {
-    await api('add-family', { familyName: name });
+    await api('createFamily', { name });
     document.getElementById('family-name').value = '';
     loadFamilies();
     showMessage('Famille créée avec succès!');
