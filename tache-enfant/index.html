@@ -1677,6 +1677,7 @@ const ACTIONS = {
       const pin2 = val('pin-input-2');
       if (pin1 !== pin2) { authMsg = 'Les codes ne correspondent pas.'; render(); return; }
       c.pin = pin1;
+      logAction('pin_created', c.name, { role: authRole });
     } else if (pin1 !== c.pin) {
       authMsg = 'Code PIN incorrect.'; render(); return;
     }
@@ -1787,8 +1788,9 @@ const ACTIONS = {
     const c = state.children[+el.dataset.i];
     if (!c || !confirm(`Réinitialiser le PIN de ${c.name} ? Il devra en créer un nouveau.`)) return;
     c.pin = null;
+    logAction('pin_reset', c.name, { role: authRole });
     unlocked.delete(c.name);
-    render();
+    save(); render();
   },
   'save-children': () => {
     save();
