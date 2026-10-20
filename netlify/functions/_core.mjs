@@ -204,6 +204,7 @@ function seedFamily() {
       { child: 'Emma', icon: '🎬', name: 'Sortie cinéma', cost: 40, status: 'approved' },
       { child: 'Emma', icon: '🎮', name: "Temps d'écran", cost: 50, status: 'pending' },
     ],
+    actionLog: [],
   };
 }
 
@@ -247,6 +248,7 @@ async function ensureSeed(store) {
       requests: fam.requests,
       gradeRequests: fam.gradeRequests,
       taskRequests: fam.taskRequests,
+      actionLog: fam.actionLog,
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
@@ -380,6 +382,7 @@ async function signup(store, secret, b) {
       requests: fam.requests,
       gradeRequests: fam.gradeRequests,
       taskRequests: fam.taskRequests,
+      actionLog: fam.actionLog,
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
@@ -667,14 +670,24 @@ async function saveFamily(store, email, b) {
       await store.set('child-id-index', childIdx);
     }
   }
-  // Log completed tasks
+  // Log completed tasks (ponytail: index-based comparison assumes immutable order; replace with proper matching if tasks can reorder)
   for (const mergedChild of merged.children || []) {
     const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
     if (curChild && mergedChild.tasks && curChild.tasks) {
-      for (let i = 0; i < mergedChild.tasks.length; i++) {
+      // For now, use index-based comparison but ensure both arrays have same length
+      const minLen = Math.min(mergedChild.tasks.length, curChild.tasks.length);
+      for (let i = 0; i < minLen; i++) {
         const newTask = mergedChild.tasks[i];
         const oldTask = curChild.tasks[i];
-        if (newTask.done === true && (!oldTask || oldTask.done !== true)) {
+        // Log if task transitioned to done AND has completedAt timestamp
+        if (newTask.done === true && (!oldTask || oldTask.done !== true) && newTask.completedAt) {
+          await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
+        }
+      }
+      // Check new tasks (appended at the end)
+      for (let i = minLen; i < mergedChild.tasks.length; i++) {
+        const newTask = mergedChild.tasks[i];
+        if (newTask.done === true && newTask.completedAt) {
           await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
         }
       }
@@ -750,6 +763,7 @@ async function createFamily(store, email, b, firebaseUid) {
       requests: fam.requests,
       gradeRequests: fam.gradeRequests,
       taskRequests: fam.taskRequests,
+      actionLog: fam.actionLog,
       createdAt: fam.createdAt,
       updatedAt: Date.now()
     };
@@ -1411,16 +1425,19 @@ export async function handleApi({ action, token, body = {} }, store) {
       const stats = aggregateTaskStats(child, period);
       console.log('[GET-TASK-STATS] Stats result:', { tasksCount: stats.tasksCount, xpGained: stats.xpGained, period });
 
-      // Get stats for all children in family
+      // Get stats for all children in family (call aggregateTaskStats once per child, not three times)
       let childrenStats = [];
       try {
         // Get stats from the already-read family (already normalized)
         if (family && family.children) {
-          childrenStats = family.children.map(c => ({
-            tasks: aggregateTaskStats(c, period).tasksCount || 0,
-            xp: aggregateTaskStats(c, period).xpGained || 0,
-            gold: aggregateTaskStats(c, period).goldGained || 0
-          }));
+          childrenStats = family.children.map(c => {
+            const childStats = aggregateTaskStats(c, period);
+            return {
+              tasks: childStats.tasksCount || 0,
+              xp: childStats.xpGained || 0,
+              gold: childStats.goldGained || 0
+            };
+          });
         }
       } catch (fbErr) {
         console.error('[GET-TASK-STATS] Error getting children stats:', fbErr.message);
