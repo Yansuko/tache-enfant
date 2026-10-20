@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DailyKids Quest - Authentification</title>
+  <link rel="stylesheet" href="./styles.css">
+  <style>
+    body { background: var(--color-neutral-200); margin: 0; padding: 20px; }
+    .auth-container {
+      max-width: 400px; margin: 60px auto;
+      background: var(--color-bg); padding: 40px; border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 { text-align: center; margin: 0 0 30px; font-size: 28px; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 13px; }
+    .field input { width: 100%; padding: 10px; border: 1px solid var(--color-divider); border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+    .btn { padding: 12px 24px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 500; }
+    .btn-primary { background: var(--color-accent-700); color: white; width: 100%; margin-bottom: 12px; }
+    .btn-ghost { background: transparent; color: var(--color-accent-700); width: 100%; }
+    .text-muted { color: var(--color-neutral-600); font-size: 13px; text-align: center; }
+    .error { color: var(--color-red-600); background: var(--color-red-50); padding: 12px; border-radius: 6px; margin-bottom: 12px; }
+    .success { color: var(--color-green-600); background: var(--color-green-50); padding: 12px; border-radius: 6px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+<div class="auth-container">
+  <h1>🛡️ Espace Parent</h1>
+
+  <div id="message"></div>
+
+  <div id="login-form">
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="parent@email.fr" value="parent@demo.fr">
+    </div>
+    <div class="field">
+      <label>Mot de passe</label>
+      <input type="password" id="password" placeholder="••••••" value="demo">
+    </div>
+    <button class="btn btn-primary" onclick="handleLogin()">Se connecter</button>
+    <button class="btn btn-ghost" onclick="switchToSignup()">Créer un nouveau compte</button>
+    <p class="text-muted" style="margin-top: 16px">Démo : parent@demo.fr / demo</p>
+  </div>
+
+  <div id="signup-form" style="display: none;">
+    <div class="field">
+      <label>Prénom</label>
+      <input type="text" id="signup-name" placeholder="Ex : Papa">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="signup-email" placeholder="parent@email.fr">
+    </div>
+    <div class="field">
+      <label>Mot de passe</label>
+      <input type="password" id="signup-password" placeholder="••••••">
+    </div>
+    <div class="field">
+      <label>Nom de la famille</label>
+      <input type="text" id="family-name" placeholder="Ex : Famille Martin">
+    </div>
+    <button class="btn btn-primary" onclick="handleSignup()">Créer mon compte</button>
+    <button class="btn btn-ghost" onclick="switchToLogin()">J'ai déjà un compte</button>
+  </div>
+</div>
+
+<script>
+const API_URL = 'http://localhost:3000/api';
+
+function showMessage(text, type = 'error') {
+  const msg = document.getElementById('message');
+  msg.className = type;
+  msg.textContent = text;
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+}
+
+function switchToSignup() {
+  document.getElementById('login-form').style.display = 'none';
+  document.getElementById('signup-form').style.display = 'block';
+}
+
+function switchToLogin() {
+  document.getElementById('login-form').style.display = 'block';
+  document.getElementById('signup-form').style.display = 'none';
+}
+
+async function handleLogin() {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+
+  if (!email || !password) {
+    showMessage('Email et mot de passe requis');
+    return;
+  }
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', email, password })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    localStorage.setItem('te-token', data.token);
+    localStorage.setItem('te-email', email);
+    localStorage.setItem('te-user-name', data.me.name);
+    showMessage('Connexion réussie! Redirection...', 'success');
+    setTimeout(() => { window.location.href = 'http://localhost:3000/app.html'; }, 1000);
+  } catch (e) {
+    showMessage('Erreur: ' + e.message);
+  }
+}
+
+async function handleSignup() {
+  const name = document.getElementById('signup-name').value;
+  const email = document.getElementById('signup-email').value;
+  const password = document.getElementById('signup-password').value;
+  const familyName = document.getElementById('family-name').value;
+
+  if (!name || !email || !password || !familyName) {
+    showMessage('Tous les champs sont requis');
+    return;
+  }
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signup', name, email, password, familyName })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    localStorage.setItem('te-token', data.token);
+    localStorage.setItem('te-email', email);
+    localStorage.setItem('te-user-name', name);
+    showMessage('Compte créé! Redirection...', 'success');
+    setTimeout(() => { window.location.href = 'http://localhost:3000/app.html'; }, 1000);
+  } catch (e) {
+    showMessage('Erreur: ' + e.message);
+  }
+}
+</script>
+</body>
+</html>

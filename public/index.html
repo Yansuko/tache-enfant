@@ -1082,10 +1082,13 @@ function renderResetPassword() {
 }
 
 function renderAuth() {
-  if (authRole === 'enfant') return renderAuthChild();
-  if (resetPasswordStep > 0) return renderResetPassword();
+  console.log('[RENDERAUTH] Called - authRole:', authRole, 'resetPasswordStep:', resetPasswordStep, 'authMode:', authMode);
+  if (authRole === 'enfant') { console.log('[RENDERAUTH] Calling renderAuthChild'); return renderAuthChild(); }
+  if (resetPasswordStep > 0) { console.log('[RENDERAUTH] Calling renderResetPassword'); return renderResetPassword(); }
   const signup = authMode === 'signup';
-  document.getElementById('main').innerHTML = `
+  const mainEl = document.getElementById('main');
+  console.log('[RENDERAUTH] About to fill main:', !!mainEl);
+  mainEl.innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--color-accent-100);color:var(--color-accent-800)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
@@ -1106,6 +1109,7 @@ function renderAuth() {
     <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? "J'ai déjà un compte" : "Créer un nouveau compte"}</button>
     ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
   </div>`;
+  console.log('[RENDERAUTH] innerHTML set, mainEl.innerHTML.length:', mainEl.innerHTML.length);
   setNav('');
 }
 
@@ -1339,16 +1343,19 @@ function setNav(html) {
 }
 
 function render() {
+  console.log('[RENDER] Called - me:', !!me, 'families:', families.length, 'state:', !!state);
   // Always normalize state before rendering to ensure all arrays are properly formatted
   if (state) normalizeFamilyData(state);
   const role = state ? state.role : 'enfant';
+  const mainEl = document.getElementById('main');
+  console.log('[RENDER-DOM] main element:', !!mainEl);
   document.querySelector('.topbar > span').textContent =
     (state && role === 'parent' && me && parentUnlocked) ? '👪 ' + state.name : 'DailyKids Quest IV';
   document.getElementById('role-seg').style.display = me ? '' : 'none';
   document.getElementById('logout-btn').style.display = me ? '' : 'none';
   const roleInput = document.querySelector(`#role-seg input[value=${role}]`); if (roleInput) roleInput.checked = true;
 
-  if (!me) { hideSelect(); return renderAuth(); }
+  if (!me) { console.log('[RENDER-AUTH] me is null, calling renderAuth()'); hideSelect(); renderAuth(); console.log('[RENDER-AUTH-DONE] renderAuth returned'); return; }
   if (!families.length) { hideSelect(); state = null; return renderNoFamily(); }
   if (!state) setActiveFamily(0);
 
