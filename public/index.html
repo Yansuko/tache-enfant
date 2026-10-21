@@ -2398,6 +2398,7 @@ async function boot() {
           // Firebase user exists, get their ID token and restore session
           const idToken = await user.getIdToken();
           window.firebaseToken = idToken;
+          token = idToken;
           const r = await api('me');
           if (!r.me) throw 'session invalide';
           me = r.me;
@@ -2569,6 +2570,8 @@ async function boot() {
         } catch (err) {
           console.error('Boot error:', err);
           window.firebaseToken = null;
+          token = null;
+          if (!(err instanceof TypeError)) localStorage.removeItem(TOKEN_KEY); // server rejected it; keep it on network failure
           me = null; families = []; state = null;
           render();
           resolve();
