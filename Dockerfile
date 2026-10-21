@@ -1,9 +1,11 @@
 # ============ Stage 1: Frontend (static assets) ============
 FROM node:18-alpine AS frontend-build
 WORKDIR /app/frontend
-COPY tache-enfant/index.html .
-COPY tache-enfant/admin.html .
-COPY tache-enfant/styles.css .
+COPY public/index.html .
+COPY public/auth.html .
+COPY public/app.html .
+COPY public/admin.html .
+COPY public/styles.css .
 # No build step needed, assets are static
 
 # ============ Stage 2: Backend dependencies ============
