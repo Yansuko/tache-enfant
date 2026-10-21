@@ -74,5 +74,29 @@ await store.set('family:fam-other', { id: 'fam-other', members: ['someone@else.f
 assert.strictEqual((await call('getSanctionStats', { familyId: 'fam-other' })).status, 403);
 assert.strictEqual((await handleApi({ action: 'getRewardStats', token: 'bad', body: { familyId: 'fam-demo' } }, store)).status, 401);
 
+// saveFamily dates newly approved reward requests (= purchases), keeps known dates, no duplicate records
+const save = async f => (await call('saveFamily', { family: f })).body.family;
+let f = await store.get('family:fam-demo');
+const before = f.requests.length;
+f.requests.push({ child: 'Lucas', name: 'Glace', cost: 7, status: 'pending' }); // no rewardId, not in catalog
+f = await save(f);
+assert.strictEqual(f.requests.at(-1).approvedAt, undefined); // pending: not a purchase
+f.requests.at(-1).status = 'approved';
+f.requests.push({ child: 'Lucas', name: 'Glace', status: 'approved' }); // same reward twice, no cost
+f = await save(f);
+const [p1, p2] = f.requests.slice(-2);
+assert.ok(p1.approvedAt > 0 && p2.approvedAt > 0);
+const datedEmma = f.requests.find(r => r.child === 'Emma' && r.approvedAt === Date.parse('2026-10-18T10:00:00Z'));
+assert.ok(datedEmma); // existing date untouched
+delete p1.approvedAt; // client lost the date: restored from store, not re-stamped
+const t1 = (await store.get('family:fam-demo')).requests.at(-2).approvedAt;
+f = await save(f);
+assert.strictEqual(f.requests.at(-2).approvedAt, t1);
+assert.strictEqual(f.requests.length, before + 2);
+const today = new Date().toISOString().slice(0, 10);
+r = await call('getRewardStats', { familyId: 'fam-demo', childId: 'child-lucas-demo', startDate: today, endDate: today });
+assert.strictEqual(r.body.purchases.length, 2);
+assert.strictEqual(r.body.totalSpent, 7); // missing cost counts as 0
+
 console.log('stats-api: all assertions passed');
 process.exit(0); // firebase-admin keeps handles open

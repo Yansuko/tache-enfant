@@ -432,6 +432,25 @@ async function resetPassword(store, secret, b) {
 
   return err(400, 'Étape invalide.');
 }
+// Un achat de récompense = une request passée à 'approved'. On l'horodate côté serveur (approvedAt),
+// c'est ce que lit getRewardStats. Appariement par enfant+nom, une ancienne approuvée par nouvelle :
+// les achats déjà connus gardent leur date, un même achat répété est daté séparément.
+// ponytail: pas d'INSERT SQL dans reward_purchases, le store est un KV JSON (SQLite/PG/Firebase) sans
+// tables families/children/rewards, les FK échoueraient. À brancher si le core passe en relationnel.
+export function stampRewardPurchases(oldRequests, newRequests) {
+  if (!Array.isArray(newRequests)) return;
+  const pool = {};
+  for (const r of Array.isArray(oldRequests) ? oldRequests : []) {
+    if (r?.status === 'approved') (pool[r.child + '\0' + r.name] ??= []).push(r);
+  }
+  for (const r of newRequests) {
+    if (r?.status !== 'approved') continue;
+    const old = pool[r.child + '\0' + r.name]?.shift();
+    if (r.approvedAt != null) continue;
+    if (!old) r.approvedAt = Date.now();
+    else if (old.approvedAt != null) r.approvedAt = old.approvedAt; // le client a perdu la date
+  }
+}
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
   const saveTime = new Date().toISOString();
@@ -494,6 +513,7 @@ async function saveFamily(store, email, b) {
       child.id = 'child-' + crypto.randomBytes(4).toString('hex');
     }
   }
+  stampRewardPurchases(cur.requests, merged.requests);
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
     const owner = await store.get('account:' + cur.owner);
