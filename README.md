@@ -132,6 +132,8 @@ LOG_LEVEL             # debug|info|warn|error
 - ✅ Self-hosted (no cloud dependency)
 - ✅ JWT authentication
 
+Statistics API (grades, rewards, sanctions): see [docs/API-STATISTICS.md](docs/API-STATISTICS.md).
+
 ## Migration from Firebase
 
 To migrate existing Firebase data:
