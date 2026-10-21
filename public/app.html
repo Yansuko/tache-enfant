@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DailyKids Quest - Tableau de bord</title>
+  <link rel="stylesheet" href="./styles.css">
+  <style>
+    body { background: var(--color-neutral-200); margin: 0; }
+    .app-container { max-width: 800px; margin: 0 auto; background: var(--color-bg); min-height: 100vh; }
+    .top-bar { padding: 16px; border-bottom: 1px solid var(--color-divider); display: flex; justify-content: space-between; align-items: center; }
+    .top-bar h1 { margin: 0; font-size: 20px; }
+    .logout-btn { background: var(--color-red-600); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    .content { padding: 20px; }
+    .card { background: white; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--color-divider); }
+    .card h2 { margin: 0 0 12px; font-size: 16px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; margin-bottom: 4px; font-size: 13px; }
+    .field input, .field select { width: 100%; padding: 8px; border: 1px solid var(--color-divider); border-radius: 4px; box-sizing: border-box; }
+    .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; margin-right: 8px; }
+    .btn-primary { background: var(--color-accent-700); color: white; }
+    .btn-secondary { background: var(--color-neutral-200); }
+    .success { color: var(--color-green-700); background: var(--color-green-50); padding: 8px; border-radius: 4px; margin-bottom: 12px; }
+    .error { color: var(--color-red-700); background: var(--color-red-50); padding: 8px; border-radius: 4px; margin-bottom: 12px; }
+    .list { list-style: none; padding: 0; margin: 0; }
+    .list li { padding: 12px; border-bottom: 1px solid var(--color-divider); }
+    .list li:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+<div class="app-container">
+  <div class="top-bar">
+    <h1>👪 Espace Parent</h1>
+    <button class="logout-btn" onclick="logout()">Déconnexion</button>
+  </div>
+
+  <div class="content">
+    <div id="message"></div>
+
+    <!-- Utilisateur connecté -->
+    <div class="card">
+      <h2>Bienvenue</h2>
+      <p>Connecté en tant que: <strong id="user-name"></strong> (<span id="user-email"></span>)</p>
+    </div>
+
+    <!-- Créer une famille -->
+    <div class="card">
+      <h2>Créer une nouvelle famille</h2>
+      <div class="field">
+        <label>Nom de la famille</label>
+        <input type="text" id="family-name" placeholder="Ex : Famille Martin">
+      </div>
+      <button class="btn btn-primary" onclick="createFamily()">Créer une famille</button>
+    </div>
+
+    <!-- Familles -->
+    <div class="card">
+      <h2>Vos familles</h2>
+      <div id="families-list"></div>
+    </div>
+
+    <!-- Ajouter un enfant -->
+    <div class="card">
+      <h2>Ajouter un enfant</h2>
+      <div class="field">
+        <label>Sélectionner une famille</label>
+        <select id="family-select"></select>
+      </div>
+      <div class="field">
+        <label>Nom de l'enfant</label>
+        <input type="text" id="child-name" placeholder="Ex : Lucas">
+      </div>
+      <button class="btn btn-primary" onclick="addChild()">Ajouter un enfant</button>
+    </div>
+
+    <!-- Créer une tâche -->
+    <div class="card">
+      <h2>Créer une tâche (Quest)</h2>
+      <div class="field">
+        <label>Sélectionner une famille</label>
+        <select id="task-family-select"></select>
+      </div>
+      <div class="field">
+        <label>Nom de la tâche</label>
+        <input type="text" id="task-name" placeholder="Ex : Faire les devoirs">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <input type="text" id="task-desc" placeholder="Ex : Complèter les maths et français">
+      </div>
+      <div class="field">
+        <label>Points XP</label>
+        <input type="number" id="task-xp" placeholder="100" value="100">
+      </div>
+      <button class="btn btn-primary" onclick="createTask()">Créer une tâche</button>
+    </div>
+
+    <!-- Ajouter une note -->
+    <div class="card">
+      <h2>Ajouter une note (Grade)</h2>
+      <div class="field">
+        <label>Sélectionner une famille</label>
+        <select id="grade-family-select"></select>
+      </div>
+      <div class="field">
+        <label>Sélectionner un enfant</label>
+        <select id="grade-child-select"></select>
+      </div>
+      <div class="field">
+        <label>Note (0-20)</label>
+        <input type="number" id="grade-value" placeholder="15" min="0" max="20">
+      </div>
+      <div class="field">
+        <label>Matière</label>
+        <input type="text" id="grade-subject" placeholder="Mathématiques">
+      </div>
+      <button class="btn btn-primary" onclick="addGrade()">Ajouter une note</button>
+    </div>
+
+    <!-- Ajouter une sanction -->
+    <div class="card">
+      <h2>Ajouter une sanction</h2>
+      <div class="field">
+        <label>Sélectionner une famille</label>
+        <select id="sanction-family-select"></select>
+      </div>
+      <div class="field">
+        <label>Sélectionner un enfant</label>
+        <select id="sanction-child-select"></select>
+      </div>
+      <div class="field">
+        <label>Motif</label>
+        <input type="text" id="sanction-motif" placeholder="Ex : Mauvais comportement">
+      </div>
+      <button class="btn btn-primary" onclick="addSanction()">Ajouter une sanction</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_URL = 'http://localhost:3000/api';
+let families = [];
+let token = localStorage.getItem('te-token');
+const userName = localStorage.getItem('te-user-name') || 'Utilisateur';
+const userEmail = localStorage.getItem('te-email') || '';
+
+document.getElementById('user-name').textContent = userName;
+document.getElementById('user-email').textContent = userEmail;
+
+function showMessage(text, type = 'success') {
+  const msg = document.getElementById('message');
+  msg.className = type;
+  msg.textContent = text;
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+}
+
+function logout() {
+  localStorage.removeItem('te-token');
+  localStorage.removeItem('te-email');
+  localStorage.removeItem('te-user-name');
+  window.location.href = '/auth.html';
+}
+
+async function api(action, body = {}) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify({ action, ...body })
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+
+  return await res.json();
+}
+
+async function loadFamilies() {
+  try {
+    const data = await api('me');
+    families = data.families || [];
+    updateFamiliesList();
+    updateFamilySelects();
+  } catch (e) {
+    showMessage('Erreur: ' + e.message, 'error');
+  }
+}
+
+function updateFamiliesList() {
+  const list = document.getElementById('families-list');
+  if (!families.length) {
+    list.innerHTML = '<p class="text-muted">Aucune famille créée</p>';
+    return;
+  }
+  list.innerHTML = families.map(f => `
+    <div style="padding: 12px; border-bottom: 1px solid var(--color-divider);">
+      <strong>${f.name}</strong> (${f.children?.length || 0} enfants)
+    </div>
+  `).join('');
+}
+
+function updateFamilySelects() {
+  const selects = ['family-select', 'task-family-select', 'grade-family-select', 'sanction-family-select'];
+  selects.forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = families.map((f, i) => `<option value="${i}">${f.name}</option>`).join('');
+    sel.onchange = () => updateChildSelects();
+  });
+  updateChildSelects();
+}
+
+function updateChildSelects() {
+  const familyIdx = parseInt(document.getElementById('family-select').value || 0);
+  const family = families[familyIdx];
+  const children = family?.children || [];
+
+  ['grade-child-select', 'sanction-child-select'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = children.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
+  });
+}
+
+async function createFamily() {
+  const name = document.getElementById('family-name').value;
+  if (!name) {
+    showMessage('Veuillez entrer le nom de la famille', 'error');
+    return;
+  }
+
+  try {
+    await api('createFamily', { name });
+    document.getElementById('family-name').value = '';
+    loadFamilies();
+    showMessage('Famille créée avec succès!');
+  } catch (e) {
+    showMessage('Erreur: ' + e.message, 'error');
+  }
+}
+
+async function addChild() {
+  const familyIdx = parseInt(document.getElementById('family-select').value || 0);
+  const name = document.getElementById('child-name').value;
+
+  if (!name || !families[familyIdx]) {
+    showMessage('Veuillez remplir tous les champs', 'error');
+    return;
+  }
+
+  try {
+    const family = families[familyIdx];
+    family.children = family.children || [];
+    family.children.push({ name, id: 'child-' + Date.now(), level: 1, xp: 0, gold: 0, tasks: [], sanctions: [] });
+
+    await api('saveFamily', { family });
+    document.getElementById('child-name').value = '';
+    loadFamilies();
+    showMessage('Enfant ajouté avec succès!');
+  } catch (e) {
+    showMessage('Erreur: ' + e.message, 'error');
+  }
+}
+
+async function createTask() {
+  const familyIdx = parseInt(document.getElementById('task-family-select').value || 0);
+  const name = document.getElementById('task-name').value;
+  const desc = document.getElementById('task-desc').value;
+  const xp = parseInt(document.getElementById('task-xp').value || 100);
+
+  if (!name || !families[familyIdx]) {
+    showMessage('Veuillez remplir tous les champs', 'error');
+    return;
+  }
+
+  try {
+    const family = families[familyIdx];
+    family.questList = family.questList || [];
+    family.questList.push({ name, description: desc, xp });
+
+    await api('saveFamily', { family });
+    document.getElementById('task-name').value = '';
+    document.getElementById('task-desc').value = '';
+    document.getElementById('task-xp').value = '100';
+    showMessage('Tâche créée avec succès!');
+  } catch (e) {
+    showMessage('Erreur: ' + e.message, 'error');
+  }
+}
+
+async function addGrade() {
+  const familyIdx = parseInt(document.getElementById('grade-family-select').value || 0);
+  const childIdx = parseInt(document.getElementById('grade-child-select').value || 0);
+  const value = parseFloat(document.getElementById('grade-value').value || 0);
+  const subject = document.getElementById('grade-subject').value;
+
+  if (!subject || !families[familyIdx] || !families[familyIdx].children?.[childIdx]) {
+    showMessage('Veuillez remplir tous les champs', 'error');
+    return;
+  }
+
+  try {
+    const family = families[familyIdx];
+    const child = family.children[childIdx];
+    child.gradeHistory = child.gradeHistory || [];
+    child.gradeHistory.push({ subject, grade: value, date: new Date().toISOString() });
+
+    await api('saveFamily', { family });
+    document.getElementById('grade-value').value = '';
+    document.getElementById('grade-subject').value = '';
+    showMessage('Note ajoutée avec succès!');
+  } catch (e) {
+    showMessage('Erreur: ' + e.message, 'error');
+  }
+}
+
+async function addSanction() {
+  const familyIdx = parseInt(document.getElementById('sanction-family-select').value || 0);
+  const childIdx = parseInt(document.getElementById('sanction-child-select').value || 0);
+  const motif = document.getElementById('sanction-motif').value;
+
+  if (!motif || !families[familyIdx] || !families[familyIdx].children?.[childIdx]) {
+    showMessage('Veuillez remplir tous les champs', 'error');
+    return;
+  }
+
+  try {
+    const family = families[familyIdx];
+    const child = family.children[childIdx];
+    child.sanctions = child.sanctions || [];
+    child.sanctions.push({ motif, date: new Date().toISOString() });
+
+    await api('saveFamily', { family });
+    document.getElementById('sanction-motif').value = '';
+    showMessage('Sanction ajoutée avec succès!');
+  } catch (e) {
+    showMessage('Erreur: ' + e.message, 'error');
+  }
+}
+
+// Load families on page load
+loadFamilies();
+</script>
+</body>
+</html>

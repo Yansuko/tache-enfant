@@ -11,14 +11,29 @@
     "test:actions": "node test-all-actions.mjs",
     "test:firebase": "node test-firebase-integration.mjs",
     "test:all": "node test-backend.mjs && node test-extended.mjs && node test-all-actions.mjs && node test-firebase-integration.mjs",
-    "migrate:firebase": "node migrate-to-firebase.mjs"
+    "migrate:firebase": "node migrate-to-firebase.mjs",
+    "start": "node server.js",
+    "dev:docker": "docker-compose -f docker-compose.dev.yml up",
+    "dev:docker:build": "docker-compose -f docker-compose.dev.yml build",
+    "dev:seed": "DATABASE_URL=${DATABASE_URL:-postgresql://dailykids:dailykids@localhost:5432/dailykids} node seed-demo-only.mjs",
+    "migrate": "docker-compose -f docker-compose.dev.yml exec -T db psql -v ON_ERROR_STOP=1 -U dailykids -d dailykids < migration.sql",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
+    "better-sqlite3": "^9.2.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
     "firebase": "^13.0.0",
-    "firebase-admin": "^12.0.0"
+    "firebase-admin": "^12.0.0",
+    "morgan": "^1.10.0",
+    "pg": "^8.11.3"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@playwright/test": "^1.40.1",
+    "esbuild": "^0.28.2",
+    "jsdom": "^24.1.3",
+    "supertest": "^6.3.3",
+    "vitest": "^1.0.4"
   }
 }
