@@ -955,7 +955,8 @@ function screenEnfants() {
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:22px">Enfants</h2></div>
   <div class="deck deck-2" style="padding:14px 20px">
     ${children.length ? children.map((c, i) => `
-    <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:12px">
+    <div class="card elev-sm" style="gap:10px;padding:12px">
+     <div style="display:flex;align-items:center;gap:12px">
       <div class="task-icon">🧒</div>
       <div style="flex:1">
         <div class="card-title" style="font-size:15px">${esc(c.name)}</div>
@@ -964,7 +965,10 @@ function screenEnfants() {
         <span class="tag ${c.pin ? 'tag-neutral' : 'tag-accent'}" style="margin-top:4px;margin-left:6px">${c.pin ? 'PIN défini' : 'PIN à créer'}</span>
       </div>
       <button class="btn btn-secondary" data-action="reset-child-pin" data-i="${i}" title="Réinitialiser le PIN">🔑</button>
+      <button class="btn btn-secondary" data-action="view-stats" data-i="${i}" title="Voir les statistiques" aria-label="Voir les statistiques">📊</button>
       <button class="btn btn-icon btn-ghost" data-action="del-child" data-i="${i}" aria-label="Supprimer">✕</button>
+     </div>
+     <div class="qs" id="qs-${i}">${qsCache[c.id] || '<span class="text-muted">Chargement…</span>'}</div>
     </div>`).join('') : '<p class="text-muted">Aucun enfant.</p>'}
   </div>
   <div style="padding:8px 20px 24px;margin-top:auto">
@@ -975,6 +979,32 @@ function screenEnfants() {
     </div>
     <button class="btn btn-secondary btn-block" style="margin-top:12px" data-action="save-children">Enregistrer les enfants</button>
   </div>`;
+}
+
+/* ── Quick Stats (30 derniers jours) dans les cartes enfant ── */
+const qsCache = {}; // childId → html, évite le clignotement entre deux render()
+function qsHtml({ grades: g, rewards: r, sanctions: s }) {
+  const notes = g.grades.map(x => on20(x.grade)).filter(v => v != null);
+  const avg = notes.length ? +(notes.reduce((a, b) => a + b, 0) / notes.length).toFixed(1) + '/20' : '—';
+  const lastR = r.purchases[r.purchases.length - 1], lastS = s.sanctions[s.sanctions.length - 1];
+  return `<div class="kicker">Quick Stats · 30 jours</div>
+    <div>📊 <b>Notes :</b> ${g.grades.length} ce mois, moyenne ${avg}</div>
+    <div>🎁 <b>Récompenses :</b> ${r.totalSpent} 🪙 dépensé${lastR ? ` (${esc(lastR.name)})` : ''}</div>
+    <div>⚠️ <b>Sanctions :</b> ${s.totalCount} ce mois${lastS ? ` (${esc(lastS.motif)})` : ''}</div>`;
+}
+function loadQuickStats() {
+  const startDate = new Date(Date.now() - 30 * 864e5).toLocaleDateString('fr-CA'), endDate = today();
+  state.children.forEach(async (c, i) => {
+    let html;
+    try {
+      if (!c.id) throw 'no id'; // enfant pas encore enregistré
+      const body = { familyId: state.id, childId: c.id, startDate, endDate };
+      const [grades, rewards, sanctions] = await Promise.all(['getGradeStats', 'getRewardStats', 'getSanctionStats'].map(a => api(a, body)));
+      html = qsCache[c.id] = qsHtml({ grades, rewards, sanctions });
+    } catch { html = '<span class="text-muted">Stats unavailable</span>'; }
+    const el = document.getElementById('qs-' + i);
+    if (el && state.children[i]?.name === c.name) el.innerHTML = html; // save() remplace les objets enfant, on compare par nom
+  });
 }
 
 function screenFamille() {
@@ -1509,6 +1539,7 @@ function render() {
     });
   } else {
     document.getElementById('main').innerHTML = SCREENS[state.tab]();
+    if (state.tab === 'enfants') loadQuickStats();
     setNav(TABS[state.role].map(([id, ico, label]) =>
       `<button class="${id === state.tab ? 'active' : ''}" data-action="nav" data-tab="${id}"><span class="ico">${ico}</span><span>${label}</span></button>`).join(''));
   }
@@ -1915,6 +1946,11 @@ const ACTIONS = {
     state.gradeRequests = (grades || []).filter(r => r.child !== c.name);
     state.proposals = state.proposals.filter(p => p.child !== c.name);
     unlocked.delete(c.name);
+  },
+  'view-stats': el => {
+    statsChildIndex = +el.dataset.i; xs.family = false;
+    localStorage.setItem('statsChildIndex', statsChildIndex);
+    state.tab = 'stats';
   },
   'reset-child-pin': el => {
     const c = state.children[+el.dataset.i];

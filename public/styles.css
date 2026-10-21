@@ -286,3 +286,5 @@ textarea.input { min-height: 90px; resize: vertical; }
   .xs-grid { grid-template-columns: 3fr 2fr; }
   .xs-table { font-size: 13px; }
 }
+/* ── Quick Stats (carte enfant) ── */
+.qs { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--color-neutral-100); border-radius: 10px; font-size: 13px; overflow-wrap: anywhere; }
