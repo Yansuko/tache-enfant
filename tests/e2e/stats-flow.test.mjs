@@ -117,6 +117,9 @@ export const testC = () => scenario('C. Applied sanction increases sanction coun
   assert.strictEqual(await num('Or perdu'), lost0 + 5);
   const api = await pageApi('getSanctionStats', { familyId: 'fam-demo', childId: await emmaId() });
   assert.strictEqual(api.totalCount, count0 + 1, 'UI and API disagree');
+  const today = await page.evaluate(() => today());
+  const dated = await pageApi('getSanctionStats', { familyId: 'fam-demo', childId: await emmaId(), startDate: today, endDate: today });
+  assert.deepStrictEqual(dated.sanctions.map(s => s.motif), ['Devoirs non faits'], 'sanction not dated today server-side');
 });
 
 export const testD = () => scenario('D. Quick Stats widget matches dashboard', async () => {

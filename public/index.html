@@ -1812,7 +1812,7 @@ const ACTIONS = {
     // Initialize sanctions array if missing (backward compat for existing children)
     if (!c.sanctions || !Array.isArray(c.sanctions)) c.sanctions = [];
     console.log(`[SANCTION-APPLY] Applying "${s.name}" (${s.gold}🪙) to ${c.name}`);
-    c.sanctions.unshift({ motif: s.name, gold: s.gold });
+    c.sanctions.unshift({ motif: s.name, gold: s.gold, date: new Date().toISOString() });
     c.gold = Math.max(0, c.gold - s.gold);
     console.log(`[SANCTION-BEFORE-LOGACTION] state.actionLog:`, state.actionLog?.length || 0, 'entries');
     logAction('sanction_applied', s.name, { child: c.name, goldDeducted: s.gold, applier: me?.name });
