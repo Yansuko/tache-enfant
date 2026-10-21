@@ -1618,7 +1618,7 @@ const ACTIONS = {
       // Enfant coche la tâche → créer une demande de validation (pending)
       state.taskRequests = state.taskRequests || [];
       state.taskRequests.push({
-        child: c.name, taskIndex: i, taskName: t.name, xp: t.xp, gold: t.gold,
+        id: 'task_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8), child: c.name, taskIndex: i, taskName: t.name, xp: t.xp, gold: t.gold,
         status: 'pending', submittedAt: Date.now()
       });
       // Mark task as visually done (UI feedback), but DON'T set completedAt yet
@@ -1628,7 +1628,8 @@ const ACTIONS = {
       logAction('task_submitted', t.name, { child: c.name, xp: t.xp, gold: t.gold });
     } else {
       // Enfant décoche → retirer de la queue et unmark task
-      state.taskRequests = state.taskRequests?.filter(req => !(req.child === c.name && req.taskIndex === i)) || [];
+      // status, not removal: the server keeps requests (by id) the client no longer sends
+      for (const req of state.taskRequests || []) if (req.child === c.name && req.taskIndex === i && req.status === 'pending') req.status = 'cancelled';
       t.done = false;
       t.completedAt = null;
       logAction('task_cancelled', t.name, { child: c.name });
@@ -1744,7 +1745,7 @@ const ACTIONS = {
       if (task) task.done = false;
       logAction('task_rejected', req.taskName, { child: req.child, rejector: me?.name });
     }
-    state.taskRequests = (state.taskRequests || []).filter((r, i) => !(i === idx && r.status === 'pending'));
+    if (req) req.status = 'rejected';
     await save();
     render();
   },
@@ -1778,7 +1779,7 @@ const ACTIONS = {
     const r = state.rewards[+el.dataset.i];
     if (!r) return;
     const c = child();
-    state.requests.push({ child: c.name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
+    state.requests.push({ id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8), child: c.name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
     logAction('reward_requested', r.name, { child: c.name, cost: r.cost });
   },
   approve: el => {

@@ -99,6 +99,18 @@ r = await call('getRewardStats', { familyId: 'fam-demo', childId: 'child-lucas-d
 assert.strictEqual(r.body.purchases.length, 2);
 assert.strictEqual(r.body.totalSpent, 7); // missing cost counts as 0
 
+// Stale parent page: saveFamily merges requests by id, doesn't erase the ones it never saw
+const stale = await store.get('family:fam-demo');
+f = await store.get('family:fam-demo');
+f.gradeRequests.push({ id: 'g3', child: 'Emma', subject: 'Anglais', grade: '15/20', gold: 5, status: 'approved' });
+f.taskRequests.push({ id: 't1', child: 'Emma', taskName: 'Ranger', status: 'pending' });
+await save(f);
+stale.gradeRequests.push({ id: 'g4', child: 'Lucas', subject: 'Histoire', grade: '12/20', gold: 0, status: 'pending' });
+f = await save(stale);
+assert.strictEqual(f.gradeRequests.find(g => g.id === 'g3')?.status, 'approved');
+assert.strictEqual(f.gradeRequests.find(g => g.id === 'g4')?.status, 'pending');
+assert.ok(f.taskRequests.some(t => t.id === 't1'));
+
 // Firebase token: email resolved from uid, so the members check passes (was 403)
 auth.verifyIdToken = async t => { if (t !== 'fb-token') throw new Error('bad'); return { uid: 'uid-parent-demo' }; };
 auth.getUser = async uid => ({ uid, email: uid === 'uid-parent-demo' ? 'Parent@demo.fr' : null });

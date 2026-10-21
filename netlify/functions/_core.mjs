@@ -454,7 +454,7 @@ export function stampRewardPurchases(oldRequests, newRequests) {
 }
 // A stale client only knows the requests it loaded: keep server records (by id) it didn't send,
 // so a submission made meanwhile isn't erased. Id-less legacy records still follow the client.
-export function mergeById(cur, inc) {
+function mergeById(cur, inc) {
   const list = Array.isArray(inc) ? inc : [];
   const ids = new Set(list.map(r => r?.id).filter(id => id != null));
   return [...list, ...(Array.isArray(cur) ? cur : []).filter(r => r?.id != null && !ids.has(r.id))];
@@ -521,6 +521,7 @@ async function saveFamily(store, email, b) {
       child.id = 'child-' + crypto.randomBytes(4).toString('hex');
     }
   }
+  for (const k of ['requests', 'gradeRequests', 'taskRequests']) merged[k] = mergeById(cur[k], inc[k]);
   stampRewardPurchases(cur.requests, merged.requests);
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
