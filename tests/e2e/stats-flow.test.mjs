@@ -62,7 +62,11 @@ export const testA = () => scenario('A. Grade added via API appears in dashboard
 
   // Reload, not just re-open the tab: the tab's family copy is stale, and any UI save() would
   // overwrite the server's gradeRequests with it (saveFamily replaces the array) — see report.
-  await login(); // reload lands on the login screen
+  // The session survives the reload; the parent space comes back locked.
+  await page.reload();
+  await page.fill('#pu-pass', 'demo');
+  await page.click('[data-action="unlockParent"]');
+  await page.waitForSelector('#nav [data-tab="stats"]');
   await openStats();
   await xsTab('grades');
   assert.strictEqual(await num('Notes'), before + 1);

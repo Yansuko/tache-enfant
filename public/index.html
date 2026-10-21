@@ -2502,7 +2502,8 @@ async function boot() {
       }
 
       parentUnlocked = false;
-      if (families.length) setActiveFamily(0);
+      // Restored session = the parent's: land on the (locked) parent space, not a child's PIN screen
+      if (families.length) { setActiveFamily(0); state.role = 'parent'; }
       if (localStorage.getItem('statsChildIndex')) {
         statsChildIndex = +localStorage.getItem('statsChildIndex');
       }
