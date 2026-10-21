@@ -129,6 +129,24 @@ CREATE TABLE rewards (
 
 CREATE INDEX idx_rewards_family ON rewards(family_id);
 
+-- ============ REWARD PURCHASES TABLE ============
+CREATE TABLE reward_purchases (
+  id UUID PRIMARY KEY,
+  family_id VARCHAR(32) NOT NULL,
+  child_id VARCHAR(32) NOT NULL,
+  reward_id VARCHAR(32),
+  purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  cost INTEGER NOT NULL,
+  
+  CONSTRAINT fk_rp_family FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+  CONSTRAINT fk_rp_child FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE,
+  CONSTRAINT fk_rp_reward FOREIGN KEY (reward_id) REFERENCES rewards(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_reward_purchases_family ON reward_purchases(family_id);
+CREATE INDEX idx_reward_purchases_child ON reward_purchases(child_id);
+CREATE INDEX idx_reward_purchases_date ON reward_purchases(purchase_date);
+
 -- ============ TASK REQUESTS TABLE (approval workflow) ============
 CREATE TABLE task_requests (
   id VARCHAR(32) PRIMARY KEY,
