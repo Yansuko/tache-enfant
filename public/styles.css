@@ -254,3 +254,35 @@ textarea.input { min-height: 90px; resize: vertical; }
 .card, .dialog { border-radius: calc(var(--radius-lg) * 1.15); }
 .btn, .tag, .seg, .input { border-radius: 999px; }
 .input { padding-inline: 14px; }
+
+/* ── Stats notes / récompenses / sanctions (#xs-stats) ── */
+.xs-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; font-size: 13px; }
+.xs-filters label { display: flex; align-items: center; gap: 6px; }
+.xs-filters .input { width: auto; min-height: 34px; padding: 4px 12px; font-size: 13px; }
+.xs-check input { accent-color: var(--color-accent); }
+.xs-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.xs-tabs .btn { min-height: 34px; padding: 4px 14px; font-size: 13px; }
+.xs-body { display: flex; flex-direction: column; gap: 10px; }
+.xs-boxes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.xs-box { padding: 12px; text-align: center; gap: 4px; }
+.xs-num { font-family: var(--font-heading); font-size: 22px; line-height: 1.2; }
+.xs-num small { font-size: 12px; font-family: var(--font-body); }
+.xs-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.xs-card { padding: 14px; gap: 8px; min-width: 0; }
+.xs-title { font-size: 12px; font-weight: 700; }
+.xs-badge { align-self: flex-start; background: var(--color-accent-100); color: var(--color-accent-800); padding: 6px 14px; border-radius: 999px; font-size: 13px; }
+.xs-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
+.xs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.xs-bar { display: grid; grid-template-columns: 56px 1fr 24px; align-items: center; gap: 8px; font-size: 12px; }
+.xs-bar div { height: 12px; background: var(--color-neutral-200); border-radius: 4px; overflow: hidden; }
+.xs-bar i { display: block; height: 100%; background: var(--color-accent-2-500); }
+.xs-bar b { text-align: right; }
+.xs-table-wrap { overflow-x: auto; }
+.xs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.xs-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--color-divider); white-space: nowrap; }
+.xs-table td { padding: 6px 8px; border-bottom: 1px solid var(--color-divider); }
+@media (min-width: 760px) {
+  .xs-boxes { grid-template-columns: repeat(4, 1fr); }
+  .xs-grid { grid-template-columns: 3fr 2fr; }
+  .xs-table { font-size: 13px; }
+}
