@@ -439,17 +439,25 @@ async function resetPassword(store, secret, b) {
 // tables families/children/rewards, les FK échoueraient. À brancher si le core passe en relationnel.
 export function stampRewardPurchases(oldRequests, newRequests) {
   if (!Array.isArray(newRequests)) return;
-  const pool = {};
+  const pool = {}, byId = new Map();
   for (const r of Array.isArray(oldRequests) ? oldRequests : []) {
-    if (r?.status === 'approved') (pool[r.child + '\0' + r.name] ??= []).push(r);
+    if (r?.id != null) byId.set(r.id, r);
+    else if (r?.status === 'approved') (pool[r.child + '\0' + r.name] ??= []).push(r);
   }
   for (const r of newRequests) {
     if (r?.status !== 'approved') continue;
-    const old = pool[r.child + '\0' + r.name]?.shift();
+    const old = r.id != null ? byId.get(r.id) : pool[r.child + '\0' + r.name]?.shift();
     if (r.approvedAt != null) continue;
-    if (!old) r.approvedAt = Date.now();
+    if (old?.status !== 'approved') r.approvedAt = Date.now();
     else if (old.approvedAt != null) r.approvedAt = old.approvedAt; // le client a perdu la date
   }
+}
+// A stale client only knows the requests it loaded: keep server records (by id) it didn't send,
+// so a submission made meanwhile isn't erased. Id-less legacy records still follow the client.
+export function mergeById(cur, inc) {
+  const list = Array.isArray(inc) ? inc : [];
+  const ids = new Set(list.map(r => r?.id).filter(id => id != null));
+  return [...list, ...(Array.isArray(cur) ? cur : []).filter(r => r?.id != null && !ids.has(r.id))];
 }
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
@@ -1360,7 +1368,9 @@ export async function handleApi({ action, token, body = {} }, store) {
         console.log('[HANDLEAPI] Attempting Firebase token verification...');
         firebaseUid = await verifyFirebaseToken(token);
         console.log('[HANDLEAPI] Firebase verification succeeded, uid:', firebaseUid);
-        // Firebase UID obtained; email will be retrieved by specific endpoints if needed
+        // handlers check access by email (family.members), so resolve it from the uid
+        try { email = (await auth.getUser(firebaseUid)).email?.toLowerCase() || null; }
+        catch (e) { console.log('[HANDLEAPI] Firebase email lookup failed:', e.message); }
       } catch (e) {
         console.log('[HANDLEAPI] Firebase verification failed:', e.message);
         // Not a valid Firebase token or verification failed, fall through to legacy
