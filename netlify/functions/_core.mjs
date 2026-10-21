@@ -1165,6 +1165,168 @@ async function logAdminAction(store, action, target, details) {
   await store.set('_admin_history', history);
 }
 
+/* ── statistiques (notes, récompenses, sanctions) ──
+   ponytail: l'API stocke tout dans le document JSON famille (pas de tables grades/sanctions/reward_purchases
+   lues ici). On agrège donc depuis child.grades, gradeRequests approuvées, child.sanctions et requests approuvées.
+   Les entrées legacy sans date ne sont comptées que si aucun filtre de date explicite n'est fourni. */
+
+const DAY_MS = 86400000;
+const toDay = ms => (ms == null ? null : new Date(ms).toISOString().slice(0, 10));
+function recordTime(r) {
+  const v = r?.date ?? r?.appliedAt ?? r?.purchaseDate ?? r?.approvedAt ?? r?.submittedAt ?? r?.at;
+  if (v == null || v === '') return null;
+  const t = typeof v === 'number' ? v : Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
+const round2 = n => Math.round(n * 100) / 100;
+
+// Charge la famille, vérifie l'accès, résout la période et l'enfant. Retourne { error } ou le contexte.
+async function statsContext(store, email, b) {
+  const { familyId, childId, startDate, endDate } = b || {};
+  if (!familyId) return { error: err(400, 'familyId requis.') };
+  const fam = await store.get('family:' + familyId);
+  if (!fam) return { error: err(404, 'Famille introuvable.') };
+  if (!Array.isArray(fam.members) || !fam.members.includes(email)) return { error: err(403, 'Accès refusé.') };
+  normalizeFamilyData(fam);
+  const isDay = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s + 'T00:00:00Z'));
+  if (startDate != null && !isDay(startDate)) return { error: err(400, 'startDate invalide (AAAA-MM-JJ).') };
+  if (endDate != null && !isDay(endDate)) return { error: err(400, 'endDate invalide (AAAA-MM-JJ).') };
+  const end = endDate ? Date.parse(endDate + 'T00:00:00Z') + DAY_MS - 1 : Date.now();
+  const start = startDate ? Date.parse(startDate + 'T00:00:00Z') : end - 90 * DAY_MS;
+  if (start > end) return { error: err(400, 'startDate doit précéder endDate.') };
+  let children = fam.children.filter(c => c && typeof c === 'object');
+  if (childId) {
+    children = children.filter(c => c.id === childId);
+    if (!children.length) return { error: err(404, 'Enfant non trouvé.') };
+  }
+  const keepUndated = startDate == null && endDate == null;
+  const inRange = t => (t == null ? keepUndated : t >= start && t <= end);
+  const asArray = v => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []).filter(Boolean);
+  const days = Math.max(1, (end - start) / DAY_MS);
+  const frequency = n => ({ perMonth: round2(n / (days / 30)), perWeek: round2(n / (days / 7)) });
+  return { fam, children, inRange, asArray, frequency };
+}
+
+const mostFrequent = groups => Object.entries(groups).sort((a, b) => b[1].count - a[1].count)[0]?.[0] ?? null;
+// "16/20", "16", "8/10" → note ramenée sur 20 ; null si illisible
+function gradeOn20(g) {
+  const m = String(g ?? '').trim().match(/^(\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+(?:[.,]\d+)?))?$/);
+  if (!m) return null;
+  const v = parseFloat(m[1].replace(',', '.')), max = m[2] ? parseFloat(m[2].replace(',', '.')) : 20;
+  return max > 0 ? (v / max) * 20 : null;
+}
+
+async function getGradeStats(store, email, b) {
+  const ctx = await statsContext(store, email, b);
+  if (ctx.error) return ctx.error;
+  const { fam, children, inRange, asArray } = ctx;
+  const names = new Set(children.map(c => c.name));
+  const all = [];
+  for (const c of children) {
+    for (const g of asArray(c.grades)) {
+      if (!g.grade) continue; // matière sans note saisie
+      all.push({ childId: c.id, subject: g.subject, grade: g.grade, xp: +g.xp || 0, gold: +g.gold || 0, t: recordTime(g) });
+    }
+  }
+  for (const g of asArray(fam.gradeRequests)) {
+    if (g.status !== 'approved' || !names.has(g.child)) continue;
+    const c = children.find(x => x.name === g.child);
+    all.push({ childId: c.id, subject: g.subject, grade: g.grade, xp: +g.xp || 0, gold: +g.gold || 0, t: recordTime(g) });
+  }
+  const kept = all.filter(g => inRange(g.t)).sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
+  const grades = kept.map(({ t, ...g }) => ({ ...g, date: toDay(t) }));
+
+  const bySubject = {}, byDay = {};
+  for (const g of grades) {
+    const s = (bySubject[g.subject] ??= { count: 0, avg: null, grades: [] });
+    s.count++; s.grades.push(g.grade);
+    if (g.date) {
+      const d = (byDay[g.date] ??= { count: 0, subjects: [] });
+      d.count++; if (!d.subjects.includes(g.subject)) d.subjects.push(g.subject);
+    }
+  }
+  for (const s of Object.values(bySubject)) {
+    const nums = s.grades.map(gradeOn20).filter(n => n != null);
+    s.avg = nums.length ? String(round2(nums.reduce((a, n) => a + n, 0) / nums.length)) : null;
+  }
+  // tendance : moyenne de la 2e moitié vs 1re moitié (ordre chronologique), seuil 1 point sur 20
+  const nums = grades.map(g => gradeOn20(g.grade)).filter(n => n != null);
+  let trend = 'stable';
+  if (nums.length >= 2) {
+    const half = Math.floor(nums.length / 2), avg = a => a.reduce((s, n) => s + n, 0) / a.length;
+    const diff = avg(nums.slice(nums.length - half)) - avg(nums.slice(0, half));
+    trend = diff > 1 ? 'improving' : diff < -1 ? 'declining' : 'stable';
+  }
+  return { status: 200, body: {
+    grades, bySubject, byDay, trend,
+    totalXP: grades.reduce((s, g) => s + g.xp, 0),
+    totalGold: grades.reduce((s, g) => s + g.gold, 0),
+  } };
+}
+
+async function getRewardStats(store, email, b) {
+  const ctx = await statsContext(store, email, b);
+  if (ctx.error) return ctx.error;
+  const { fam, children, inRange, asArray, frequency } = ctx;
+  const names = new Set(children.map(c => c.name));
+  const catalog = asArray(fam.rewards);
+  const purchases = asArray(fam.requests)
+    .filter(r => r.status === 'approved' && names.has(r.child))
+    .map(r => ({ r, t: recordTime(r) }))
+    .filter(({ t }) => inRange(t))
+    .sort((a, b) => (a.t ?? 0) - (b.t ?? 0))
+    .map(({ r, t }) => {
+      const ref = catalog.find(x => (r.rewardId && x.id === r.rewardId) || x.name === r.name);
+      return { name: r.name, cost: +r.cost || 0, purchaseDate: toDay(t), rewardId: r.rewardId ?? ref?.id ?? null,
+        childId: children.find(c => c.name === r.child)?.id ?? null };
+    });
+  const byReward = {};
+  for (const p of purchases) {
+    const g = (byReward[p.name] ??= { count: 0, totalCost: 0, lastPurchase: null });
+    g.count++; g.totalCost += p.cost;
+    if (p.purchaseDate && (!g.lastPurchase || p.purchaseDate > g.lastPurchase)) g.lastPurchase = p.purchaseDate;
+  }
+  const totalSpent = purchases.reduce((s, p) => s + p.cost, 0);
+  return { status: 200, body: {
+    purchases, byReward, totalSpent,
+    avgCost: purchases.length ? round2(totalSpent / purchases.length) : 0,
+    mostPopular: mostFrequent(byReward),
+    frequency: frequency(purchases.length),
+  } };
+}
+
+async function getSanctionStats(store, email, b) {
+  const ctx = await statsContext(store, email, b);
+  if (ctx.error) return ctx.error;
+  const { fam, children, inRange, asArray, frequency } = ctx;
+  const defs = asArray(fam.sanctionsList);
+  const sanctions = [];
+  for (const c of children) {
+    for (const s of asArray(c.sanctions)) {
+      const t = recordTime(s);
+      if (!inRange(t)) continue;
+      // certaines sanctions legacy n'ont pas d'or : on reprend celui du barème
+      const gold = s.gold != null ? +s.gold || 0 : +(defs.find(d => d.name === s.motif)?.gold) || 0;
+      sanctions.push({ motif: s.motif, gold, date: toDay(t), childId: c.id, t });
+    }
+  }
+  sanctions.sort((a, b) => (a.t ?? 0) - (b.t ?? 0)).forEach(s => delete s.t);
+  const byMotif = {};
+  for (const s of sanctions) {
+    const g = (byMotif[s.motif] ??= { count: 0, totalGold: 0 });
+    g.count++; g.totalGold += s.gold;
+  }
+  const totalGoldLost = sanctions.reduce((a, s) => a + s.gold, 0);
+  return { status: 200, body: {
+    sanctions, byMotif,
+    totalCount: sanctions.length,
+    totalGoldLost,
+    avgGoldPerSanction: sanctions.length ? round2(totalGoldLost / sanctions.length) : 0,
+    frequency: frequency(sanctions.length),
+    mostCommon: mostFrequent(byMotif),
+  } };
+}
+
 export async function handleApi({ action, token, body = {} }, store) {
   await ensureSeed(store);
   const secret = await getSecret(store);
@@ -1359,6 +1521,9 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'removeAdult': return removeAdult(store, email, body);
     case 'submitGrade': return submitGrade(store, body.familyId, body);
     case 'approveGrade': return approveGrade(store, email, body);
+    case 'getGradeStats': return getGradeStats(store, email, body);
+    case 'getRewardStats': return getRewardStats(store, email, body);
+    case 'getSanctionStats': return getSanctionStats(store, email, body);
     case 'getLevelConfig': return getLevelConfig(store, body);
     case 'updateLevelConfig': return updateLevelConfig(store, body);
     case 'resetLevelConfig': return resetLevelConfig(store, body);
