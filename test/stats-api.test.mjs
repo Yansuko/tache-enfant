@@ -1,7 +1,6 @@
 // node test/stats-api.test.mjs — getGradeStats / getRewardStats / getSanctionStats on an in-memory store
 import assert from 'node:assert';
 import { handleApi } from '../netlify/functions/_core.mjs';
-import { auth } from '../netlify/functions/firebase-admin.mjs';
 
 const mem = new Map();
 const store = {

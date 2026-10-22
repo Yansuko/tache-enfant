@@ -1,32 +1,49 @@
 // tests/e2e/framework.mjs
-import admin from 'firebase-admin';
-import fs from 'fs';
+// E2E tests now use API-based testing instead of Firebase Admin SDK
+// Tests should call the REST API endpoints instead
 
-const DEFAULT_DB_URL = 'https://dailykidsquest-20c85-default-rtdb.europe-west1.firebasedatabase.app';
-const keyPath = new URL('../../firebase-service-account.json', import.meta.url);
+const API_URL = process.env.API_URL || 'http://localhost:3000';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(fs.readFileSync(keyPath, 'utf-8'))),
-    databaseURL: process.env.FIREBASE_DATABASE_URL || DEFAULT_DB_URL
-  });
-}
+export const auth = {
+  // Placeholder - tests should use signup/login API endpoints instead
+  createUser: async (opts) => {
+    throw new Error('Use signup API endpoint instead: POST /api with action: "signup"');
+  }
+};
 
-export const auth = admin.auth();
-export const db = admin.database();
+export const db = {
+  // Placeholder - tests should use REST API endpoints instead
+  ref: () => ({
+    set: async () => { throw new Error('Use API endpoints instead'); }
+  })
+};
 
 export async function initFirebase() {
   return { auth, db };
 }
 
 export async function createTestUser(email, password) {
-  const user = await auth.createUser({ email, password, displayName: email.split('@')[0] });
-  return user.uid;
+  // Use API-based signup instead of Firebase Admin SDK
+  const res = await fetch(`${API_URL}/api`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'signup',
+      email,
+      password,
+      name: email.split('@')[0],
+      familyName: 'TestFamily'
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Signup failed: ${data.error}`);
+  return data.families?.[0]?.id || 'test-family';
 }
 
 export async function deleteTestUser(uid) {
+  // TODO: Implement via API if needed
   try {
-    await auth.deleteUser(uid);
+    console.log('[E2E] deleteTestUser not yet implemented for JWT-based auth');
   } catch (err) {
     if (err.code !== 'auth/user-not-found') throw err;
   }

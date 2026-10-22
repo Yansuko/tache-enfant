@@ -315,7 +315,7 @@ async function signup(store, secret, b) {
   if (pending.length) await store.del('invite:' + email);
 
   // Log activity
-  await logActivity(store, 'signup', email, uid || 'unknown', `Account created with family ${familyName}`);
+  await logActivity(store, 'signup', email, email, `Account created with family ${familyName}`);
 
   // Return token and user data
   const state = await stateFor(store, email);
