@@ -1,0 +1,27 @@
+{
+  "name": "DailyKids Quest IV",
+  "short_name": "DailyKids",
+  "description": "Gamified kids task manager with rewards and statistics",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#C4785C",
+  "background_color": "#F5EFE7",
+  "lang": "fr",
+  "icons": [
+    { "src": "logo.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "logo.png", "sizes": "any", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "screenshot-540.png", "sizes": "540x720", "type": "image/png", "form_factor": "narrow" },
+    { "src": "screenshot-960.png", "sizes": "960x720", "type": "image/png", "form_factor": "wide" }
+  ],
+  "categories": ["education", "productivity"],
+  "shortcuts": [
+    { "name": "Quêtes", "short_name": "Quêtes", "description": "View tasks", "url": "/?tab=quetes", "icons": [{ "src": "logo.png", "sizes": "96x96", "type": "image/png" }] }
+  ]
+}
