@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # ============ PostgreSQL Database ============
+  db:
+    image: postgres:16-alpine
+    container_name: dailykids-db
+    environment:
+      POSTGRES_DB: dailykids
+      POSTGRES_USER: dailykids
+      POSTGRES_PASSWORD: dailykids
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./seed-demo.sql:/docker-entrypoint-initdb.d/02-seed-demo.sql
+    networks:
+      - dailykids-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dailykids -d dailykids"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============ DailyKids App ============
+  app:
+    image: dailykids:final
+    container_name: dailykids-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://dailykids:dailykids@db:5432/dailykids
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - dailykids-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  dailykids-net:
+    driver: bridge
