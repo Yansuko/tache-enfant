@@ -17,7 +17,7 @@ try {
 } catch {};
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
-const STATIC = path.join(DIR, 'tache-enfant');
+const STATIC = path.join(DIR, 'public');
 const PORT = process.env.PORT || 8123;
 
 // Initialize Firebase
