@@ -292,14 +292,73 @@ const frDate = () => {
 // ── push notifications ──
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
-    console.log('[PUSH] Service Workers non supportés');
+    console.warn('[PUSH] Service Workers non supportés');
     return;
   }
+
+  // Log l'environnement
+  console.log('[PUSH-ENV] URL:', window.location.href);
+  console.log('[PUSH-ENV] Protocol:', window.location.protocol);
+  console.log('[PUSH-ENV] HTTPS:', window.location.protocol === 'https:');
+
+  // Diagnostic: vérifier que sw.js est accessible
   try {
-    swRegistration = await navigator.serviceWorker.register('/sw.js');
-    console.log('[PUSH] Service Worker enregistré:', swRegistration);
+    const response = await fetch('/sw.js', { method: 'HEAD' });
+    if (!response.ok) {
+      console.error(`[PUSH-DIAG] sw.js non accessible (${response.status} ${response.statusText})`);
+      return;
+    }
+    console.log('[PUSH-DIAG] sw.js accessible (HTTP 200)');
   } catch (err) {
-    console.error('[PUSH] Enregistrement SW échoué:', err);
+    console.error('[PUSH-DIAG] Erreur vérification sw.js:', err.message);
+    return;
+  }
+
+  try {
+    console.log('[PUSH] Tentative d\'enregistrement du Service Worker...');
+    swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    console.log('[PUSH] Service Worker enregistré avec succès');
+    console.log('[PUSH-SCOPE] Scope:', swRegistration.scope);
+    console.log('[PUSH-STATE] État active:', swRegistration.active);
+    console.log('[PUSH-STATE] État installing:', swRegistration.installing);
+    console.log('[PUSH-STATE] État waiting:', swRegistration.waiting);
+  } catch (err) {
+    console.error('[PUSH-ERROR] Enregistrement SW échoué');
+    console.error('[PUSH-ERROR] Message:', err.message);
+    console.error('[PUSH-ERROR] Name:', err.name);
+    console.error('[PUSH-ERROR] Code:', err.code);
+
+    // Diagnostic spécifiques
+    if (err.name === 'SecurityError') {
+      console.error('[PUSH-DIAG] ⚠️ Erreur de sécurité - probable certificat HTTPS invalide');
+      console.error('[PUSH-DIAG] Solution: Accepter le certificat dans le navigateur');
+      if (window.location.hostname.includes('synology') || window.location.hostname.includes('nas')) {
+        console.error('[PUSH-DIAG] NAS Synology détecté - certificat auto-signé probable');
+        console.error('[PUSH-DIAG] Accédez à la page, acceptez le certificat, puis rechargez');
+      }
+    } else if (err.message.includes('cross-origin')) {
+      console.error('[PUSH-DIAG] Erreur CORS - sw.js doit être sur le même origin');
+    } else if (err.message.includes('syntax') || err.message.includes('parse')) {
+      console.error('[PUSH-DIAG] Erreur de syntaxe JavaScript dans sw.js');
+    } else if (err.message.includes('scope')) {
+      console.error('[PUSH-DIAG] Erreur scope - vérifiez que le chemin est valide');
+    }
+  }
+
+  // Afficher l'état enregistré (ou erreur)
+  if (swRegistration) {
+    console.log('[PUSH-SUCCESS] Service Worker enregistré avec succès');
+    console.log('[PUSH-SUCCESS] Vous pouvez maintenant recevoir des notifications push');
+    // Écouter les changements d'état
+    swRegistration.onupdatefound = () => {
+      console.log('[PUSH-UPDATE] Service Worker update en cours...');
+      const newWorker = swRegistration.installing;
+      newWorker.onstatechange = () => {
+        console.log('[PUSH-UPDATE-STATE] Nouvel état:', newWorker.state);
+      };
+    };
+  } else {
+    console.warn('[PUSH-WARNING] Service Worker n\'a pas pu être enregistré - vérifiez la console');
   }
 }
 
@@ -2853,7 +2912,26 @@ async function boot() {
   });
 }
 
+// Nettoyer et vérifier les Service Workers existants
+async function checkServiceWorkerStatus() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    console.log(`[PUSH-CHECK] ${registrations.length} Service Worker(s) enregistré(s)`);
+    for (const reg of registrations) {
+      console.log(`[PUSH-CHECK] Scope: ${reg.scope}, Active: ${!!reg.active}, Installing: ${!!reg.installing}, Waiting: ${!!reg.waiting}`);
+      // Afficher l'état détaillé
+      if (reg.active) console.log(`[PUSH-CHECK-ACTIVE] URL: ${reg.active.scriptURL}, État: ${reg.active.state}`);
+      if (reg.installing) console.log(`[PUSH-CHECK-INSTALLING] État: ${reg.installing.state}`);
+      if (reg.waiting) console.log(`[PUSH-CHECK-WAITING] État: ${reg.waiting.state}`);
+    }
+  } catch (err) {
+    console.error('[PUSH-CHECK] Erreur vérification SW:', err.message);
+  }
+}
+
 // Enregistrer le service worker au démarrage
+checkServiceWorkerStatus();
 registerServiceWorker();
 
 boot();

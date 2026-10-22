@@ -3,6 +3,10 @@
 // self.addEventListener('notificationclick', event) - gère les clics
 // self.addEventListener('notificationclose', event) - gère la fermeture
 
+// Log au démarrage du Service Worker
+console.log('[SW] Service Worker script loaded');
+console.log('[SW-SCOPE] Scope:', self.location.href);
+
 self.addEventListener('push', event => {
   console.log('[SW-PUSH] Notification received:', event);
 
