@@ -254,6 +254,11 @@ let resetPasswordStep = 0, resetEmail = '', resetMsg = ''; // modal réinitialis
 let creatingPin = false; // affiche le formulaire de création de PIN
 const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
 
+// push notifications state
+let swRegistration = null;           // enregistrement du service worker
+let pushSubscription = null;         // souscription push actuelle
+let pushNotificationEnabled = false; // permission utilisateur accordée
+
 // stats state
 let statsChildIndex = 0;  // index de l'enfant sélectionné dans la vue stats
 let statsPeriod = 'week'; // période sélectionnée: 'day', 'week', 'month', 'year'
@@ -283,6 +288,146 @@ const frDate = () => {
   const d = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   return d[0].toUpperCase() + d.slice(1);
 };
+
+// ── push notifications ──
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    console.log('[PUSH] Service Workers non supportés');
+    return;
+  }
+  try {
+    swRegistration = await navigator.serviceWorker.register('/sw.js');
+    console.log('[PUSH] Service Worker enregistré:', swRegistration);
+  } catch (err) {
+    console.error('[PUSH] Enregistrement SW échoué:', err);
+  }
+}
+
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) {
+    console.log('[PUSH] Notifications non supportées');
+    return false;
+  }
+
+  if (Notification.permission === 'granted') {
+    console.log('[PUSH] Permission déjà accordée');
+    return true;
+  }
+
+  if (Notification.permission === 'denied') {
+    console.log('[PUSH] Permission refusée par l\'utilisateur');
+    return false;
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+    console.log('[PUSH] Réponse permission:', permission);
+    return permission === 'granted';
+  } catch (err) {
+    console.error('[PUSH] Erreur lors de la demande de permission:', err);
+    return false;
+  }
+}
+
+async function subscribeToPush() {
+  if (!swRegistration) {
+    console.log('[PUSH] Service Worker non enregistré');
+    return false;
+  }
+
+  if (Notification.permission !== 'granted') {
+    console.log('[PUSH] Permission de notification non accordée');
+    return false;
+  }
+
+  try {
+    // Récupérer la clé publique VAPID depuis le serveur
+    const keyResponse = await api('pushKey');
+    if (!keyResponse.key) {
+      console.error('[PUSH] Clé publique VAPID non reçue');
+      return false;
+    }
+
+    const subscription = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyResponse.key),
+    });
+
+    console.log('[PUSH] Subscription créée:', subscription);
+
+    // Envoyer la subscription au serveur
+    const subData = {
+      familyId: state?.id,
+      subscription: {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
+          auth: arrayBufferToBase64(subscription.getKey('auth')),
+        },
+      },
+    };
+
+    const result = await api('subscribePush', subData);
+    console.log('[PUSH] Subscription enregistrée:', result);
+    pushSubscription = subscription;
+    pushNotificationEnabled = true;
+    return true;
+  } catch (err) {
+    console.error('[PUSH] Erreur lors de la subscription:', err);
+    return false;
+  }
+}
+
+async function unsubscribeFromPush() {
+  if (!swRegistration || !pushSubscription) {
+    console.log('[PUSH] Aucune subscription active');
+    return false;
+  }
+
+  try {
+    const endpoint = pushSubscription.endpoint;
+    await pushSubscription.unsubscribe();
+
+    // Informer le serveur
+    await api('unsubscribePush', { endpoint, familyId: state?.id }).catch(err => {
+      console.error('[PUSH] Erreur lors de la désinscription serveur:', err);
+    });
+
+    pushSubscription = null;
+    pushNotificationEnabled = false;
+    console.log('[PUSH] Désinscription terminée');
+    return true;
+  } catch (err) {
+    console.error('[PUSH] Erreur lors de la désinscription:', err);
+    return false;
+  }
+}
+
+// Utilitaires pour convertir ArrayBuffer <-> Base64 pour Web Push
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
 
 // ── réseau ──
 async function api(action, body = {}) {
@@ -1657,6 +1802,19 @@ function onAuthed(r, rememberMe = false) {
       familyId: state?.id
     });
   }
+
+  // Demander la permission pour les notifications push
+  if (state?.id) {
+    (async () => {
+      const permGranted = await requestNotificationPermission();
+      if (permGranted) {
+        const subSuccess = await subscribeToPush();
+        if (subSuccess) {
+          console.log('[PUSH] Notifications push activées pour la famille:', state.id);
+        }
+      }
+    })();
+  }
 }
 
 const ACTIONS = {
@@ -2694,6 +2852,10 @@ async function boot() {
     });
   });
 }
+
+// Enregistrer le service worker au démarrage
+registerServiceWorker();
+
 boot();
 </script>
 </body>
