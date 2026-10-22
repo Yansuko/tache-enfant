@@ -2,7 +2,6 @@
 // serveur de dev local (fichier). Aucune dépendance Netlify ici : tout passe par
 // une interface `store` minimale { get(key), set(key,val), del(key) } (valeurs JSON).
 import crypto from 'node:crypto';
-import { auth } from './firebase-admin.mjs';
 import webpush from 'web-push';
 
 let emailSender = null;
@@ -91,25 +90,30 @@ function normalizeFamilyData(f) {
   return f;
 }
 
-/* ── Firebase authentication ── */
+/* ── JWT token verification (replaces Firebase) ── */
 
-async function verifyFirebaseToken(token) {
+async function verifyJWTToken(token, secret) {
   if (!token) return null;
   try {
-    const decodedToken = await auth.verifyIdToken(token);
-    console.log('[VERIFY-TOKEN] SUCCESS: uid=', decodedToken.uid);
-    return decodedToken.uid;
+    const email = verifyToken(token, secret);
+    if (!email) {
+      console.error('[VERIFY-TOKEN] FAILED: invalid token');
+      throw new Error('Invalid token');
+    }
+    console.log('[VERIFY-TOKEN] SUCCESS: email=', email);
+    return email;
   } catch (error) {
-    console.error('[VERIFY-TOKEN] FAILED:', error.code, error.message);
+    console.error('[VERIFY-TOKEN] FAILED:', error.message);
     throw error;
   }
 }
 
-async function getUserUid(request) {
+async function getUserEmail(request, store) {
   const authHeader = request.headers.get('authorization') || request.headers.authorization || '';
   const token = authHeader.replace('Bearer ', '');
   if (!token) throw new Error('Missing authorization token');
-  return await verifyFirebaseToken(token);
+  const secret = await getSecret(store);
+  return await verifyJWTToken(token, secret);
 }
 
 /* ── modèles ── */
@@ -284,23 +288,6 @@ async function signup(store, secret, b) {
   if (String(password).length < 4) return err(400, 'Mot de passe trop court (4 caractères min).');
   if (await store.get('account:' + email)) return err(409, 'Un compte existe déjà avec cet email.');
 
-  let uid = null;
-  // Try Firebase auth (optional, for backward compatibility)
-  // Silently fail if Firebase is not configured or credentials are invalid
-  try {
-    const user = await auth.createUser({
-      email,
-      password
-    });
-    uid = user.uid;
-  } catch (fbErr) {
-    if (fbErr.message?.includes('auth/email-already-exists')) {
-      return err(409, 'Un compte existe déjà avec cet email.');
-    }
-    // Firebase not configured or credentials invalid - use legacy store only
-    console.log('[SIGNUP] Firebase createUser failed:', fbErr.message);
-  }
-
   // Create family in store
   const fam = newFamily(familyName, email);
   const pending = (await store.get('invite:' + email)) || [];
@@ -324,7 +311,7 @@ async function signup(store, secret, b) {
     updatedAt: Date.now()
   });
   await updateFamilyNameIndex(store, fam.name, fam.id);
-  await store.set('account:' + email, { email, name, ...hashPassword(password), familyIds: [fam.id, ...pending], ...(uid && { firebaseUid: uid }) });
+  await store.set('account:' + email, { email, name, ...hashPassword(password), familyIds: [fam.id, ...pending] });
   if (pending.length) await store.del('invite:' + email);
 
   // Log activity
@@ -336,7 +323,6 @@ async function signup(store, secret, b) {
     status: 200,
     body: {
       token: signToken(email, secret),
-      ...(uid && { uid }),
       ...state
     }
   };

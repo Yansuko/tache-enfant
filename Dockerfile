@@ -31,7 +31,6 @@ COPY --from=backend-build /app/backend/node_modules ./node_modules/
 # Copy application files
 COPY package.json package-lock.json ./
 COPY server.js auth.js database.js ./
-# server.js imports ./netlify/functions/_core.mjs, which imports ./firebase-admin.mjs: keep the paths as-is
 COPY netlify/functions/ ./netlify/functions/
 
 # Create data directory for SQLite backups
