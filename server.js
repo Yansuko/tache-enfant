@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import morgan from 'morgan';
-import { handleApi } from './netlify/functions/_core.mjs';
+import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,7 +34,7 @@ let store = null;
 
 async function initializeDatabase() {
   const dbUrl = process.env.DATABASE_URL;
-  
+
   if (dbUrl?.startsWith('postgresql')) {
     // PostgreSQL
     db = new Pool({ connectionString: dbUrl });
@@ -47,6 +47,41 @@ async function initializeDatabase() {
     console.log('[DB] SQLite database initialized at', dbPath);
   }
   store = createDatabaseAdapter(db, db instanceof Pool);
+}
+
+// ============ Email configuration ============
+function setupEmailSender() {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    console.log('[EMAIL] BREVO_API_KEY not configured - emails disabled');
+    return;
+  }
+
+  setEmailSender(async ({ to, subject, body }) => {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          to: [{ email: to }],
+          sender: { name: 'DailyKids', email: 'noreply@dailykids.local' },
+          subject,
+          htmlContent: `<p>${body.replace(/\n/g, '<br>')}</p>`
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Brevo error: ${response.status}`);
+      }
+      console.log(`[EMAIL] Sent to ${to}: ${subject}`);
+    } catch (e) {
+      console.error('[EMAIL] Failed to send to', to, ':', e.message);
+    }
+  });
+  console.log('[EMAIL] Email sender configured with Brevo');
 }
 
 // ============ Health check endpoint ============
@@ -99,6 +134,7 @@ app.use((err, req, res, next) => {
 async function start() {
   try {
     await initializeDatabase();
+    setupEmailSender();
     app.listen(PORT, () => {
       console.log(`[SERVER] DailyKids Quest running on http://localhost:${PORT}`);
       console.log(`[SERVER] Node ${process.version}, ${NODE_ENV} mode`);

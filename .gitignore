@@ -9,3 +9,4 @@ firebase-config.js
 firebase-service-account.json
 firebase-export.json
 migration.sql
+dailykids-*.tar

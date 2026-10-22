@@ -1291,6 +1291,18 @@ function screenFamille() {
       <p class="text-muted" style="font-size:11px;margin:0">S'il n'a pas encore de compte, il en crée un avec cet email et rejoint automatiquement la famille.</p>
     </div>` : '<p class="text-muted" style="font-size:12px">Seul le propriétaire peut inviter ou retirer des adultes.</p>'}
   </div>
+  <div style="padding:18px 20px 4px" class="kicker">Notifications</div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+    <div class="card elev-sm" style="gap:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="email-notif-enabled" ${state.emailNotifications ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer">
+        <label for="email-notif-enabled" style="margin:0;cursor:pointer;flex:1">
+          <div class="card-title" style="font-size:14px;margin:0">Recevoir les notifications par email</div>
+          <p class="text-muted" style="font-size:11px;margin:4px 0 0">Vous recevrez un email quand une tâche est complétée</p>
+        </label>
+      </div>
+    </div>
+  </div>
   <div style="padding:18px 20px 4px" class="kicker">Sécurité</div>
   <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
     <div class="card elev-sm" style="gap:8px">
@@ -2352,8 +2364,9 @@ const ACTIONS = {
     try {
       const r = await api('reset-password', { step: 1, email });
       resetEmail = email; resetPasswordStep = 2; resetMsg = '';
-    } catch (e) { resetMsg = 'Erreur: ' + String(e); }
-    render();
+      if (r.devCode) { resetMsg = `🔧 Dev: Code = ${r.devCode}`; render(); document.getElementById('reset-code').value = r.devCode; }
+      else render();
+    } catch (e) { resetMsg = 'Erreur: ' + String(e); render(); }
   },
   'reset-password-step2': async () => {
     const code = val('reset-code'), password = val('reset-password'), confirm = val('reset-password-confirm');
@@ -2521,6 +2534,13 @@ document.getElementById('role-seg').addEventListener('change', e => {
 });
 document.body.addEventListener('change', e => {
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
+  if (e.target.id === 'email-notif-enabled') {
+    if (state) {
+      state.emailNotifications = e.target.checked;
+      save();
+    }
+    return;
+  }
   if (e.target.id === 'stats-child-select') {
     statsChildIndex = +e.target.value;
     localStorage.setItem('statsChildIndex', statsChildIndex);
@@ -2933,6 +2953,14 @@ async function checkServiceWorkerStatus() {
 // Enregistrer le service worker au démarrage
 checkServiceWorkerStatus();
 registerServiceWorker();
+
+// Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
+setInterval(() => {
+  if (token && state) {
+    console.log('[AUTO-REFRESH] Syncing at', new Date().toLocaleTimeString());
+    persistFamily().catch(e => console.error('[AUTO-REFRESH] Error:', e.message));
+  }
+}, 5000);
 
 boot();
 </script>

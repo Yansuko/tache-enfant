@@ -6,20 +6,18 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load .env if not already loaded
-if (!process.env.FIREBASE_DATABASE_URL) {
-  try {
-    const envPath = path.join(__dirname, '../../.env');
-    const envContent = fs.readFileSync(envPath, 'utf-8');
-    envContent.split('\n').forEach(line => {
-      const [key, val] = line.split('=');
-      if (key && val) process.env[key.trim()] = val.trim();
-    });
-  } catch (e) {
-    console.warn('[ENV] Could not load .env:', e.message);
-  }
+try {
+  const envPath = path.join(__dirname, '../../.env');
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split('\n').forEach(line => {
+    const [key, val] = line.split('=');
+    if (key && val) process.env[key.trim()] = val.trim();
+  });
+} catch (e) {
+  // .env file optional - env vars may be set in container
 }
 
-let db, auth;
+let auth;
 
 try {
   let serviceAccount;
@@ -31,6 +29,9 @@ try {
       serviceAccount = JSON.parse(accountJson);
     } catch {
       // Fall back to env variable
+      if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+        throw new Error('FIREBASE_SERVICE_ACCOUNT not configured (set env var or place firebase-service-account.json)');
+      }
       serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     }
   } catch (error) {
@@ -38,21 +39,13 @@ try {
   }
 
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+    credential: admin.credential.cert(serviceAccount)
   });
 
-  db = admin.database();
   auth = admin.auth();
 } catch (error) {
   // Firebase not configured - provide mock/stub for testing
   console.warn(`[FIREBASE-INIT] Warning: ${error.message} - using stubs for testing`);
-  db = {
-    ref: () => ({
-      set: async () => { console.warn('[FIREBASE-STUB] db.ref().set() called'); },
-      once: async () => ({ exists: () => false, val: () => null })
-    })
-  };
   auth = {
     createUser: async () => { throw new Error('[FIREBASE-STUB] auth.createUser() requires Firebase config'); },
     getUserByEmail: async () => { throw new Error('[FIREBASE-STUB] auth.getUserByEmail() requires Firebase config'); },
@@ -60,4 +53,4 @@ try {
   };
 }
 
-export { db, auth };
+export { auth };

@@ -405,12 +405,16 @@ async function resetPassword(store, secret, b) {
     if (!acc) return err(404, 'Email non trouvé.');
     const code = Math.random().toString().slice(2, 8).padStart(6, '0');
     resetCodes[email] = { code, expiresAt: Date.now() + 15 * 60 * 1000 };
+    const isDevMode = !process.env.BREVO_API_KEY;
     if (emailSender) await emailSender({
       to: email,
       subject: 'Code de réinitialisation - DailyKids Quest',
       body: `Ton code de réinitialisation: ${code}\nValide 15 minutes.`
     });
-    return { status: 200, body: { message: 'Code envoyé' } };
+    // ponytail: retourner le code en dev (sans BREVO_API_KEY), utile pour tests
+    const body = { message: 'Code envoyé' };
+    if (isDevMode) body.devCode = code;
+    return { status: 200, body };
   }
 
   if (b.step === 2) {
@@ -611,6 +615,9 @@ async function saveFamily(store, email, b) {
           // Notify parents about task completion
           await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
             .catch(e => console.error('[NOTIFY-TASK-COMPLETE] Error:', e.message));
+          // Notify child that task was completed
+          await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche complétée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
+            .catch(e => console.error('[NOTIFY-TASK-CHILD] Error:', e.message));
         }
       }
       // Check new tasks (appended at the end)
@@ -621,6 +628,9 @@ async function saveFamily(store, email, b) {
           // Notify parents about task completion
           await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
             .catch(e => console.error('[NOTIFY-TASK-COMPLETE] Error:', e.message));
+          // Notify child that task was completed
+          await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche complétée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
+            .catch(e => console.error('[NOTIFY-TASK-CHILD] Error:', e.message));
         } else if (isParent && !newTask.done) {
           // Parent added a new task (not marked as done)
           await notifyChild(store, inc.id, mergedChild.name, `📋 Nouvelle tâche: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, newTask.icon || '📋', 'task')
@@ -1254,6 +1264,7 @@ async function getVapid(store) {
 const str = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
 export async function sendPush(store, familyId, payload) {
   const subs = (await store.get('push:' + familyId)) || [];
+  console.log(`[PUSH-SEND] Family ${familyId}: ${subs.length} subscription(s), payload: ${payload.title}`);
   if (!subs.length) return { sent: 0, removed: 0 };
   const v = await getVapid(store);
   const opts = { TTL: 3600, vapidDetails: { subject: process.env.VAPID_SUBJECT || 'mailto:admin@dailykids.local', publicKey: v.publicKey, privateKey: v.privateKey } };
@@ -1280,6 +1291,7 @@ async function subscribePush(store, email, b) {
   const subs = ((await store.get('push:' + fam.id)) || []).filter(x => x.subscription.endpoint !== s.endpoint);
   subs.push({ email, subscription, createdAt: Date.now() });
   await store.set('push:' + fam.id, subs.slice(-20));
+  console.log(`[PUSH-SUBSCRIBE] ${email} subscribed to family ${fam.id}, total subs: ${subs.length}`);
   return { status: 200, body: { ok: true } };
 }
 async function unsubscribePush(store, email, b) {
@@ -1309,6 +1321,19 @@ async function notify(store, email, b) {
 async function notifyFamily(store, familyId, title, body, icon = '📢', tag = 'action') {
   try {
     await sendPush(store, familyId, { title, body, icon, badge: '/icon-96.svg', tag, data: { url: '/' } });
+
+    // Also send email to parents if they enabled email notifications
+    const fam = await store.get('family:' + familyId);
+    if (fam && fam.emailNotifications && fam.members && emailSender) {
+      for (const parentEmail of fam.members) {
+        console.log(`[NOTIFY-EMAIL] Sending email to parent ${parentEmail}: ${title}`);
+        await emailSender({
+          to: parentEmail,
+          subject: title,
+          body: body
+        }).catch(e => console.error('[NOTIFY-EMAIL] Error sending to ' + parentEmail + ':', e.message));
+      }
+    }
   } catch (e) {
     console.error('[NOTIFY-FAMILY] Error:', e.message);
   }
