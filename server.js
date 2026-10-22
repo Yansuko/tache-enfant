@@ -28,6 +28,12 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ============ PWA manifest ============
+app.get('/manifest.json', (req, res) => {
+  res.type('application/json');
+  res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
+});
+
 // ============ Database initialization ============
 let db = null;
 let store = null;

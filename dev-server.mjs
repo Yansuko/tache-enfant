@@ -118,7 +118,7 @@ const store = {
   }
 };
 
-const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png' };
 
 // email sender: utilise Brevo si BREVO_API_KEY, sinon loggue simplement
 async function sendEmail({ to, subject, body }) {
