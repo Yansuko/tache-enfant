@@ -61,8 +61,7 @@ app.get('/health', (req, res) => {
 // ============ API endpoint ============
 // handleApi (_core.mjs) verifies the Bearer token for every non-public action (401 'Non authentifié.')
 // and returns a signed token in the body of login/signup — same HMAC scheme as auth.js, secret kept in the store.
-app.post('/api', async (req, res) => {
-  const { action, ...body } = req.body || {};
+async function apiRoute(action, body, req, res) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   console.log('[API-REQUEST]', { action, hasToken: !!token, timestamp: new Date().toISOString() });
@@ -74,7 +73,16 @@ app.post('/api', async (req, res) => {
     console.error('[API-ERROR]', { action, error: error.message });
     res.status(500).json({ error: 'Erreur serveur : ' + error.message });
   }
+}
+app.post('/api', (req, res) => {
+  const { action, ...body } = req.body || {};
+  return apiRoute(action, body, req, res);
 });
+// REST aliases for Web Push (same handlers as actions pushKey / subscribePush / unsubscribePush / notify)
+app.get('/api/vapid-key', (req, res) => apiRoute('pushKey', req.body || {}, req, res));
+app.post('/api/subscribe', (req, res) => apiRoute('subscribePush', req.body || {}, req, res));
+app.post('/api/unsubscribe', (req, res) => apiRoute('unsubscribePush', req.body || {}, req, res));
+app.post('/api/notify', (req, res) => apiRoute('notify', req.body || {}, req, res));
 
 // ============ Fallback to SPA ============
 app.get('*', (req, res) => {

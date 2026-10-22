@@ -3,6 +3,7 @@
 // une interface `store` minimale { get(key), set(key,val), del(key) } (valeurs JSON).
 import crypto from 'node:crypto';
 import { auth } from './firebase-admin.mjs';
+import webpush from 'web-push';
 
 let emailSender = null;
 export function setEmailSender(fn) { emailSender = fn; }
@@ -854,6 +855,9 @@ async function submitGrade(store, famId, b) {
     }
   }
 
+  await sendPush(store, famId, { title: '📘 Nouvelle note à valider', body: `${childName} — ${subject} : ${grade}`, tag: 'grade', data: { url: '/?tab=grades' } })
+    .catch(e => console.error('[PUSH] submitGrade:', e.message));
+
   // Return the updated family so frontend can update state directly
   return { status: 200, body: { family: fam } };
 }
@@ -1166,7 +1170,63 @@ function aggregateTaskStats(child, period = 'week') {
   };
 }
 
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig']);
+/* ── Web Push : abonnements par famille (parents seulement), clés VAPID auto-générées comme le secret ── */
+async function getVapid(store) {
+  let v = await store.get('vapid');
+  if (!v) { v = webpush.generateVAPIDKeys(); await store.set('vapid', v); }
+  return v;
+}
+const str = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
+export async function sendPush(store, familyId, payload) {
+  const subs = (await store.get('push:' + familyId)) || [];
+  if (!subs.length) return { sent: 0, removed: 0 };
+  const v = await getVapid(store);
+  const opts = { TTL: 3600, vapidDetails: { subject: process.env.VAPID_SUBJECT || 'mailto:admin@dailykids.local', publicKey: v.publicKey, privateKey: v.privateKey } };
+  const dead = new Set();
+  let sent = 0;
+  await Promise.all(subs.map(s => webpush.sendNotification(s.subscription, JSON.stringify(payload), opts).then(
+    () => { sent++; },
+    e => { if (e.statusCode === 404 || e.statusCode === 410) dead.add(s.subscription.endpoint); else console.error('[PUSH] send failed:', e.statusCode || e.message); })));
+  if (dead.size) await store.set('push:' + familyId, subs.filter(s => !dead.has(s.subscription.endpoint)));
+  return { sent, removed: dead.size };
+}
+async function subscribePush(store, email, b) {
+  const fam = await store.get('family:' + b.familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  if (!fam.members?.includes(email)) return err(403, 'Réservé aux parents de la famille.');
+  const s = b.subscription;
+  if (!s || !/^https:\/\//.test(s.endpoint || '') || typeof s.keys?.p256dh !== 'string' || typeof s.keys?.auth !== 'string') return err(400, 'Abonnement invalide.');
+  const subscription = { endpoint: s.endpoint, keys: { p256dh: s.keys.p256dh, auth: s.keys.auth } };
+  // ponytail: 20 appareils max par famille, les plus anciens sautent
+  const subs = ((await store.get('push:' + fam.id)) || []).filter(x => x.subscription.endpoint !== s.endpoint);
+  subs.push({ email, subscription, createdAt: Date.now() });
+  await store.set('push:' + fam.id, subs.slice(-20));
+  return { status: 200, body: { ok: true } };
+}
+async function unsubscribePush(store, email, b) {
+  if (typeof b.endpoint !== 'string') return err(400, 'endpoint requis.');
+  const acc = await store.get('account:' + email);
+  for (const fid of new Set([...(acc?.familyIds || []), b.familyId].filter(Boolean))) {
+    const subs = (await store.get('push:' + fid)) || [];
+    const kept = subs.filter(x => !(x.subscription.endpoint === b.endpoint && x.email === email));
+    if (kept.length !== subs.length) await store.set('push:' + fid, kept);
+  }
+  return { status: 200, body: { ok: true } };
+}
+async function notify(store, email, b) {
+  const fam = await store.get('family:' + b.familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  normalizeFamilyData(fam);
+  const isChild = email?.endsWith('@enfant.local') && fam.children.some(c => c.name === email.replace('@enfant.local', ''));
+  if (!fam.members?.includes(email) && !isChild) return err(403, 'Accès refusé.');
+  const title = str(b.title, 100);
+  if (!title) return err(400, 'title requis.');
+  const data = b.data && typeof b.data === 'object' && JSON.stringify(b.data).length <= 1024 ? b.data : {};
+  const payload = { title, body: str(b.body, 300) || '', icon: str(b.icon, 200) || '/icon-192.svg', badge: str(b.badge, 200) || '/icon-96.svg', tag: str(b.tag, 64), data };
+  return { status: 200, body: await sendPush(store, fam.id, payload) };
+}
+
+const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
 
 // point d'entrée unique. payload = { action, token, body }
 async function logActivity(store, type, subject, target, details) {
@@ -1545,6 +1605,10 @@ export async function handleApi({ action, token, body = {} }, store) {
         return err(400, 'Erreur: ' + e.message);
       }
     }
+    case 'pushKey': return { status: 200, body: { key: (await getVapid(store)).publicKey } };
+    case 'subscribePush': return subscribePush(store, email, body);
+    case 'unsubscribePush': return unsubscribePush(store, email, body);
+    case 'notify': return notify(store, email, body);
     case 'saveFamily': return saveFamily(store, email, body);
     case 'createFamily': return createFamily(store, email, body, firebaseUid);
     case 'deleteFamily': return deleteFamily(store, email, body);
