@@ -135,6 +135,69 @@ describe('Push Notifications API', () => {
       expect(res.status).toBe(403);
       expect(res.body.error).toBeDefined();
     });
+
+    it('allows children to subscribe to push notifications', async () => {
+      // Save family with a child
+      const meRes = await request(app)
+        .post('/api')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ action: 'me' });
+
+      const family = meRes.body.families[0];
+
+      // Add a child to the family
+      const updatedFamily = {
+        ...family,
+        children: [
+          {
+            id: 'child-test-1',
+            name: 'Emma',
+            xp: 0,
+            gold: 0,
+            pin: '1234',
+            tasks: [],
+            grades: [],
+            sanctions: []
+          }
+        ]
+      };
+
+      await request(app)
+        .post('/api')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          action: 'saveFamily',
+          family: updatedFamily
+        });
+
+      // Now try to subscribe as the child using the child email format
+      const res = await request(app)
+        .post('/api')
+        .send({
+          action: 'unlockChildDirect',
+          familyName: family.name,
+          childName: 'Emma',
+          pin: '1234'
+        });
+
+      const childToken = res.body.token;
+
+      // Subscribe as child
+      const subRes = await request(app)
+        .post('/api')
+        .set('Authorization', `Bearer ${childToken}`)
+        .send({
+          action: 'subscribePush',
+          familyId: family.id,
+          subscription: {
+            endpoint: 'https://example.com/push/v1/child-sub',
+            keys: { p256dh: 'dGVzdC1wMjU2ZGg=', auth: 'dGVzdC1hdXRo' }
+          }
+        });
+
+      expect(subRes.status).toBe(200);
+      expect(subRes.body).toHaveProperty('ok', true);
+    });
   });
 
   describe('unsubscribePush endpoint', () => {

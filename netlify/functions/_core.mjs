@@ -538,10 +538,16 @@ async function saveFamily(store, email, b) {
             body: `${req.child} a soumis une demande de récompense à valider:\n\nRécompense: ${req.name}\nCoût: ${req.cost} or\n\nVeuillez vous connecter pour approuver ou refuser cette demande.`
           });
         }
+        // Push notification for new reward request
+        await notifyParents(store, inc.id, `🎁 ${req.child} a acheté '${req.name}'`, `Coût: ${req.cost} or`, req.icon || '🎁', 'reward')
+          .catch(e => console.error('[NOTIFY-REWARD-REQUEST] Error:', e.message));
       }
       // Demande approuvée
       if (oldReq?.status === 'pending' && req.status === 'approved') {
         if (owner?.email) { await emailSender({ to: owner.email, subject: `Demande approuvée: ${req.name}`, body: `La demande « ${req.name} » de ${req.child} a été approuvée!` }); }
+        // Notify child that reward was approved
+        await notifyChild(store, inc.id, req.child, `🎁 Ta récompense '${req.name}' a été approuvée!`, `Validée par les parents`, req.icon || '🎁', 'reward')
+          .catch(e => console.error('[NOTIFY-REWARD-APPROVED] Error:', e.message));
       }
     }
   }
@@ -589,7 +595,8 @@ async function saveFamily(store, email, b) {
       await store.set('child-id-index', childIdx);
     }
   }
-  // Log completed tasks
+  // Log completed tasks and notify parents
+  // Also detect new tasks added by parent and notify child
   for (const mergedChild of merged.children || []) {
     const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
     if (curChild && mergedChild.tasks && curChild.tasks) {
@@ -601,6 +608,9 @@ async function saveFamily(store, email, b) {
         // Log if task transitioned to done AND has completedAt timestamp
         if (newTask.done === true && (!oldTask || oldTask.done !== true) && newTask.completedAt) {
           await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
+          // Notify parents about task completion
+          await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
+            .catch(e => console.error('[NOTIFY-TASK-COMPLETE] Error:', e.message));
         }
       }
       // Check new tasks (appended at the end)
@@ -608,6 +618,14 @@ async function saveFamily(store, email, b) {
         const newTask = mergedChild.tasks[i];
         if (newTask.done === true && newTask.completedAt) {
           await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
+          // Notify parents about task completion
+          await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
+            .catch(e => console.error('[NOTIFY-TASK-COMPLETE] Error:', e.message));
+        } else if (isParent && !newTask.done) {
+          // Parent added a new task (not marked as done)
+          await notifyChild(store, inc.id, mergedChild.name, `📋 Nouvelle tâche: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, newTask.icon || '📋', 'task')
+            .catch(e => console.error('[NOTIFY-TASK-NEW] Error:', e.message));
+          await logActivity(store, 'addTask', email, inc.id, `${mergedChild.name}: ${newTask.name}`);
         }
       }
     }
@@ -622,6 +640,58 @@ async function saveFamily(store, email, b) {
       seen.add(g.id);
       return true;
     });
+  }
+
+  // Detect reward purchases (new approved requests) and notify parents
+  if (inc.requests) {
+    for (const req of inc.requests) {
+      const oldReq = cur.requests?.find(r => (r.id && r.id === req.id) || (r.child === req.child && r.name === req.name && r.icon === req.icon));
+      // New purchase: status changed from pending to approved
+      if (oldReq?.status === 'pending' && req.status === 'approved') {
+        await notifyParents(store, inc.id, `🎁 ${req.child} a acheté '${req.name}'`, `Coût: ${req.cost} or`, req.icon || '🎁', 'reward')
+          .catch(e => console.error('[NOTIFY-REWARD-BUY] Error:', e.message));
+        await logActivity(store, 'buyReward', req.child, inc.id, `${req.name} (${req.cost} or)`);
+      }
+    }
+  }
+
+  // Detect sanctions and notify child
+  for (const mergedChild of merged.children || []) {
+    const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
+    if (curChild && mergedChild.sanctions && curChild.sanctions) {
+      // Compare sanctions: if child now has more sanctions, notify about new ones
+      const oldSanctionsSet = new Set((curChild.sanctions || []).map(s => s.motif));
+      for (const newSanction of mergedChild.sanctions) {
+        // If this sanction wasn't in the old list, it's new
+        if (!oldSanctionsSet.has(newSanction.motif)) {
+          const sanctionDef = cur.sanctionsList?.find(s => s.name === newSanction.motif);
+          const gold = newSanction.gold ?? sanctionDef?.gold ?? 0;
+          await notifyChild(store, inc.id, mergedChild.name, `⚠️ Tu as reçu une sanction`, `${newSanction.motif} (-${gold} or)`, '⚠️', 'sanction')
+            .catch(e => console.error('[NOTIFY-SANCTION] Error:', e.message));
+          await logActivity(store, 'applySanction', mergedChild.name, inc.id, `${newSanction.motif} (-${gold} or)`);
+        }
+      }
+    }
+  }
+
+  // Detect proposals and notify parents
+  if (inc.proposals && Array.isArray(inc.proposals)) {
+    const oldProposals = cur.proposals || [];
+    const oldProposalsSet = new Set(oldProposals.map(p => `${p.type}_${p.name}`));
+    for (const proposal of inc.proposals) {
+      const key = `${proposal.type}_${proposal.name}`;
+      if (!oldProposalsSet.has(key)) {
+        // New proposal
+        if (proposal.type === 'task') {
+          await notifyParents(store, inc.id, `💡 ${proposal.proposedBy} propose: '${proposal.name}'`, `+${proposal.xp || 0} XP, +${proposal.gold || 0} or`, '💡', 'proposal')
+            .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
+        } else if (proposal.type === 'reward') {
+          await notifyParents(store, inc.id, `🛍️ ${proposal.proposedBy} propose: '${proposal.name}'`, `Coût: ${proposal.cost || 0} or`, '🛍️', 'proposal')
+            .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
+        }
+        await logActivity(store, 'propose', proposal.proposedBy || 'unknown', inc.id, `${proposal.type}: ${proposal.name}`);
+      }
+    }
   }
 
   // Return the merged data directly without reloading from storage
@@ -855,7 +925,8 @@ async function submitGrade(store, famId, b) {
     }
   }
 
-  await sendPush(store, famId, { title: '📘 Nouvelle note à valider', body: `${childName} — ${subject} : ${grade}`, tag: 'grade', data: { url: '/?tab=grades' } })
+  // Notify parents about submitted grade
+  await sendPush(store, famId, { title: `📝 ${childName} a soumis une note`, body: `${subject} (${grade})`, tag: 'grade', data: { url: '/?tab=grades' } })
     .catch(e => console.error('[PUSH] submitGrade:', e.message));
 
   // Return the updated family so frontend can update state directly
@@ -882,6 +953,10 @@ async function approveGrade(store, email, b) {
   await store.set('family:' + familyId, fam);
 
   await logActivity(store, 'approveGrade', email, familyId, `Note approuvée: ${req.child} - ${req.subject}`);
+
+  // Notify child about approved grade
+  await notifyChild(store, familyId, req.child, `📝 Ta note en ${req.subject} (${req.grade}) a été validée!`, `+${goldAmount} or`, '✅', 'grade')
+    .catch(e => console.error('[NOTIFY-GRADE] Error:', e.message));
 
   return { status: 200, body: { ok: true } };
 }
@@ -1193,7 +1268,11 @@ export async function sendPush(store, familyId, payload) {
 async function subscribePush(store, email, b) {
   const fam = await store.get('family:' + b.familyId);
   if (!fam) return err(404, 'Famille introuvable.');
-  if (!fam.members?.includes(email)) return err(403, 'Réservé aux parents de la famille.');
+  // Allow both parents (fam.members) and children (email@enfant.local)
+  normalizeFamilyData(fam);
+  const isParent = fam.members?.includes(email);
+  const isChild = email?.endsWith('@enfant.local') && fam.children.some(c => c.name === email.replace('@enfant.local', ''));
+  if (!isParent && !isChild) return err(403, 'Accès refusé.');
   const s = b.subscription;
   if (!s || !/^https:\/\//.test(s.endpoint || '') || typeof s.keys?.p256dh !== 'string' || typeof s.keys?.auth !== 'string') return err(400, 'Abonnement invalide.');
   const subscription = { endpoint: s.endpoint, keys: { p256dh: s.keys.p256dh, auth: s.keys.auth } };
@@ -1224,6 +1303,24 @@ async function notify(store, email, b) {
   const data = b.data && typeof b.data === 'object' && JSON.stringify(b.data).length <= 1024 ? b.data : {};
   const payload = { title, body: str(b.body, 300) || '', icon: str(b.icon, 200) || '/icon-192.svg', badge: str(b.badge, 200) || '/icon-96.svg', tag: str(b.tag, 64), data };
   return { status: 200, body: await sendPush(store, fam.id, payload) };
+}
+
+// Helper: send notification to all family members (parents and children)
+async function notifyFamily(store, familyId, title, body, icon = '📢', tag = 'action') {
+  try {
+    await sendPush(store, familyId, { title, body, icon, badge: '/icon-96.svg', tag, data: { url: '/' } });
+  } catch (e) {
+    console.error('[NOTIFY-FAMILY] Error:', e.message);
+  }
+}
+
+// Aliases for clarity
+async function notifyParents(store, familyId, title, body, icon = '📢', tag = 'action') {
+  return notifyFamily(store, familyId, title, body, icon, tag);
+}
+
+async function notifyChild(store, familyId, childName, title, body, icon = '📢', tag = 'action') {
+  return notifyFamily(store, familyId, title, body, icon, tag);
 }
 
 const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
