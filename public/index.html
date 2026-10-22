@@ -116,6 +116,41 @@
 <script>
 // ── Auth sans Firebase — utilise l'API backend et localStorage ──
 const TOKEN_KEY = 'te-token';
+const SESSION_KEY = 'dailykids_session';
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 jours
+
+// ── Persistent session management ──
+const SessionManager = {
+  save(sessionData) {
+    const session = {
+      ...sessionData,
+      expiresAt: Date.now() + SESSION_TTL,
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  },
+  load() {
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (!stored) return null;
+    try {
+      const session = JSON.parse(stored);
+      if (session.expiresAt <= Date.now()) {
+        this.clear();
+        return null;
+      }
+      return session;
+    } catch {
+      this.clear();
+      return null;
+    }
+  },
+  clear() {
+    localStorage.removeItem(SESSION_KEY);
+  },
+  isValid() {
+    const session = this.load();
+    return session !== null;
+  }
+};
 
 // Remplace l'initialisation Firebase par une simple vérification du token
 function initAuth() {
@@ -1083,6 +1118,7 @@ function renderAuthChild() {
     <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo"></div>
     <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma"></div>
     <div class="field" style="margin:0"><label>Ton code PIN (4 chiffres)</label><input class="input" id="ec-pin" type="password" placeholder="****"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:-4px"><input type="checkbox" id="ec-remember" style="width:18px;height:18px;cursor:pointer"><label style="margin:0;cursor:pointer;font-size:13px" for="ec-remember">Se souvenir de moi</label></div>
     <button class="btn btn-primary btn-block" data-action="unlock-child-direct">Se connecter</button>
     <p class="text-muted" style="font-size:11px;text-align:center;margin:0">Demande le code PIN a tes parents</p>
   </div>`;
@@ -1133,6 +1169,7 @@ function renderAuth() {
     ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
     <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
+    ${!signup ? '<div style="display:flex;align-items:center;gap:8px;margin-top:-4px"><input type="checkbox" id="au-remember" style="width:18px;height:18px;cursor:pointer"><label style="margin:0;cursor:pointer;font-size:13px" for="au-remember">Se souvenir de moi</label></div>' : ''}
     ${!signup ? '<div style="text-align:right"><button class="btn btn-ghost" style="font-size:12px;padding:0;margin-top:-8px" data-action="show-reset-password">Mot de passe oublié?</button></div>' : ''}
     ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
     <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
@@ -1605,10 +1642,21 @@ function replaceFamily(f) {
   families[i] = f;
   if (state && state.id === f.id) { activeFamily = i; state = f; }
 }
-function onAuthed(r) {
+function onAuthed(r, rememberMe = false) {
   token = r.token; localStorage.setItem(TOKEN_KEY, token);
   me = r.me; families = (r.families || []).map(f => { normalizeFamilyData(f); return f; }); parentUnlocked = true; authMsg = '';
   if (families.length) { setActiveFamily(0); state.role = 'parent'; }
+
+  // Save persistent session if "remember me" is checked
+  if (rememberMe) {
+    SessionManager.save({
+      token: r.token,
+      role: 'parent',
+      email: me.email,
+      name: me.name,
+      familyId: state?.id
+    });
+  }
 }
 
 const ACTIONS = {
@@ -1972,18 +2020,31 @@ const ACTIONS = {
   'set-auth': el => { authRole = el.dataset.authRole || 'parent'; render(); },
   'unlock-child-direct': async () => {
     const famname = val('ec-famname').trim(), name = val('ec-name').trim(), pin = val('ec-pin').trim();
+    const rememberMe = document.getElementById('ec-remember')?.checked || false;
     if (!famname || !name || !pin) { authMsg = 'Tous les champs requis.'; return; }
     if (!/^\d{4}$/.test(pin)) { authMsg = 'PIN invalide (4 chiffres).'; return; }
     const r = await api('unlockChildDirect', { familyName: famname, childName: name, pin });
     if (!r || !r.families || !r.families.length) { authMsg = 'Famille ou enfant introuvable, ou PIN incorrect.'; return; }
     me = { email: name + '@enfant.local', name };
     token = r.token; // Store token for child authentication
+    localStorage.setItem(TOKEN_KEY, token);
     families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
     state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
     // Find the correct child by name and set activeChild to their index
     state.activeChild = state.children.findIndex(c => c.name === name);
     if (state.activeChild < 0) state.activeChild = 0; // fallback if not found
     unlocked.add(name);
+
+    // Save persistent session if "remember me" is checked
+    if (rememberMe) {
+      SessionManager.save({
+        token: r.token,
+        role: 'enfant',
+        familyName: famname,
+        childName: name,
+        familyId: state?.id
+      });
+    }
   },
   'add-reward': () => {
     const name = val('new-reward-name'), cost = parseInt(val('new-reward-cost'), 10), lvl = parseInt(val('new-reward-lvl') || '1', 10);
@@ -2030,6 +2091,7 @@ const ACTIONS = {
   // ── actions serveur (async, gèrent leur propre persistance) ──
   login: async () => {
     const email = val('au-email').toLowerCase(), password = document.getElementById('au-pass').value;
+    const rememberMe = document.getElementById('au-remember')?.checked || false;
     if (!email || !password) { authMsg = 'Email et mot de passe requis.'; return; }
     try {
       // Appel direct à l'API backend pour le login
@@ -2040,7 +2102,7 @@ const ACTIONS = {
 
       // Appel à 'me' pour récupérer les données utilisateur et familles
       const meData = await api('me', { email });
-      onAuthed({ ...meData, token: idToken });
+      onAuthed({ ...meData, token: idToken }, rememberMe);
     } catch (error) {
       authMsg = typeof error === 'string' ? 'Erreur: ' + error : 'Erreur: ' + (error?.message || String(error));
     }
@@ -2095,7 +2157,8 @@ const ACTIONS = {
       await window.firebaseSignOut();
       window.firebaseToken = null;
       token = null; localStorage.removeItem(TOKEN_KEY);
-      me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = '';
+      SessionManager.clear(); // Clear persistent session
+      me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = ''; unlocked.clear();
       render();
     } catch (error) {
       authMsg = 'Erreur de déconnexion: ' + error.message;
@@ -2585,9 +2648,47 @@ async function boot() {
           resolve();
         }
       } else {
-        // No Firebase user logged in, show login screen
-        me = null; families = []; state = null;
-        render();
+        // No Firebase user logged in, check for persistent session
+        const persistentSession = SessionManager.load();
+        if (persistentSession) {
+          console.log('[BOOT-PERSISTENT] Valid persistent session found, attempting auto-login');
+          try {
+            if (persistentSession.role === 'parent') {
+              // Auto-login parent
+              window.firebaseToken = persistentSession.token;
+              token = persistentSession.token;
+              const r = await api('me', { email: persistentSession.email });
+              if (!r.me) throw 'session invalide';
+              onAuthed({ ...r, token: persistentSession.token });
+              render();
+            } else if (persistentSession.role === 'enfant') {
+              // Auto-login child using stored token
+              window.firebaseToken = persistentSession.token;
+              token = persistentSession.token;
+              const r = await api('me'); // Use existing token in header
+              if (!r || !r.families || !r.families.length) throw 'Family or child not found';
+              me = { email: persistentSession.childName + '@enfant.local', name: persistentSession.childName };
+              families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
+              state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
+              state.activeChild = state.children.findIndex(c => c.name === persistentSession.childName);
+              if (state.activeChild < 0) state.activeChild = 0;
+              unlocked.add(persistentSession.childName);
+              render();
+            } else {
+              throw 'Unknown role';
+            }
+            console.log('[BOOT-PERSISTENT] Auto-login successful');
+          } catch (err) {
+            console.error('[BOOT-PERSISTENT] Auto-login failed:', err);
+            SessionManager.clear();
+            me = null; families = []; state = null;
+            render();
+          }
+        } else {
+          // No persistent session, show login screen
+          me = null; families = []; state = null;
+          render();
+        }
         resolve();
       }
     });
