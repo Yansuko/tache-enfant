@@ -38,8 +38,11 @@ self.addEventListener('push', event => {
     badge,
     tag,
     data,
-    requireInteraction: false,
-    vibrate: [200, 100, 200],
+    requireInteraction: true, // iOS 16+ requiert ceci pour garder la notification affichée
+    // Note: Ne pas utiliser 'vibrate' - iOS ne supporte pas la Vibration API
+    actions: [
+      { action: 'open', title: 'Ouvrir' }
+    ]
   };
 
   event.waitUntil(
