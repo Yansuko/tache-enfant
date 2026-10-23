@@ -3122,7 +3122,26 @@ setInterval(async () => {
           state.questList = serverFamily.questList || state.questList;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
+
+          // Smart render: preserve scroll position and focused input values
+          const savedScroll = window.scrollY;
+          const focusedEl = document.activeElement;
+          const inputState = {};
+          if (focusedEl && focusedEl.tagName === 'INPUT' && focusedEl.id) {
+            inputState[focusedEl.id] = focusedEl.value;
+          }
+
           render();
+
+          // Restore scroll and focused input
+          window.scrollTo(0, savedScroll);
+          if (focusedEl && focusedEl.id && focusedEl.tagName === 'INPUT' && inputState[focusedEl.id] !== undefined) {
+            const restored = document.getElementById(focusedEl.id);
+            if (restored) {
+              restored.value = inputState[focusedEl.id];
+              restored.focus();
+            }
+          }
         }
       }
     } catch (e) {
