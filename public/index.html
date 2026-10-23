@@ -301,34 +301,43 @@ const frDate = () => {
 // ── push notifications ──
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
-    console.warn('[PUSH] Service Workers non supportés');
+    console.warn('[PUSH] Service Workers non supportés - using Web Notifications fallback');
+    // Use Web Notifications API as fallback
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          pushNotificationEnabled = true;
+          console.log('[PUSH-FALLBACK] Web Notifications API enabled');
+        }
+      });
+    }
     return;
   }
 
   try {
-    console.log('[PUSH] Enregistrement du Service Worker depuis:', window.location.href);
-    // Simplify: use only the current origin, omit scope for broader compatibility
-    swRegistration = await navigator.serviceWorker.register('/sw.js');
-    console.log('[PUSH-SUCCESS] Service Worker enregistré:', swRegistration.scope);
+    console.log('[PUSH] Registering Service Worker...');
+    swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    console.log('[PUSH-SUCCESS] Service Worker registered');
+    pushNotificationEnabled = true;
 
     swRegistration.onupdatefound = () => {
       const newWorker = swRegistration.installing;
       newWorker.onstatechange = () => {
-        console.log('[PUSH-STATE] Service Worker:', newWorker.state);
+        console.log('[PUSH-STATE] SW state:', newWorker.state);
       };
     };
   } catch (err) {
-    console.error('[PUSH-ERROR] Enregistrement SW échoué:', err.name, err.message);
-    // Retry after a short delay
-    console.log('[PUSH-RETRY] Nouvelle tentative dans 3 secondes...');
-    setTimeout(() => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(reg => {
-          console.log('[PUSH-RETRY-SUCCESS] Service Worker enregistré au retry');
-          swRegistration = reg;
-        })
-        .catch(e => console.error('[PUSH-RETRY-FAILED]', e.message));
-    }, 3000);
+    console.error('[PUSH-ERROR] SW registration failed:', err.message);
+    console.log('[PUSH-FALLBACK] Falling back to Web Notifications API');
+    // Fallback to Web Notifications without Service Worker
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          pushNotificationEnabled = true;
+          console.log('[PUSH-FALLBACK] Web Notifications API enabled as fallback');
+        }
+      });
+    }
   }
 }
 
