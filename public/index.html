@@ -2955,12 +2955,33 @@ checkServiceWorkerStatus();
 registerServiceWorker();
 
 // Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
-setInterval(() => {
+// Auto-refresh: sync every 3 seconds (pull from server, then push local changes)
+setInterval(async () => {
   if (token && state) {
-    console.log('[AUTO-REFRESH] Syncing at', new Date().toLocaleTimeString());
-    persistFamily().catch(e => console.error('[AUTO-REFRESH] Error:', e.message));
+    const refreshId = Math.random().toString(36).substring(7);
+    console.log(`[AUTO-REFRESH-${refreshId}] Syncing at ${new Date().toLocaleTimeString()}`);
+
+    try {
+      // Pull latest from server (multi-client sync)
+      const res = await api('me');
+      if (res.families && res.families[0]) {
+        const serverFamily = res.families[0];
+        // Update state if server has newer data
+        if (serverFamily.updatedAt > (state.updatedAt || 0)) {
+          console.log(`[AUTO-REFRESH-${refreshId}] Server updated at ${new Date(serverFamily.updatedAt).toISOString()}, pulling changes`);
+          state = serverFamily;
+          normalizeFamilyData(state);
+          render();
+        }
+      }
+    } catch (e) {
+      console.error(`[AUTO-REFRESH-${refreshId}] Pull failed:`, e.message);
+    }
+
+    // Push local changes
+    persistFamily().catch(e => console.error(`[AUTO-REFRESH-${refreshId}] Push failed:`, e.message));
   }
-}, 5000);
+}, 3000);
 
 boot();
 </script>
