@@ -556,13 +556,21 @@ async function saveFamily(store, email, b) {
   for (const mergedChild of merged.children || []) {
     const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
     if (curChild && mergedChild.tasks && curChild.tasks) {
-      // For now, use index-based comparison but ensure both arrays have same length
-      const minLen = Math.min(mergedChild.tasks.length, curChild.tasks.length);
-      for (let i = 0; i < minLen; i++) {
-        const newTask = mergedChild.tasks[i];
-        const oldTask = curChild.tasks[i];
-        // Log if task transitioned to done AND has completedAt timestamp
+      // Build map of old tasks by (name, xp) for reliable matching
+      const oldTasksByKey = new Map();
+      (curChild.tasks || []).forEach(t => {
+        const key = `${t.name}|${t.xp}`;
+        oldTasksByKey.set(key, t);
+      });
+
+      // Check all new tasks against old tasks by (name, xp) matching
+      for (const newTask of mergedChild.tasks || []) {
+        const key = `${newTask.name}|${newTask.xp}`;
+        const oldTask = oldTasksByKey.get(key);
+
+        // Detect task completion: transition from not-done to done
         if (newTask.done === true && (!oldTask || oldTask.done !== true) && newTask.completedAt) {
+          console.log(`[NOTIFY-TASK] ${mergedChild.name}: '${newTask.name}' transitioned to done`);
           await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
           // Notify parents about task completion
           await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
@@ -570,21 +578,9 @@ async function saveFamily(store, email, b) {
           // Notify child that task was completed
           await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche complétée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
             .catch(e => console.error('[NOTIFY-TASK-CHILD] Error:', e.message));
-        }
-      }
-      // Check new tasks (appended at the end)
-      for (let i = minLen; i < mergedChild.tasks.length; i++) {
-        const newTask = mergedChild.tasks[i];
-        if (newTask.done === true && newTask.completedAt) {
-          await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
-          // Notify parents about task completion
-          await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
-            .catch(e => console.error('[NOTIFY-TASK-COMPLETE] Error:', e.message));
-          // Notify child that task was completed
-          await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche complétée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
-            .catch(e => console.error('[NOTIFY-TASK-CHILD] Error:', e.message));
-        } else if (isParent && !newTask.done) {
-          // Parent added a new task (not marked as done)
+        } else if (isParent && !newTask.done && !oldTask) {
+          // Parent added a new task (not matched with old task and not marked as done)
+          console.log(`[NOTIFY-TASK] ${mergedChild.name}: new task '${newTask.name}'`);
           await notifyChild(store, inc.id, mergedChild.name, `📋 Nouvelle tâche: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, newTask.icon || '📋', 'task')
             .catch(e => console.error('[NOTIFY-TASK-NEW] Error:', e.message));
           await logActivity(store, 'addTask', email, inc.id, `${mergedChild.name}: ${newTask.name}`);
