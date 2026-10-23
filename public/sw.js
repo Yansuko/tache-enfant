@@ -1,11 +1,10 @@
 // Service Worker pour DailyKids - Gestion des notifications push
-// self.addEventListener('push', event) - reçoit les notifications
-// self.addEventListener('notificationclick', event) - gère les clics
-// self.addEventListener('notificationclose', event) - gère la fermeture
+// Minimal initialization to prevent parsing errors
 
-// Log au démarrage du Service Worker
-console.log('[SW] Service Worker script loaded');
-console.log('[SW-SCOPE] Scope:', self.location.href);
+try { console.log('[SW] Service Worker initializing'); } catch (e) {}
+
+// ponytail: if self.location is undefined in some contexts, skip scope logging
+try { console.log('[SW-SCOPE]', typeof self !== 'undefined' ? self.scope : 'N/A'); } catch (e) {}
 
 self.addEventListener('push', event => {
   console.log('[SW-PUSH] Notification received:', event);
