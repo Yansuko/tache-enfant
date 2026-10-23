@@ -2984,7 +2984,7 @@ checkServiceWorkerStatus();
 registerServiceWorker();
 
 // Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
-// Multi-client sync: pull server state + push local changes every 3 seconds
+// Multi-client sync: pull server state + push local changes every 5 seconds
 // Only run on app page, not on login page
 let lastSyncTime = 0;
 let syncInProgress = false;
@@ -2992,7 +2992,7 @@ setInterval(async () => {
   // Only sync if: authenticated + have app state (not login page) + not already syncing
   if (token && state && state.children && !syncInProgress) {
     const now = Date.now();
-    if (now - lastSyncTime < 3000) return; // Debounce
+    if (now - lastSyncTime < 5000) return; // Debounce
     syncInProgress = true;
     lastSyncTime = now;
     const syncId = Math.random().toString(36).substring(7);
@@ -3073,6 +3073,8 @@ setInterval(async () => {
           state.gradeRequests = serverFamily.gradeRequests || state.gradeRequests;
           state.taskRequests = serverFamily.taskRequests || state.taskRequests;
           state.sanctionsList = serverFamily.sanctionsList || state.sanctionsList;
+          state.proposals = serverFamily.proposals || state.proposals;
+          state.questList = serverFamily.questList || state.questList;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
           render();
@@ -3085,7 +3087,7 @@ setInterval(async () => {
     console.log(`[SYNC-${syncId}] Complete`);
     syncInProgress = false;
   }
-}, 3000);
+}, 5000);
 
 boot();
 </script>
