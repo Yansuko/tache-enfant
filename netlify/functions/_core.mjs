@@ -558,6 +558,21 @@ async function saveFamily(store, email, b) {
       child.id = 'child-' + crypto.randomBytes(4).toString('hex');
     }
   }
+
+  // Generate missing IDs for all mergeable arrays (must happen BEFORE merge because mergeById filters out items without IDs)
+  // ponytail: centralized ID generation for all arrays that use mergeById
+  const generateIdIfMissing = (item, prefix) => {
+    if (item && !item.id) {
+      item.id = `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
+    }
+    return item;
+  };
+
+  for (const [key, prefix] of [['proposals', 'proposal'], ['requests', 'request'], ['gradeRequests', 'grade'], ['taskRequests', 'task'], ['questList', 'quest']]) {
+    if (cur[key]) cur[key] = cur[key].map(item => generateIdIfMissing(item, prefix));
+    if (inc[key]) inc[key] = inc[key].map(item => generateIdIfMissing(item, prefix));
+  }
+
   // Log proposals before merge
   console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] Before merge - cur.proposals count:`, cur.proposals?.length || 0);
   console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] Before merge - inc.proposals count:`, inc.proposals?.length || 0);
