@@ -281,6 +281,8 @@ async function stateFor(store, email) {
           try {
             const f = await store.get(key);
             if (f && f.children && f.children.some(c => c.name === childName)) {
+              // Ensure family ID is set from the store key
+              if (!f.id) f.id = key.substring('family:'.length);
               normalizeFamilyData(f);
               families.push(await withNames(store, f));
             }
@@ -303,6 +305,8 @@ async function stateFor(store, email) {
     try {
       const f = await store.get('family:' + id);
       if (f) {
+        // Ensure family ID is set correctly
+        if (!f.id) f.id = id;
         normalizeFamilyData(f);
         families.push(await withNames(store, f));
       }
