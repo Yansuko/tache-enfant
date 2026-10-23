@@ -335,41 +335,7 @@ async function login(store, secret, b) {
   if (acc && !pwCheck) console.log(`[LOGIN] Password mismatch for ${email}`);
   if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
 
-  let uid = null;
-  // Try to sync with Firebase (optional, for backward compatibility)
-  // Silently fail if Firebase is not configured or credentials are invalid
-  try {
-    let firebaseUser;
-    try {
-      firebaseUser = await auth.getUserByEmail(email);
-    } catch (getErr) {
-      if (getErr.message?.includes('user-not-found')) {
-        // Create Firebase user if doesn't exist (migration scenario)
-        try {
-          firebaseUser = await auth.createUser({
-            email,
-            password: b.password
-          });
-        } catch (createErr) {
-          // Firebase creation failed, continue with legacy auth only
-          console.log('[LOGIN] Firebase createUser failed:', createErr.message);
-        }
-      } else {
-        // Firebase not configured or credentials invalid, continue with legacy auth
-        console.log('[LOGIN] Firebase getUserByEmail failed:', getErr.message);
-      }
-    }
-
-    if (firebaseUser) {
-      uid = firebaseUser.uid;
-      // Update legacy account with Firebase UID
-      acc.firebaseUid = uid;
-      await store.set('account:' + email, acc);
-    }
-  } catch (fbErr) {
-    // Catch any unexpected errors from Firebase operations
-    console.log('[LOGIN] Firebase sync failed:', fbErr.message);
-  }
+  // Firebase removed - using JWT auth only
 
   // Log activity
   await logActivity(store, 'login', email, acc.name, 'Parent login');
@@ -701,9 +667,9 @@ async function saveFamily(store, email, b) {
 
   return { status: 200, body: { family: merged } };
 }
-async function createFamily(store, email, b, firebaseUid) {
+async function createFamily(store, email, b) {
   const name = (b.name || '').trim();
-  console.log('[CREATE-FAMILY] firebaseUid:', firebaseUid, 'email:', email);
+  console.log('[CREATE-FAMILY] email:', email);
   if (!name) return err(400, 'Nom de la famille requis.');
   const fam = newFamily(name, email);
   fam.createdAt = Date.now();
@@ -1633,20 +1599,7 @@ export async function handleApi({ action, token, body = {} }, store) {
         let userEmail = email || body.email; // Support email from body (Firebase login flow)
         let uid = firebaseUid;
 
-        // Try Firebase token from body if Authorization header verification didn't work
-        if (!uid && body.firebaseToken) {
-          try {
-            uid = await verifyFirebaseToken(body.firebaseToken);
-            // If we got a Firebase UID but no email, try to find it in store or create a default
-            if (uid && !userEmail) {
-              // Check if there's an associated email in store
-              // For now, use email from token if available
-              userEmail = body.email;
-            }
-          } catch (fbErr) {
-            // Firebase not available, use legacy auth
-          }
-        }
+        // Firebase removed - only JWT/legacy auth supported
 
         console.log('[ME-ENDPOINT] uid:', uid, 'userEmail:', userEmail);
         if (!userEmail && !uid) return err(401, 'Non authentifié.');
@@ -1666,18 +1619,8 @@ export async function handleApi({ action, token, body = {} }, store) {
       }
     }
     case 'verifyPassword': {
-      // For Firebase Auth: verify token passed in body
-      console.log('[VERIFY-PASSWORD] Attempting - has firebaseToken:', !!body.firebaseToken, 'email:', email);
-      if (body.firebaseToken) {
-        try {
-          const decodedToken = await auth.verifyIdToken(body.firebaseToken);
-          console.log('[VERIFY-PASSWORD] Firebase token valid, email:', decodedToken.email, 'matches:', decodedToken.email === email);
-          // Token verified and matches email
-          return { status: 200, body: { ok: decodedToken.email === email } };
-        } catch (e) {
-          console.error('[VERIFY-PASSWORD] Firebase token failed:', e.message);
-        }
-      }
+      // JWT auth only - Firebase removed
+      console.log('[VERIFY-PASSWORD] Attempting - email:', email);
       // Fallback: legacy password verification from store
       console.log('[VERIFY-PASSWORD] Falling back to legacy verification');
       const acc = await store.get('account:' + email);
@@ -1686,14 +1629,18 @@ export async function handleApi({ action, token, body = {} }, store) {
       return { status: 200, body: { ok } };
     }
     case 'changePassword': {
-      if (!firebaseUid) return err(401, 'Non authentifié.');
+      if (!email) return err(401, 'Non authentifié.');
       const { newPassword } = body;
       if (!newPassword || newPassword.length < 6) {
         return err(400, 'Le mot de passe doit faire au moins 6 caractères.');
       }
       try {
-        await auth.updateUser(firebaseUid, { password: newPassword });
-        console.log('[CHANGE-PASSWORD] Password updated for UID:', firebaseUid);
+        // Update password in local store (Firebase removed)
+        const account = await store.get('account:' + email);
+        if (!account) return err(404, 'Compte non trouvé.');
+        const { salt, hash } = hashPassword(newPassword);
+        await store.set('account:' + email, { ...account, salt, hash });
+        console.log('[CHANGE-PASSWORD] Password updated for email:', email);
         return { status: 200, body: { ok: true } };
       } catch (e) {
         console.error('[CHANGE-PASSWORD] Error:', e.message);
@@ -1705,7 +1652,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'unsubscribePush': return unsubscribePush(store, email, body);
     case 'notify': return notify(store, email, body);
     case 'saveFamily': return saveFamily(store, email, body);
-    case 'createFamily': return createFamily(store, email, body, firebaseUid);
+    case 'createFamily': return createFamily(store, email, body);
     case 'deleteFamily': return deleteFamily(store, email, body);
     case 'invite': return invite(store, email, body);
     case 'removeAdult': return removeAdult(store, email, body);
