@@ -2186,7 +2186,9 @@ const ACTIONS = {
   'approve-proposal': el => {
     const [p] = state.proposals.splice(+el.dataset.i, 1);
     if (!p) return;
-    state.rewards.push({ icon: '💡', name: p.name, cost: p.cost, lvl: 1 });
+    // Add approved quest to questList
+    state.questList = state.questList || [];
+    state.questList.push({ icon: p.icon, name: p.name, xp: p.xp, gold: p.gold, frequency: p.frequency });
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
   'approve-grade': async el => {
