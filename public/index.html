@@ -2349,6 +2349,8 @@ const ACTIONS = {
       // Appel direct à l'API backend pour le login
       const r = await api('login', { email, password });
       const idToken = r.token;
+      // Mise à jour IMMÉDIATE du token global pour les appels API suivants
+      token = idToken;
       window.firebaseToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
       localStorage.setItem('te-email', email);
@@ -2367,6 +2369,8 @@ const ACTIONS = {
       // Appel direct à l'API backend pour la création de compte + famille
       const r = await api('signup', { name, email, password, familyName });
       const idToken = r.token;
+      // Mise à jour IMMÉDIATE du token global pour les appels API suivants
+      token = idToken;
       window.firebaseToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
 
