@@ -2067,7 +2067,7 @@ const ACTIONS = {
     state.requests.push({ id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8), child: c.name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
     logAction('reward_requested', r.name, { child: c.name, cost: r.cost });
   },
-  approve: el => {
+  approve: async el => {
     const q = state.requests[+el.dataset.i];
     console.log(`[APPROVE-BEFORE] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
     if (!q) { console.log(`[APPROVE-ERROR] Request not found at index ${+el.dataset.i}`); return; }
@@ -2078,13 +2078,20 @@ const ACTIONS = {
     logAction('reward_approved', q.name, { child: q.child, cost: q.cost, approver: me?.name });
     console.log(`[APPROVE-AFTER] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
     console.log(`[APPROVE-REWARD] Approved "${q.name}" for ${q.child}: gold cost=${q.cost}, new gold=${c?.gold || 0}. Total requests: ${state.requests?.length || 0}`);
+    // CRITICAL: Must await save() to persist before other tabs see the change
+    // This prevents race condition where sync pulls stale data
+    await save();
+    render();
   },
-  refuse: el => {
+  refuse: async el => {
     const q = state.requests[+el.dataset.i];
     if (q) {
       q.status = 'refused';
       logAction('reward_refused', q.name, { child: q.child, cost: q.cost, refuser: me?.name });
     }
+    // CRITICAL: Must await save() to persist before other tabs see the change
+    await save();
+    render();
   },
   'apply-sanction': async el => {
     // Defensive: ensure arrays are normalized
@@ -2481,7 +2488,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'change-password']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
