@@ -474,11 +474,15 @@ async function api(action, body = {}) {
 
   // Get Firebase token if available, fall back to legacy token
   let authHeader = {};
-  if (window.firebaseToken) {
+  const hasWindowToken = !!window.firebaseToken;
+  const hasLocalToken = !!token;
+  if (hasWindowToken) {
     authHeader = { Authorization: 'Bearer ' + window.firebaseToken };
-  } else if (token) {
+  } else if (hasLocalToken) {
     authHeader = { Authorization: 'Bearer ' + token };
   }
+
+  console.log(`[API-${action}] Token: window=${hasWindowToken}, local=${hasLocalToken}, header=${!!authHeader.Authorization}`);
 
   const res = await fetch('/api', {
     method: 'POST',
@@ -2950,7 +2954,8 @@ async function boot() {
       }
           resolve();
         } catch (err) {
-          console.error('Boot error:', err);
+          console.error('[BOOT-ERROR] Error during auth:', err.message || err);
+          console.log('[BOOT-ERROR] Token state before clearing: window.firebaseToken=${!!window.firebaseToken}, local=${!!token}');
           window.firebaseToken = null;
           token = null;
           if (!(err instanceof TypeError)) localStorage.removeItem(TOKEN_KEY); // server rejected it; keep it on network failure
