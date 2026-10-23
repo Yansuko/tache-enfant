@@ -2968,10 +2968,12 @@ registerServiceWorker();
 
 // Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
 // Multi-client sync: pull server state + push local changes every 3 seconds
+// Only run on app page, not on login page
 let lastSyncTime = 0;
 let syncInProgress = false;
 setInterval(async () => {
-  if (token && state && !syncInProgress) {
+  // Only sync if: authenticated + have app state (not login page) + not already syncing
+  if (token && state && state.children && !syncInProgress) {
     const now = Date.now();
     if (now - lastSyncTime < 3000) return; // Debounce
     syncInProgress = true;
