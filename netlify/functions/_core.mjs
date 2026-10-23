@@ -553,8 +553,10 @@ async function saveFamily(store, email, b) {
   }
   // Log completed tasks and notify parents
   // Also detect new tasks added by parent and notify child
+  console.log(`[NOTIFY-DEBUG] Starting task completion detection. merged.children length: ${merged.children?.length || 0}`);
   for (const mergedChild of merged.children || []) {
     const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
+    console.log(`[NOTIFY-DEBUG] Checking ${mergedChild.name}: curChild=${!!curChild}, tasks=${mergedChild.tasks?.length || 0}, oldTasks=${curChild?.tasks?.length || 0}`);
     if (curChild && mergedChild.tasks && curChild.tasks) {
       // Build map of old tasks by (name, xp) for reliable matching
       const oldTasksByKey = new Map();
@@ -565,6 +567,7 @@ async function saveFamily(store, email, b) {
 
       // Check all new tasks against old tasks by (name, xp) matching
       for (const newTask of mergedChild.tasks || []) {
+        console.log(`[NOTIFY-DEBUG-TASK] Checking task: ${newTask.name}, done=${newTask.done}, completedAt=${newTask.completedAt}`);
         const key = `${newTask.name}|${newTask.xp}`;
         const oldTask = oldTasksByKey.get(key);
 
