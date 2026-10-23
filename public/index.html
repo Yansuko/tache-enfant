@@ -698,15 +698,26 @@ async function persistFamily() {
             const key = `${remoteTask.name}|${remoteTask.xp}`;
             const localCompletedAt = localTasksByNameXp.get(key);
 
+            // CRITICAL FIX: If server has a valid completion (done=true + completedAt), trust it
+            // This prevents older local validations from overwriting server state from other devices
+            if (remoteTask.done && remoteTask.completedAt) {
+              // Server already has this task validated - use server's timestamp (from other device or approval)
+              if (localCompletedAt && localCompletedAt !== remoteTask.completedAt) {
+                console.log(`[MERGE-SYNC] Task ${remoteTask.name}: using server's ${new Date(remoteTask.completedAt).toISOString()} (not local ${new Date(localCompletedAt).toISOString()})`);
+              }
+              return remoteTask;
+            }
+
+            // Only preserve local validation if server doesn't have one
             if (localCompletedAt) {
-              // Preserve local approved tasks even if server returns them as unapproved
-              console.log(`[MERGE] Preserving completedAt for ${remoteTask.name}: ${new Date(localCompletedAt).toISOString()}`);
+              // Preserve local approved tasks that haven't been synced yet
+              console.log(`[MERGE] Preserving local validation for ${remoteTask.name}: ${new Date(localCompletedAt).toISOString()}`);
               return { ...remoteTask, done: true, completedAt: Number(localCompletedAt) };
             }
 
             // Also fall back to index-based match for backward compatibility
             const localTask = localChild.tasks?.[j];
-            if (localTask && localTask.done && localTask.completedAt) {
+            if (localTask && localTask.done && localTask.completedAt && !remoteTask.completedAt) {
               console.log(`[MERGE] Preserving completedAt by index for ${remoteTask.name}: ${new Date(localTask.completedAt).toISOString()}`);
               return { ...remoteTask, done: true, completedAt: Number(localTask.completedAt) };
             }
@@ -2340,6 +2351,7 @@ const ACTIONS = {
       const idToken = r.token;
       window.firebaseToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
+      localStorage.setItem('te-email', email);
 
       // Appel à 'me' pour récupérer les données utilisateur et familles
       const meData = await api('me', { email });
@@ -2366,7 +2378,8 @@ const ACTIONS = {
   },
   unlockParent: async () => {
     const password = document.getElementById('pu-pass').value;
-    const r = await api('verifyPassword', { password, firebaseToken: window.firebaseToken });
+    const email = me?.email || localStorage.getItem('te-email');
+    const r = await api('verifyPassword', { email, password, firebaseToken: window.firebaseToken });
     if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
   },
   'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
@@ -3007,7 +3020,7 @@ setInterval(async () => {
         if (serverFamily.updatedAt > (state.updatedAt || 0)) {
           console.log(`[SYNC-${syncId}] PULL: Server has newer data (${new Date(serverFamily.updatedAt).toISOString()}), merging`);
 
-          // Smart merge for children: preserve local task validations
+          // Smart merge for children: trust server's task validations from other devices
           if (serverFamily.children && state.children) {
             for (let i = 0; i < serverFamily.children.length && i < state.children.length; i++) {
               const serverChild = serverFamily.children[i];
@@ -3020,14 +3033,26 @@ setInterval(async () => {
                   if (t.done && t.completedAt) localValidated.set(key, t.completedAt);
                 });
 
-                // Merge: use server tasks but preserve local validations
+                // Merge: use server tasks but only preserve local validations if server doesn't have them
                 serverChild.tasks = (serverChild.tasks || []).map(serverTask => {
                   const key = `${serverTask.name}|${serverTask.xp}`;
                   const localCompletedAt = localValidated.get(key);
+
+                  // CRITICAL FIX: If server has a valid completion, trust it (from other device/approval)
+                  if (serverTask.done && serverTask.completedAt) {
+                    // Server already has this task validated - use server's state
+                    if (localCompletedAt && localCompletedAt !== serverTask.completedAt) {
+                      console.log(`[SYNC-${syncId}] PULL-MERGE: Using server's ${new Date(serverTask.completedAt).toISOString()} for ${serverTask.name} (not local ${new Date(localCompletedAt).toISOString()})`);
+                    }
+                    return serverTask;
+                  }
+
+                  // Only preserve local validation if server doesn't have one
                   if (localCompletedAt) {
-                    console.log(`[SYNC-${syncId}] PULL-MERGE: Preserving local validation for ${serverTask.name}`);
+                    console.log(`[SYNC-${syncId}] PULL-MERGE: Preserving local validation for ${serverTask.name}: ${new Date(localCompletedAt).toISOString()}`);
                     return { ...serverTask, done: true, completedAt: Number(localCompletedAt) };
                   }
+
                   return serverTask;
                 });
               }
