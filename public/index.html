@@ -2980,7 +2980,22 @@ setInterval(async () => {
     console.log(`[SYNC-${syncId}] Starting bidirectional sync at ${new Date().toLocaleTimeString()}`);
 
     try {
-      // Step 1: PULL - Get latest from server
+      // Step 1: PUSH FIRST - Send local changes (but debounce if we just received a notification)
+      // CRITICAL: Do PUSH before PULL to avoid race condition where PULL fetches stale data
+      const timeSinceNotif = now - lastNotificationTime;
+      if (timeSinceNotif < 2000) {
+        console.log(`[SYNC-${syncId}] PUSH: Skipped (received notification ${timeSinceNotif}ms ago, debouncing)`);
+      } else {
+        console.log(`[SYNC-${syncId}] PUSH: Sending local changes to server`);
+        await persistFamily();
+        console.log(`[SYNC-${syncId}] PUSH: Complete`);
+      }
+    } catch (e) {
+      console.error(`[SYNC-${syncId}] PUSH failed:`, e.message);
+    }
+
+    try {
+      // Step 2: PULL - Get latest from server (AFTER push completes to ensure we have latest)
       console.log(`[SYNC-${syncId}] PULL: Fetching latest from server`);
       const serverRes = await api('me');
       if (serverRes.families && serverRes.families[0]) {
@@ -3031,20 +3046,6 @@ setInterval(async () => {
       }
     } catch (e) {
       console.error(`[SYNC-${syncId}] PULL failed:`, e.message);
-    }
-
-    try {
-      // Step 2: PUSH - Send local changes (but debounce if we just received a notification)
-      const timeSinceNotif = now - lastNotificationTime;
-      if (timeSinceNotif < 2000) {
-        console.log(`[SYNC-${syncId}] PUSH: Skipped (received notification ${timeSinceNotif}ms ago, debouncing)`);
-      } else {
-        console.log(`[SYNC-${syncId}] PUSH: Sending local changes to server`);
-        await persistFamily();
-        console.log(`[SYNC-${syncId}] PUSH: Complete`);
-      }
-    } catch (e) {
-      console.error(`[SYNC-${syncId}] PUSH failed:`, e.message);
     }
 
     console.log(`[SYNC-${syncId}] Complete`);
