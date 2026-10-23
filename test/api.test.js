@@ -84,4 +84,112 @@ describe('API - Families', () => {
     expect(res.status).toBe(200);
     expect(res.body.me.email).toBe('parent@demo.fr');
   });
+
+  it('saveFamily preserves task completion when stale client sends done=false', async () => {
+    // Setup: Create a family with a task
+    const createRes = await request(app)
+      .post('/api')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        action: 'createFamily',
+        name: 'Sync Test Family'
+      });
+
+    expect(createRes.status).toBe(200);
+    const familyId = createRes.body.family.id;
+    const now = Date.now();
+
+    // Step 1: Device A (Mac) completes a task with done=true
+    const deviceA = {
+      family: {
+        id: familyId,
+        name: 'Sync Test Family',
+        children: [{
+          id: 'child-sync-test',
+          name: 'TestChild',
+          xp: 0,
+          gold: 0,
+          tasks: [{
+            icon: '✅',
+            name: 'Test Task',
+            xp: 10,
+            gold: 5,
+            done: true,
+            daily: false,
+            completedAt: now
+          }],
+          grades: [],
+          sanctions: []
+        }],
+        questList: [],
+        proposals: [],
+        sanctionsList: [],
+        requests: [],
+        gradeRequests: [],
+        taskRequests: [],
+        actionLog: [],
+        rewards: [],
+        owner: 'parent@demo.fr',
+        members: ['parent@demo.fr'],
+        day: '',
+        dailyBonus: { xp: 30, gold: 15 }
+      }
+    };
+
+    const deviceARes = await request(app)
+      .post('/api')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ action: 'saveFamily', ...deviceA });
+
+    expect(deviceARes.status).toBe(200);
+    expect(deviceARes.body.family.children[0].tasks[0].done).toBe(true);
+    expect(deviceARes.body.family.children[0].tasks[0].completedAt).toBe(now);
+
+    // Step 2: Device B (Phone) has stale data (done=false) and sends it
+    // This simulates a phone that went offline before the Mac's update
+    const deviceB = {
+      family: {
+        id: familyId,
+        name: 'Sync Test Family',
+        children: [{
+          id: 'child-sync-test',
+          name: 'TestChild',
+          xp: 0,
+          gold: 0,
+          tasks: [{
+            icon: '✅',
+            name: 'Test Task',
+            xp: 10,
+            gold: 5,
+            done: false,
+            daily: false,
+            completedAt: null
+          }],
+          grades: [],
+          sanctions: []
+        }],
+        questList: [],
+        proposals: [],
+        sanctionsList: [],
+        requests: [],
+        gradeRequests: [],
+        taskRequests: [],
+        actionLog: [],
+        rewards: [],
+        owner: 'parent@demo.fr',
+        members: ['parent@demo.fr'],
+        day: '',
+        dailyBonus: { xp: 30, gold: 15 }
+      }
+    };
+
+    const deviceBRes = await request(app)
+      .post('/api')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ action: 'saveFamily', ...deviceB });
+
+    expect(deviceBRes.status).toBe(200);
+    expect(deviceBRes.body.family.children[0].tasks[0].done).toBe(true);
+    expect(deviceBRes.body.family.children[0].tasks[0].completedAt).toBe(now);
+  });
 });

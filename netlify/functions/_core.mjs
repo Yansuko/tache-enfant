@@ -458,7 +458,45 @@ async function saveFamily(store, email, b) {
   // Merge children: preserve existing tasks not in incoming data
   const incomingChildIds = new Set(inc.children?.map(c => c.id) || []);
   const serverOnlyChildren = cur.children?.filter(c => !inc.children?.some(ic => ic.id === c.id)) || [];
-  merged.children = [...(inc.children || []), ...serverOnlyChildren];
+
+  // ponytail: task completion merge — preserve server's done=true state if incoming is stale (done=false or no completedAt).
+  // This prevents devices with stale cached data from undoing validated tasks.
+  const mergedChildren = (inc.children || []).map(incChild => {
+    // Find matching server child by ID or name
+    const serverChild = cur.children?.find(sc =>
+      (incChild.id && sc.id === incChild.id) ||
+      (incChild.name && !incChild.id && sc.name === incChild.name)
+    );
+
+    if (!serverChild || !serverChild.tasks || !incChild.tasks) {
+      return incChild; // No merge needed, return incoming as-is
+    }
+
+    // Merge tasks by name+xp, preserving server completion status if incoming is stale
+    const serverTasksByKey = new Map();
+    (serverChild.tasks || []).forEach(t => {
+      const key = `${t.name}|${t.xp}`;
+      serverTasksByKey.set(key, t);
+    });
+
+    const mergedTasks = (incChild.tasks || []).map(incTask => {
+      const key = `${incTask.name}|${incTask.xp}`;
+      const serverTask = serverTasksByKey.get(key);
+
+      // Preserve server's completion if server has done=true and incoming has done=false/null
+      if (serverTask && serverTask.done === true && serverTask.completedAt &&
+          (!incTask.done || !incTask.completedAt)) {
+        console.log(`[MERGE-TASK-PRESERVE] ${incChild.name}: '${incTask.name}' — keeping server completion (${new Date(serverTask.completedAt).toISOString()})`);
+        return { ...incTask, done: serverTask.done, completedAt: serverTask.completedAt };
+      }
+
+      return incTask;
+    });
+
+    return { ...incChild, tasks: mergedTasks };
+  });
+
+  merged.children = [...mergedChildren, ...serverOnlyChildren];
 
   // Normalize completedAt timestamps to always be numbers
   for (const child of merged.children || []) {
