@@ -2985,10 +2985,39 @@ setInterval(async () => {
       const serverRes = await api('me');
       if (serverRes.families && serverRes.families[0]) {
         const serverFamily = serverRes.families[0];
-        // Merge: keep local role/profile but update data if server is newer
+        // Merge: keep local role/profile but merge data intelligently
+        // IMPORTANT: Preserve local task validations (done=true with completedAt) not yet sent to server
         if (serverFamily.updatedAt > (state.updatedAt || 0)) {
           console.log(`[SYNC-${syncId}] PULL: Server has newer data (${new Date(serverFamily.updatedAt).toISOString()}), merging`);
-          // Intelligently merge arrays
+
+          // Smart merge for children: preserve local task validations
+          if (serverFamily.children && state.children) {
+            for (let i = 0; i < serverFamily.children.length && i < state.children.length; i++) {
+              const serverChild = serverFamily.children[i];
+              const localChild = state.children[i];
+              if (serverChild.tasks && localChild.tasks) {
+                // Build map of local validated tasks by (name, xp)
+                const localValidated = new Map();
+                localChild.tasks.forEach(t => {
+                  const key = `${t.name}|${t.xp}`;
+                  if (t.done && t.completedAt) localValidated.set(key, t.completedAt);
+                });
+
+                // Merge: use server tasks but preserve local validations
+                serverChild.tasks = (serverChild.tasks || []).map(serverTask => {
+                  const key = `${serverTask.name}|${serverTask.xp}`;
+                  const localCompletedAt = localValidated.get(key);
+                  if (localCompletedAt) {
+                    console.log(`[SYNC-${syncId}] PULL-MERGE: Preserving local validation for ${serverTask.name}`);
+                    return { ...serverTask, done: true, completedAt: Number(localCompletedAt) };
+                  }
+                  return serverTask;
+                });
+              }
+            }
+          }
+
+          // Update all data fields
           state.children = serverFamily.children || state.children;
           state.rewards = serverFamily.rewards || state.rewards;
           state.requests = serverFamily.requests || state.requests;
