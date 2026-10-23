@@ -516,7 +516,7 @@ async function saveFamily(store, email, b) {
       child.id = 'child-' + crypto.randomBytes(4).toString('hex');
     }
   }
-  for (const k of ['requests', 'gradeRequests', 'taskRequests']) merged[k] = mergeById(cur[k], inc[k]);
+  for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals', 'questList']) merged[k] = mergeById(cur[k], inc[k]);
   stampRewardPurchases(cur.requests, merged.requests);
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
