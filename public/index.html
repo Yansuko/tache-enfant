@@ -632,6 +632,18 @@ function rolloverDay(f, day) {
 // persistance de la famille active vers le serveur — coalescée (dernier gagne)
 // ponytail: dernier-écrit-gagne, pas de verrou/etag — suffisant à l'échelle d'une famille ; passer à un merge/etag si conflits multi-appareils
 let saving = false, dirty = false;
+let lastNotificationTime = 0; // Track when we received a push notification
+
+// Listen for messages from Service Worker (e.g., notification received)
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.controller?.postMessage({ type: 'GET_STATE' });
+  navigator.serviceWorker.onmessage = event => {
+    if (event.data?.type === 'NOTIFICATION_RECEIVED') {
+      console.log('[CLIENT] Notification received from SW, debouncing sync for 2s');
+      lastNotificationTime = Date.now();
+    }
+  };
+}
 async function persistFamily() {
   if (!token || !state) return;
   dirty = true;
@@ -2955,11 +2967,59 @@ checkServiceWorkerStatus();
 registerServiceWorker();
 
 // Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
-// Auto-refresh: sync every 3 seconds
-setInterval(() => {
-  if (token && state) {
-    console.log('[AUTO-REFRESH] Syncing at', new Date().toLocaleTimeString());
-    persistFamily().catch(e => console.error('[AUTO-REFRESH] Error:', e.message));
+// Multi-client sync: pull server state + push local changes every 3 seconds
+let lastSyncTime = 0;
+let syncInProgress = false;
+setInterval(async () => {
+  if (token && state && !syncInProgress) {
+    const now = Date.now();
+    if (now - lastSyncTime < 3000) return; // Debounce
+    syncInProgress = true;
+    lastSyncTime = now;
+    const syncId = Math.random().toString(36).substring(7);
+    console.log(`[SYNC-${syncId}] Starting bidirectional sync at ${new Date().toLocaleTimeString()}`);
+
+    try {
+      // Step 1: PULL - Get latest from server
+      console.log(`[SYNC-${syncId}] PULL: Fetching latest from server`);
+      const serverRes = await api('me');
+      if (serverRes.families && serverRes.families[0]) {
+        const serverFamily = serverRes.families[0];
+        // Merge: keep local role/profile but update data if server is newer
+        if (serverFamily.updatedAt > (state.updatedAt || 0)) {
+          console.log(`[SYNC-${syncId}] PULL: Server has newer data (${new Date(serverFamily.updatedAt).toISOString()}), merging`);
+          // Intelligently merge arrays
+          state.children = serverFamily.children || state.children;
+          state.rewards = serverFamily.rewards || state.rewards;
+          state.requests = serverFamily.requests || state.requests;
+          state.gradeRequests = serverFamily.gradeRequests || state.gradeRequests;
+          state.taskRequests = serverFamily.taskRequests || state.taskRequests;
+          state.sanctionsList = serverFamily.sanctionsList || state.sanctionsList;
+          state.updatedAt = serverFamily.updatedAt;
+          normalizeFamilyData(state);
+          render();
+        }
+      }
+    } catch (e) {
+      console.error(`[SYNC-${syncId}] PULL failed:`, e.message);
+    }
+
+    try {
+      // Step 2: PUSH - Send local changes (but debounce if we just received a notification)
+      const timeSinceNotif = now - lastNotificationTime;
+      if (timeSinceNotif < 2000) {
+        console.log(`[SYNC-${syncId}] PUSH: Skipped (received notification ${timeSinceNotif}ms ago, debouncing)`);
+      } else {
+        console.log(`[SYNC-${syncId}] PUSH: Sending local changes to server`);
+        await persistFamily();
+        console.log(`[SYNC-${syncId}] PUSH: Complete`);
+      }
+    } catch (e) {
+      console.error(`[SYNC-${syncId}] PUSH failed:`, e.message);
+    }
+
+    console.log(`[SYNC-${syncId}] Complete`);
+    syncInProgress = false;
   }
 }, 3000);
 

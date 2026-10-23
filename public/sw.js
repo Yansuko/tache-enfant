@@ -36,8 +36,11 @@ self.addEventListener('push', event => {
     body,
     icon,
     badge,
-    tag,
-    data,
+    tag, // Deduplicates: same tag = same notification (replaced, not doubled)
+    data: {
+      ...data,
+      receivedAt: Date.now() // Track when notification was received
+    },
     requireInteraction: true, // iOS 16+ requiert ceci pour garder la notification affichée
     // Note: Ne pas utiliser 'vibrate' - iOS ne supporte pas la Vibration API
     actions: [
@@ -47,7 +50,18 @@ self.addEventListener('push', event => {
 
   event.waitUntil(
     self.registration.showNotification(title, options)
-      .then(() => console.log('[SW-PUSH] Notification shown:', title))
+      .then(() => {
+        console.log('[SW-PUSH] Notification shown:', title);
+        // Signal to clients that notification was just received to prevent re-save loops
+        return clients.matchAll({ type: 'window' }).then(clientList => {
+          clientList.forEach(client => {
+            client.postMessage({
+              type: 'NOTIFICATION_RECEIVED',
+              receivedAt: Date.now()
+            });
+          });
+        });
+      })
       .catch(err => console.error('[SW-PUSH] Failed to show notification:', err))
   );
 });
