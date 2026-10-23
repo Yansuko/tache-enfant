@@ -1662,7 +1662,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'verifyPassword': {
       // Accept email from body (for unlock scenario) or from token (for authenticated scenario)
-      const verifyEmail = body.email || email;
+      const verifyEmail = String(body.email || email || '').toLowerCase();
       console.log('[VERIFY-PASSWORD] Attempting - email:', verifyEmail, 'hasToken:', !!email);
       if (!verifyEmail || !body.password) {
         console.log('[VERIFY-PASSWORD] Missing email or password');
