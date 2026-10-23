@@ -2230,7 +2230,6 @@ const ACTIONS = {
     const id = 'child-' + Math.random().toString(36).substring(2, 10);
     state.children.push({ id, name, xp: 0, gold: 0, tasks: [], grades: [], sanctions: [] });
     document.getElementById('new-child-name').value = '';
-    save(); render();
   },
   'del-child': el => {
     const c = state.children[+el.dataset.i];
