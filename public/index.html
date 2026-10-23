@@ -167,7 +167,16 @@ function initAuth() {
   // Cela permet au reste du code de continuer à fonctionner sans modification
   if (window.firebaseOnAuthStateChangedCallbacks) {
     window.firebaseOnAuthStateChangedCallbacks.forEach(cb => {
-      cb(storedToken ? { hasToken: true } : null);
+      if (storedToken) {
+        // CRITICAL FIX: Return a mock user object with getIdToken() method
+        // The boot() code expects user.getIdToken() to return the token
+        cb({
+          hasToken: true,
+          getIdToken: async () => storedToken
+        });
+      } else {
+        cb(null);
+      }
     });
   }
 }
