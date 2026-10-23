@@ -2195,6 +2195,7 @@ const ACTIONS = {
         req.status = 'approved';
       }
     });
+    save(); render();
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
   'approve-grade': async el => {
