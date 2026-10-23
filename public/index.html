@@ -648,6 +648,10 @@ async function persistFamily() {
       console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0,2) || []));
       console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 }))?.slice(0,1) || []));
       console.log(`[PERSIST-SEND-ACTIONLOG-${persistId}] actionLog in payload:`, payload.family.actionLog?.length || 0, 'entries');
+      console.log(`[PERSIST-SEND-PROPOSALS-${persistId}] proposals in payload:`, payload.family.proposals?.length || 0);
+      if (payload.family.proposals?.length > 0) {
+        console.log(`[PERSIST-SEND-PROPOSALS-DETAIL-${persistId}] proposals:`, JSON.stringify(payload.family.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+      }
 
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
@@ -663,6 +667,10 @@ async function persistFamily() {
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - requests:`, JSON.stringify(res.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - sanctionsList:`, JSON.stringify(res.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-ACTIONLOG-${persistId}] Backend returned actionLog:`, res.family.actionLog?.length || 0, 'entries');
+      console.log(`[PERSIST-RECV-PROPOSALS-${persistId}] Backend returned proposals:`, res.family.proposals?.length || 0);
+      if (res.family.proposals?.length > 0) {
+        console.log(`[PERSIST-RECV-PROPOSALS-DETAIL-${persistId}] proposals in response:`, JSON.stringify(res.family.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+      }
 
       normalizeFamilyData(res.family);
       console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));

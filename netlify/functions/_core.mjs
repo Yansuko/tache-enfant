@@ -558,7 +558,17 @@ async function saveFamily(store, email, b) {
       child.id = 'child-' + crypto.randomBytes(4).toString('hex');
     }
   }
+  // Log proposals before merge
+  console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] Before merge - cur.proposals count:`, cur.proposals?.length || 0);
+  console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] Before merge - inc.proposals count:`, inc.proposals?.length || 0);
+  if (inc.proposals?.length > 0) {
+    console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] inc.proposals:`, JSON.stringify(inc.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+  }
   for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals', 'questList']) merged[k] = mergeById(cur[k], inc[k]);
+  console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] After merge - merged.proposals count:`, merged.proposals?.length || 0);
+  if (merged.proposals?.length > 0) {
+    console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] merged.proposals:`, JSON.stringify(merged.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+  }
   stampRewardPurchases(cur.requests, merged.requests);
   // notifier les parents pour les nouvelles demandes et les approbations
   if (emailSender && inc.requests) {
@@ -626,6 +636,10 @@ async function saveFamily(store, email, b) {
   console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to store - requests:`, JSON.stringify(famPayload.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to store - sanctionsList:`, JSON.stringify(famPayload.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-WRITE-ACTIONLOG-${saveId}] Writing to store - actionLog:`, famPayload.actionLog?.length || 0, 'entries, type:', typeof famPayload.actionLog);
+  console.log(`[SAVEFAMILY-WRITE-PROPOSALS-${saveId}] Writing to store - proposals:`, famPayload.proposals?.length || 0);
+  if (famPayload.proposals?.length > 0) {
+    console.log(`[SAVEFAMILY-WRITE-PROPOSALS-DETAIL-${saveId}] proposals:`, JSON.stringify(famPayload.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+  }
 
   console.log(`[SAVEFAMILY-WRITE-STORE-${saveId}] Calling store.set() with actionLog:`, famPayload.actionLog?.length || 0, 'entries');
   await store.set('family:' + inc.id, famPayload);
@@ -758,6 +772,10 @@ async function saveFamily(store, email, b) {
   console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RETURN-ACTIONLOG-${saveId}] Returning to frontend - actionLog:`, merged.actionLog?.length || 0, 'entries');
+  console.log(`[SAVEFAMILY-RETURN-PROPOSALS-${saveId}] Returning to frontend - proposals:`, merged.proposals?.length || 0);
+  if (merged.proposals?.length > 0) {
+    console.log(`[SAVEFAMILY-RETURN-PROPOSALS-DETAIL-${saveId}] proposals:`, JSON.stringify(merged.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+  }
 
   return { status: 200, body: { family: merged } };
 }
