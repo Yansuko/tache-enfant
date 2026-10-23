@@ -3016,9 +3016,12 @@ setInterval(async () => {
       if (serverRes.families && serverRes.families[0]) {
         const serverFamily = serverRes.families[0];
         // Merge: keep local role/profile but merge data intelligently
-        // IMPORTANT: Preserve local task validations (done=true with completedAt) not yet sent to server
-        if (serverFamily.updatedAt > (state.updatedAt || 0)) {
-          console.log(`[SYNC-${syncId}] PULL: Server has newer data (${new Date(serverFamily.updatedAt).toISOString()}), merging`);
+        // IMPORTANT: ALWAYS merge children intelligently, even if updatedAt is same
+        // This ensures multi-device sync works: if Device A validated a task, Device B MUST see it
+        // even if Device B did a PUSH right before the PULL
+        if (serverFamily.updatedAt >= (state.updatedAt || 0)) {
+          const isNewer = serverFamily.updatedAt > (state.updatedAt || 0);
+          console.log(`[SYNC-${syncId}] PULL: ${isNewer ? 'Server has newer' : 'Doing intelligent merge of'} data (server: ${new Date(serverFamily.updatedAt).toISOString()}, local: ${new Date(state.updatedAt || 0).toISOString()}), merging`);
 
           // Smart merge for children: trust server's task validations from other devices
           if (serverFamily.children && state.children) {

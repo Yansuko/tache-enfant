@@ -1337,7 +1337,7 @@ async function notifyChild(store, familyId, childName, title, body, icon = '📢
   return notifyFamily(store, familyId, title, body, icon, tag);
 }
 
-const PUBLIC = new Set(['login', 'signup', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
+const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
 
 // point d'entrée unique. payload = { action, token, body }
 async function logActivity(store, type, subject, target, details) {
@@ -1656,13 +1656,16 @@ export async function handleApi({ action, token, body = {} }, store) {
       }
     }
     case 'verifyPassword': {
-      // JWT auth only - Firebase removed
-      console.log('[VERIFY-PASSWORD] Attempting - email:', email);
-      // Fallback: legacy password verification from store
-      console.log('[VERIFY-PASSWORD] Falling back to legacy verification');
-      const acc = await store.get('account:' + email);
+      // Accept email from body (for unlock scenario) or from token (for authenticated scenario)
+      const verifyEmail = body.email || email;
+      console.log('[VERIFY-PASSWORD] Attempting - email:', verifyEmail, 'hasToken:', !!email);
+      if (!verifyEmail || !body.password) {
+        console.log('[VERIFY-PASSWORD] Missing email or password');
+        return { status: 200, body: { ok: false } };
+      }
+      const acc = await store.get('account:' + verifyEmail);
       const ok = !!(acc && checkPassword(body.password, acc.salt, acc.hash));
-      console.log('[VERIFY-PASSWORD] Legacy result: ok=', ok, 'account found:', !!acc);
+      console.log('[VERIFY-PASSWORD] Result: ok=', ok, 'account found:', !!acc, 'email:', verifyEmail);
       return { status: 200, body: { ok } };
     }
     case 'changePassword': {

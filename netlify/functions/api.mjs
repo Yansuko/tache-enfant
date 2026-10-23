@@ -1,76 +1,44 @@
-// Fonction Netlify (Functions v2) — expose l'API sur /api via Firebase Realtime Database
-import admin from 'firebase-admin';
+// Fonction Netlify (Functions v2) — expose l'API sur /api via Netlify Blobs
+import { getStore } from '@netlify/blobs';
 import { handleApi, setEmailSender } from './_core.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-let db = null;
-
-function initFirebase() {
-  if (db) return;
-  try {
-    let serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-    if (!serviceAccount.project_id) {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
-    }
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-    db = admin.database();
-  } catch (e) {
-    console.error('[FIREBASE-INIT] Error:', e.message);
-    throw e;
-  }
-}
-
-// adapte Firebase à l'interface { get, set, del, list } attendue par le cœur
-function firebaseStore() {
-  initFirebase();
-
-  const getPath = (key) => {
-    // Map blob keys to Firebase paths
-    if (key.startsWith('family:')) return `families/${key.replace('family:', '')}`;
-    if (key.startsWith('account:')) return `users/email-${key.replace(/[^a-z0-9]/gi, '_')}`;
-    if (key.startsWith('_')) return `_metadata/${key.substring(1)}`;
-    return `_other/${key}`;
-  };
+// Adapte Netlify Blobs à l'interface { get, set, del, list } attendue par le cœur
+async function blobsStore() {
+  const store = getStore('tache-enfant');
 
   return {
     get: async (k) => {
-      const path = getPath(k);
-      const snap = await db.ref(path).once('value');
-      return snap.val();
+      try {
+        const data = await store.get(k);
+        return data ? JSON.parse(data.toString()) : null;
+      } catch (e) {
+        if (e.message?.includes('not found')) return null;
+        throw e;
+      }
     },
     set: async (k, v) => {
-      const path = getPath(k);
-      await db.ref(path).set(v);
+      await store.set(k, JSON.stringify(v ?? null));
     },
     del: async (k) => {
-      const path = getPath(k);
-      await db.ref(path).remove();
+      try {
+        await store.delete(k);
+      } catch (e) {
+        if (!e.message?.includes('not found')) throw e;
+      }
     },
     list: async () => {
-      const keys = [];
-
-      // List all family keys
-      const famsSnap = await db.ref('families').once('value');
-      const families = famsSnap.val() || {};
-      Object.keys(families).forEach(id => keys.push(`family:${id}`));
-
-      // List users by email (get from users)
-      const usersSnap = await db.ref('users').once('value');
-      const users = usersSnap.val() || {};
-      Object.values(users).forEach(u => {
-        if (u.email) keys.push(`account:${u.email}`);
-      });
-
-      // List metadata
-      const metaSnap = await db.ref('_metadata').once('value');
-      const meta = metaSnap.val() || {};
-      Object.keys(meta).forEach(k => keys.push(`_${k}`));
-
-      return keys;
+      const result = await store.list();
+      // Handle different response formats
+      if (Array.isArray(result)) {
+        return result.map(item => item.key || item.path || item.name);
+      } else if (result?.blobs && Array.isArray(result.blobs)) {
+        return result.blobs.map(item => item.key || item.path || item.name);
+      } else if (result && typeof result === 'object') {
+        return Object.keys(result).filter(k => !k.startsWith('_'));
+      }
+      return [];
     },
   };
 }
@@ -107,7 +75,8 @@ export default async (req) => {
   try { payload = await req.json(); } catch { /* corps vide/invalide */ }
   const { action, ...body } = payload;
   try {
-    const r = await handleApi({ action, token, body }, firebaseStore());
+    const store = await blobsStore();
+    const r = await handleApi({ action, token, body }, store);
     return json(r.status, r.body);
   } catch (e) {
     return json(500, { error: 'Erreur serveur : ' + (e && e.message || e) });

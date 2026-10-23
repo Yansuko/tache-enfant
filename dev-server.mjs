@@ -1,11 +1,12 @@
-// Serveur de dev local — sert les fichiers statiques de tache-enfant/ et l'API /api,
-// utilise Firebase Realtime Database comme store. Reproduit netlify/functions/api.mjs.
+// Serveur de dev local — sert les fichiers statiques et l'API /api,
+// utilise SQLite comme store. Reproduit netlify/functions/api.mjs.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import admin from 'firebase-admin';
+import Database from 'better-sqlite3';
 import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
+import { createDatabaseAdapter } from './database.js';
 
 // Load .env file if present
 try {
@@ -20,103 +21,34 @@ const DIR = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.join(DIR, 'public');
 const PORT = process.env.PORT || 8123;
 
-// Initialize Firebase
+// Initialize SQLite database
 let db = null;
-function initFirebase() {
+function initDatabase() {
   if (db) return;
   try {
-    let serviceAccount = {};
-    try {
-      const accountPath = path.join(DIR, 'firebase-service-account.json');
-      const accountJson = fs.readFileSync(accountPath, 'utf-8');
-      serviceAccount = JSON.parse(accountJson);
-    } catch {
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    const dbPath = path.join(DIR, '.data', 'dev-local.db');
+    const dataDir = path.dirname(dbPath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
-    if (!serviceAccount.project_id) {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT not configured');
-    }
-    try {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        databaseURL: process.env.FIREBASE_DATABASE_URL
-      });
-    } catch (e) {
-      // App already initialized (happens on subsequent calls)
-      if (!e.message.includes('already exists')) throw e;
-    }
-    db = admin.database();
-    console.log('[FIREBASE] Initialized for dev server');
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    console.log('[DB] SQLite database initialized at', dbPath);
   } catch (e) {
-    console.error('[FIREBASE-INIT] Error:', e.message);
+    console.error('[DB-INIT] Error:', e.message);
     throw e;
   }
 }
 
-// Firebase store - same interface as netlify/functions/api.mjs
-const store = {
-  get: async (k) => {
-    initFirebase();
-    let path = '';
-    if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
-    else if (k.startsWith('account:')) {
-      const email = k.replace('account:', '');
-      path = `users/email-${email.replace(/[^a-z0-9]/gi, '_')}`;
-    }
-    else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
-    else path = `_other/${k}`;
-
-    const snap = await db.ref(path).once('value');
-    return snap.val();
-  },
-
-  set: async (k, v) => {
-    initFirebase();
-    let path = '';
-    if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
-    else if (k.startsWith('account:')) {
-      const email = k.replace('account:', '');
-      path = `users/email-${email.replace(/[^a-z0-9]/gi, '_')}`;
-    }
-    else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
-    else path = `_other/${k}`;
-
-    await db.ref(path).set(v);
-  },
-
-  del: async (k) => {
-    initFirebase();
-    let path = '';
-    if (k.startsWith('family:')) path = `families/${k.replace('family:', '')}`;
-    else if (k.startsWith('account:')) {
-      const email = k.replace('account:', '');
-      path = `users/email-${email.replace(/[^a-z0-9]/gi, '_')}`;
-    }
-    else if (k.startsWith('_')) path = `_metadata/${k.substring(1)}`;
-    else path = `_other/${k}`;
-
-    await db.ref(path).remove();
-  },
-
-  list: async () => {
-    initFirebase();
-    const keys = [];
-
-    // List all families
-    const famsSnap = await db.ref('families').once('value');
-    const families = famsSnap.val() || {};
-    Object.keys(families).forEach(id => keys.push(`family:${id}`));
-
-    // List users
-    const usersSnap = await db.ref('users').once('value');
-    const users = usersSnap.val() || {};
-    Object.values(users).forEach(u => {
-      if (u.email) keys.push(`account:${u.email}`);
-    });
-
-    return keys;
+// Local store - same interface as netlify/functions/api.mjs
+let store = null;
+function getStore() {
+  if (!store) {
+    initDatabase();
+    store = createDatabaseAdapter(db, false);
   }
-};
+  return store;
+}
 
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png' };
 
@@ -164,6 +96,7 @@ const server = http.createServer(async (req, res) => {
       const { action, ...bodyData } = payload;
       const body = bodyData;
       try {
+        const store = getStore();
         const r = await handleApi({ action, token, body }, store);
         res.writeHead(r.status, { 'content-type': 'application/json' });
         res.end(JSON.stringify(r.body));
@@ -175,18 +108,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Serve config files from root (firebase-config.js)
-  if (req.url === '/firebase-config.js') {
-    const file = path.join(DIR, 'firebase-config.js');
-    fs.readFile(file, (e, data) => {
-      if (e) { res.writeHead(404); return res.end('Not found'); }
-      res.writeHead(200, { 'content-type': 'text/javascript' });
-      res.end(data);
-    });
-    return;
-  }
-
-  // Serve node_modules (for Firebase SDK and other deps)
+  // Serve node_modules
   if (req.url.startsWith('/node_modules/')) {
     const rel = decodeURIComponent(req.url.split('?')[0]);
     const file = path.join(DIR, path.normalize(rel));
