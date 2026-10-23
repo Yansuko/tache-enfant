@@ -734,6 +734,9 @@ async function saveFamily(store, email, b) {
         if (proposal.type === 'task') {
           await notifyParents(store, inc.id, `💡 ${proposal.proposedBy} propose: '${proposal.name}'`, `+${proposal.xp || 0} XP, +${proposal.gold || 0} or`, '💡', 'proposal')
             .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
+        } else if (proposal.type === 'quest') {
+          await notifyParents(store, inc.id, `💡 ${proposal.proposedBy} propose une quête: '${proposal.name}'`, 'À valider avec XP/Or', '💡', 'proposal')
+            .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
         } else if (proposal.type === 'reward') {
           await notifyParents(store, inc.id, `🛍️ ${proposal.proposedBy} propose: '${proposal.name}'`, `Coût: ${proposal.cost || 0} or`, '🛍️', 'proposal')
             .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
