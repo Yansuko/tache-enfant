@@ -1,10 +1,12 @@
-// Service Worker pour DailyKids - Gestion des notifications push
-// Minimal initialization to prevent parsing errors
+// Service Worker — Ultra-minimal for debugging
 
-try { console.log('[SW] Service Worker initializing'); } catch (e) {}
+self.addEventListener('install', event => {
+  self.skipWaiting();
+});
 
-// ponytail: if self.location is undefined in some contexts, skip scope logging
-try { console.log('[SW-SCOPE]', typeof self !== 'undefined' ? self.scope : 'N/A'); } catch (e) {}
+self.addEventListener('activate', event => {
+  event.waitUntil(clients.claim());
+});
 
 self.addEventListener('push', event => {
   console.log('[SW-PUSH] Notification received:', event);
