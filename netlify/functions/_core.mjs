@@ -38,6 +38,11 @@ export function verifyToken(token, secret) {
 
 // ponytail: secret auto-généré et stocké dans le store si absent — zéro config sur Netlify. Course possible au tout premier boot (double génération), négligeable.
 async function getSecret(store) {
+  // Production: use JWT_SECRET env var if available (required for container consistency)
+  if (process.env.JWT_SECRET) {
+    return process.env.JWT_SECRET;
+  }
+  // Fallback: auto-generate and store (for dev only)
   let s = await store.get('secret');
   if (!s) { s = { key: crypto.randomBytes(32).toString('hex') }; await store.set('secret', s); }
   return s.key;
