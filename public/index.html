@@ -2193,6 +2193,16 @@ const ACTIONS = {
     state.taskRequests = (state.taskRequests || []).filter(req =>
       !(req.child === p.child && req.taskName === p.name && req.status === 'pending')
     );
+    // Mark corresponding task as completedAt to prevent server from regenerating task requests
+    for (const child of state.children || []) {
+      if (child.name === p.child) {
+        for (const task of child.tasks || []) {
+          if (task.name === p.name && task.done && !task.completedAt) {
+            task.completedAt = Date.now();
+          }
+        }
+      }
+    }
     save(); render();
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
