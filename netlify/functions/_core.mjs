@@ -1532,22 +1532,9 @@ export async function handleApi({ action, token, body = {} }, store) {
   if (!PUBLIC.has(action)) {
     console.log('[HANDLEAPI] action:', action, 'token exists:', !!token, 'token length:', token?.length);
     // Try Firebase token first (Firebase tokens are JWTs)
+    // JWT-based token verification (Firebase removed - using secret-based JWT)
     if (token) {
-      try {
-        console.log('[HANDLEAPI] Attempting Firebase token verification...');
-        firebaseUid = await verifyFirebaseToken(token);
-        console.log('[HANDLEAPI] Firebase verification succeeded, uid:', firebaseUid);
-        // handlers check access by email (family.members), so resolve it from the uid
-        try { email = (await auth.getUser(firebaseUid)).email?.toLowerCase() || null; }
-        catch (e) { console.log('[HANDLEAPI] Firebase email lookup failed:', e.message); }
-      } catch (e) {
-        console.log('[HANDLEAPI] Firebase verification failed:', e.message);
-        // Not a valid Firebase token or verification failed, fall through to legacy
-      }
-    }
-    // Fall back to legacy secret-based token verification
-    if (!email && !firebaseUid) {
-      console.log('[HANDLEAPI] Attempting legacy token verification...');
+      console.log('[HANDLEAPI] Attempting JWT token verification...');
       email = verifyToken(token, secret);
       if (email) console.log('[HANDLEAPI] Legacy verification succeeded, email:', email);
     }
