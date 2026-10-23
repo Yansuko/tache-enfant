@@ -2189,6 +2189,12 @@ const ACTIONS = {
     // Add approved quest to questList
     state.questList = state.questList || [];
     state.questList.push({ icon: p.icon, name: p.name, xp: p.xp, gold: p.gold, frequency: p.frequency });
+    // Mark any pending task requests for this quest as approved
+    (state.taskRequests || []).forEach(req => {
+      if (req.child === p.child && req.taskName === p.name && req.status === 'pending') {
+        req.status = 'approved';
+      }
+    });
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
   'approve-grade': async el => {
