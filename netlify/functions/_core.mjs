@@ -267,6 +267,35 @@ async function withNames(store, fam) {
   return { ...fam, memberInfo };
 }
 async function stateFor(store, email) {
+  // Check if this is a child email (ends with @enfant.local)
+  if (email && email.endsWith('@enfant.local')) {
+    // For child, find their family by looking through all families
+    const childName = email.replace('@enfant.local', '');
+    const families = [];
+
+    // ponytail: linear scan of all families; create child-name-index if throughput matters
+    if (store.list) {
+      const keys = await store.list();
+      for (const key of keys) {
+        if (key.startsWith('family:')) {
+          try {
+            const f = await store.get(key);
+            if (f && f.children && f.children.some(c => c.name === childName)) {
+              normalizeFamilyData(f);
+              families.push(await withNames(store, f));
+            }
+          } catch (err) {
+            console.error(`[STATEFOR-CHILD] Error reading family ${key}:`, err.message);
+          }
+        }
+      }
+    }
+
+    console.log(`[STATEFOR-CHILD] Looking up child: ${childName}, found in ${families.length} family(ies)`);
+    return { me: { email, name: childName }, families };
+  }
+
+  // Parent account lookup
   const acc = await store.get('account:' + email);
   if (!acc) return { me: null, families: [] };
   const families = [];
@@ -429,6 +458,10 @@ async function saveFamily(store, email, b) {
   if (!inc || !inc.id) return err(400, 'Famille invalide.');
 
   // Log incoming shop data BEFORE normalization
+  console.log(`[SAVEFAMILY-RECV-GRADES-${saveId}] gradeRequests count:`, inc.gradeRequests?.length || 0);
+  if (inc.gradeRequests?.length > 0) {
+    console.log(`[SAVEFAMILY-RECV-GRADES-DETAIL-${saveId}] grades:`, JSON.stringify(inc.gradeRequests.map(g => ({ id: g.id, child: g.child, subject: g.subject, status: g.status }))));
+  }
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] requests:`, JSON.stringify(inc.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RECV-SHOP-${saveId}] sanctionsList:`, JSON.stringify(inc.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RECV-ACTIONLOG-${saveId}] incoming actionLog:`, inc.actionLog?.length || 0, 'entries, type:', typeof inc.actionLog);
@@ -552,6 +585,10 @@ async function saveFamily(store, email, b) {
   }
 
   // Log merged data BEFORE store write
+  console.log(`[SAVEFAMILY-MERGED-GRADES-${saveId}] gradeRequests count:`, merged.gradeRequests?.length || 0);
+  if (merged.gradeRequests?.length > 0) {
+    console.log(`[SAVEFAMILY-MERGED-GRADES-DETAIL-${saveId}] merged grades:`, JSON.stringify(merged.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))?.slice(0, 3)));
+  }
   console.log(`[SAVEFAMILY-MERGED-${saveId}] requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-MERGED-${saveId}] sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-MERGED-ACTIONLOG-${saveId}] actionLog in merged:`, merged.actionLog?.length || 0, 'entries, type:', typeof merged.actionLog);
@@ -578,6 +615,10 @@ async function saveFamily(store, email, b) {
   };
 
   // Log what's being written
+  console.log(`[SAVEFAMILY-WRITE-GRADES-${saveId}] Writing to store - gradeRequests:`, famPayload.gradeRequests?.length || 0);
+  if (famPayload.gradeRequests?.length > 0) {
+    console.log(`[SAVEFAMILY-WRITE-GRADES-DETAIL-${saveId}] grades to store:`, JSON.stringify(famPayload.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))?.slice(0, 3)));
+  }
   console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to store - requests:`, JSON.stringify(famPayload.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-WRITE-SHOP-${saveId}] Writing to store - sanctionsList:`, JSON.stringify(famPayload.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-WRITE-ACTIONLOG-${saveId}] Writing to store - actionLog:`, famPayload.actionLog?.length || 0, 'entries, type:', typeof famPayload.actionLog);
@@ -703,6 +744,10 @@ async function saveFamily(store, email, b) {
   for (const m of merged.members) { const a = await store.get('account:' + m); merged.memberInfo[m] = a ? a.name : null; }
 
   // Log what we're returning to frontend
+  console.log(`[SAVEFAMILY-RETURN-GRADES-${saveId}] Returning to frontend - gradeRequests:`, merged.gradeRequests?.length || 0);
+  if (merged.gradeRequests?.length > 0) {
+    console.log(`[SAVEFAMILY-RETURN-GRADES-DETAIL-${saveId}] grades returned:`, JSON.stringify(merged.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))?.slice(0, 3)));
+  }
   console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - requests:`, JSON.stringify(merged.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RETURN-${saveId}] Returning to frontend - sanctionsList:`, JSON.stringify(merged.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
   console.log(`[SAVEFAMILY-RETURN-ACTIONLOG-${saveId}] Returning to frontend - actionLog:`, merged.actionLog?.length || 0, 'entries');
@@ -911,8 +956,12 @@ async function submitGrade(store, famId, b) {
   gradeRequests.push(gradeRequest);
   fam.gradeRequests = gradeRequests;
 
+  console.log(`[SUBMIT-GRADE-BEFORE-SAVE] About to save. gradeRequests count: ${fam.gradeRequests?.length || 0}`);
+
   // Save to store
   await store.set('family:' + famId, fam);
+
+  console.log(`[SUBMIT-GRADE-AFTER-SAVE] Saved. Family gradeRequests count: ${fam.gradeRequests?.length || 0}`);
 
   // Log activity
   await logActivity(store, 'submitGrade', childName, `${fam.name}`, `Soumis: ${subject} (Note: ${grade}, Or: ${gold})`);

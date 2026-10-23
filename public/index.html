@@ -637,10 +637,16 @@ async function persistFamily() {
       const payload = { family: stripUi(state) };
       normalizeFamilyData(payload.family);
 
+      // Log GRADES before sending
+      console.log(`[PERSIST-SEND-GRADES-${persistId}] gradeRequests count:`, payload.family.gradeRequests?.length || 0);
+      if (payload.family.gradeRequests?.length > 0) {
+        console.log(`[PERSIST-SEND-GRADES-DETAIL-${persistId}] grades:`, JSON.stringify(payload.family.gradeRequests.map(g => ({ id: g.id, child: g.child, subject: g.subject, grade: g.grade, status: g.status }))));
+      }
+
       // Log shop data before sending
-      console.log(`[PERSIST-SEND-SHOP-${persistId}] requests:`, JSON.stringify(payload.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status, cost: r.cost })) || []));
-      console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold })) || []));
-      console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 })) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] requests:`, JSON.stringify(payload.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status, cost: r.cost }))?.slice(0,2) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0,2) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 }))?.slice(0,1) || []));
       console.log(`[PERSIST-SEND-ACTIONLOG-${persistId}] actionLog in payload:`, payload.family.actionLog?.length || 0, 'entries');
 
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
@@ -650,6 +656,10 @@ async function persistFamily() {
       if (!res.family) throw new Error('saveFamily returned no family: ' + JSON.stringify(res));
 
       // Log what we received from backend
+      console.log(`[PERSIST-RECV-GRADES-${persistId}] Backend returned gradeRequests:`, res.family.gradeRequests?.length || 0);
+      if (res.family.gradeRequests?.length > 0) {
+        console.log(`[PERSIST-RECV-GRADES-DETAIL-${persistId}] grades in response:`, JSON.stringify(res.family.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))?.slice(0,3)));
+      }
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - requests:`, JSON.stringify(res.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - sanctionsList:`, JSON.stringify(res.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-ACTIONLOG-${persistId}] Backend returned actionLog:`, res.family.actionLog?.length || 0, 'entries');
@@ -2144,18 +2154,26 @@ const ACTIONS = {
     const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
-    console.log(`[GRADE-SUBMIT-START] Submitting: ${subject} ${gradeVal} (${gold}🪙)`);
-    const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
-    console.log(`[GRADE-SUBMIT-RESPONSE] Received family with ${result.family?.gradeRequests?.length || 0} grades:`, result.family?.gradeRequests?.map(g => `${g.subject}`) || []);
-    if (result.family) {
-      // API returns updated family - sync it to state
-      state.gradeRequests = result.family.gradeRequests || [];
-      console.log(`[GRADE-STATE-UPDATED] state.gradeRequests now has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.subject}`));
-      // Persist the update to backend so other users see it
-      console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, state.gradeRequests.map(g => `${g.subject}`));
-      await save();
-      logAction('grade_submitted', subject, { child: c.name, grade: gradeVal, goldAwarded: gold });
-      console.log(`[GRADE-SAVE-AFTER] After save(). state.gradeRequests:`, state.gradeRequests?.map(g => `${g.subject}`) || []);
+    console.log(`[GRADE-SUBMIT-START] Submitting: ${subject} ${gradeVal} (${gold}🪙) for child: ${c.name}`);
+    console.log(`[GRADE-SUBMIT-TOKEN] Using token:`, token ? `${token.substring(0, 20)}...` : 'NONE');
+    try {
+      const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+      console.log(`[GRADE-SUBMIT-RESPONSE] Received:`, JSON.stringify({ status: 200, gradeCount: result.family?.gradeRequests?.length || 0, grades: result.family?.gradeRequests?.map(g => `${g.subject}/${g.grade}`) || [] }));
+      if (result.family) {
+        // API returns updated family - sync it to state
+        state.gradeRequests = result.family.gradeRequests || [];
+        console.log(`[GRADE-STATE-UPDATED] state.gradeRequests NOW has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.id}|${g.subject}/${g.grade}/${g.status}`));
+        // Persist the update to backend so other users see it
+        console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, JSON.stringify(state.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))));
+        await save();
+        logAction('grade_submitted', subject, { child: c.name, grade: gradeVal, goldAwarded: gold });
+        console.log(`[GRADE-SAVE-AFTER] After save() completed. state.gradeRequests now:`, JSON.stringify(state.gradeRequests?.map(g => ({ id: g.id, subject: g.subject, status: g.status })) || []));
+      } else {
+        console.error(`[GRADE-SUBMIT-ERROR] No family in response:`, JSON.stringify(result));
+      }
+    } catch (e) {
+      console.error(`[GRADE-SUBMIT-EXCEPTION] Error during submit:`, e.message);
+      throw e;
     }
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
