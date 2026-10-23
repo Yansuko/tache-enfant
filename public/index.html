@@ -816,13 +816,8 @@ function screenAccueil() {
   <div style="padding:14px 20px 4px" class="kicker">💡 Proposer une quête</div>
   <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;flex:1">
     <div class="card elev-sm" style="gap:8px">
-      <div class="field" style="margin:0"><label>Nom de la quête</label><input class="input" id="propose-task-name" placeholder="Ex : Laver la voiture"></div>
-      <div style="display:flex;gap:8px">
-        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="propose-task-xp" type="number" min="1" placeholder="Ex : 25"></div>
-        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="propose-task-gold" type="number" min="0" placeholder="Ex : 15"></div>
-      </div>
-      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="propose-task-frequency"><option value="unique">🎯 Tâche unique</option><option value="daily" selected>📅 Quotidienne</option><option value="weekly">📆 Hebdomadaire</option><option value="monthly">🗓️ Mensuelle</option></select></div>
-      <button class="btn btn-primary btn-block" data-action="propose-task">Proposer</button>
+      <div class="field" style="margin:0"><label>Nom de la quête</label><input class="input" id="propose-quest-name" placeholder="Ex : Laver la voiture"></div>
+      <button class="btn btn-primary btn-block" data-action="propose-quest">Proposer aux parents</button>
     </div>
   </div>`;
 }
@@ -951,7 +946,7 @@ function screenRecompenses() {
   </div>
   <div style="padding:0 20px 8px" class="kicker">Mes idées d'articles</div>
   <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
-    ${state.proposals.map((p, i) => p.child !== c.name ? '' : `
+    ${state.proposals.map((p, i) => (p.child !== c.name || p.type === 'quest') ? '' : `
     <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
       <span>💡 ${esc(p.name)} (${p.cost} 🪙)</span>
       <div style="display:flex;align-items:center;gap:6px">
@@ -1113,11 +1108,23 @@ function screenSanctions() {
   <div style="padding:0 20px 8px;display:flex;flex-direction:column;gap:8px">
     ${state.proposals.map((p, i) => p.status !== 'pending' ? '' : `
     <div class="card elev-sm" style="gap:8px">
+      ${p.type === 'quest' ? `
+      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose une quête : 💡 ${esc(p.name)}</div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input quest-xp-${i}" type="number" min="1" value="10" placeholder="Ex : 25"></div>
+        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input quest-gold-${i}" type="number" min="0" value="5" placeholder="Ex : 10"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" data-action="approve-quest-proposal" data-i="${i}">Accepter</button>
+        <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
+      </div>
+      ` : `
       <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">${p.cost} 🪙</span></div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1" data-action="approve-proposal" data-i="${i}">Accepter</button>
         <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
       </div>
+      `}
     </div>`).join('')}
   </div>` : ''}
   <div style="padding:16px 20px 8px" class="kicker">Articles de la boutique</div>
@@ -2044,17 +2051,14 @@ const ACTIONS = {
     await save();
     render();
   },
-  'propose-task': () => {
-    const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10), frequency = val('propose-task-frequency') || 'daily';
-    if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
+  'propose-quest': () => {
+    const name = val('propose-quest-name');
+    if (!name) return alert('Nom requis.');
     state.proposals = state.proposals || [];
     const c = child();
-    state.proposals.push({ icon: '⭐', name, xp, gold, frequency, child: c.name, status: 'pending', proposedAt: Date.now() });
-    logAction('task_proposed', name, { child: c.name, xp, gold, frequency });
-    document.getElementById('propose-task-name').value = '';
-    document.getElementById('propose-task-xp').value = '';
-    document.getElementById('propose-task-gold').value = '';
-    document.getElementById('propose-task-frequency').value = 'daily';
+    state.proposals.push({ icon: '⭐', name, child: c.name, status: 'pending', type: 'quest', proposedAt: Date.now() });
+    logAction('quest_proposed', name, { child: c.name });
+    document.getElementById('propose-quest-name').value = '';
     save(); render();
   },
   'save-grades': () => {
@@ -2187,6 +2191,19 @@ const ACTIONS = {
     state.proposals.push({ child: child().name, name, cost, status: 'pending' });
   },
   'del-proposal': el => { state.proposals.splice(+el.dataset.i, 1); },
+  'approve-quest-proposal': el => {
+    const i = +el.dataset.i;
+    const p = state.proposals[i];
+    if (!p) return;
+    const xp = parseInt(document.querySelector(`.quest-xp-${i}`)?.value || '0', 10);
+    const gold = parseInt(document.querySelector(`.quest-gold-${i}`)?.value || '0', 10);
+    if (!(xp > 0) || !(gold >= 0)) return alert('XP (> 0) et Or (≥ 0) requis.');
+    state.proposals.splice(i, 1);
+    state.questList = state.questList || [];
+    state.questList.push({ icon: p.icon, name: p.name, xp, gold, frequency: 'unique', child: p.child });
+    logAction('quest_approved', p.name, { child: p.child, xp, gold, approver: me?.name });
+    save(); render();
+  },
   'approve-proposal': el => {
     const [p] = state.proposals.splice(+el.dataset.i, 1);
     if (!p) return;
@@ -3003,8 +3020,8 @@ async function checkServiceWorkerStatus() {
 checkServiceWorkerStatus();
 registerServiceWorker();
 
-// Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
-// Multi-client sync: pull server state + push local changes every 5 seconds
+// Auto-refresh family data every 30 seconds to ensure mobile is always up-to-date
+// Multi-client sync: pull server state + push local changes every 30 seconds
 // Only run on app page, not on login page
 let lastSyncTime = 0;
 let syncInProgress = false;
@@ -3012,7 +3029,7 @@ setInterval(async () => {
   // Only sync if: authenticated + have app state (not login page) + not already syncing
   if (token && state && state.children && !syncInProgress) {
     const now = Date.now();
-    if (now - lastSyncTime < 5000) return; // Debounce
+    if (now - lastSyncTime < 30000) return; // Debounce
     syncInProgress = true;
     lastSyncTime = now;
     const syncId = Math.random().toString(36).substring(7);
@@ -3107,7 +3124,7 @@ setInterval(async () => {
     console.log(`[SYNC-${syncId}] Complete`);
     syncInProgress = false;
   }
-}, 5000);
+}, 30000);
 
 boot();
 </script>
