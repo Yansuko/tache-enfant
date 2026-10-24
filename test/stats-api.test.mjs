@@ -1,7 +1,6 @@
 // node test/stats-api.test.mjs — getGradeStats / getRewardStats / getSanctionStats on an in-memory store
 import assert from 'node:assert';
-import { handleApi } from '../netlify/functions/_core.mjs';
-import { auth } from '../netlify/functions/firebase-admin.mjs';
+import { handleApi } from '../src/core.mjs';
 
 const mem = new Map();
 const store = {
@@ -111,12 +110,4 @@ assert.strictEqual(f.gradeRequests.find(g => g.id === 'g3')?.status, 'approved')
 assert.strictEqual(f.gradeRequests.find(g => g.id === 'g4')?.status, 'pending');
 assert.ok(f.taskRequests.some(t => t.id === 't1'));
 
-// Firebase token: email resolved from uid, so the members check passes (was 403)
-auth.verifyIdToken = async t => { if (t !== 'fb-token') throw new Error('bad'); return { uid: 'uid-parent-demo' }; };
-auth.getUser = async uid => ({ uid, email: uid === 'uid-parent-demo' ? 'Parent@demo.fr' : null });
-r = await handleApi({ action: 'getGradeStats', token: 'fb-token', body: { familyId: 'fam-demo' } }, store);
-assert.strictEqual(r.status, 200, JSON.stringify(r.body));
-assert.strictEqual((await handleApi({ action: 'getGradeStats', token: 'fb-token', body: { familyId: 'fam-other' } }, store)).status, 403);
-
 console.log('stats-api: all assertions passed');
-process.exit(0); // firebase-admin keeps handles open

@@ -3,7 +3,7 @@
 // Usage: DATABASE_URL=postgresql://dailykids:dailykids@localhost:5432/dailykids node seed-demo-only.mjs
 import pg from 'pg';
 import Database from 'better-sqlite3';
-import { handleApi } from './netlify/functions/_core.mjs';
+import { handleApi } from './src/core.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const url = process.env.DATABASE_URL || 'sqlite://./data/dailykids.db';
@@ -18,5 +18,4 @@ if (r.status && r.status !== 200) {
   process.exit(1);
 }
 console.log('Demo account ready: parent@demo.fr / demo');
-// Firebase admin keeps the event loop alive when configured
 process.exit(0);

@@ -31,8 +31,7 @@ COPY --from=backend-build /app/backend/node_modules ./node_modules/
 # Copy application files
 COPY package.json package-lock.json ./
 COPY server.js auth.js database.js ./
-# server.js imports ./netlify/functions/_core.mjs, which imports ./firebase-admin.mjs: keep the paths as-is
-COPY netlify/functions/ ./netlify/functions/
+COPY src/ ./src/
 
 # Create data directory for SQLite backups
 RUN mkdir -p ./data/backups
@@ -42,6 +41,8 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV DATABASE_URL=sqlite://./data/dailykids.db
 ENV LOG_LEVEL=info
+# CRITICAL: Fixed JWT secret for consistent token validation across restarts
+ENV JWT_SECRET=dailykids_jwt_secret_production_v1_2026
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

@@ -3,8 +3,9 @@ import { Pool } from 'pg';
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import morgan from 'morgan';
-import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
+import { handleApi, setEmailSender } from './src/core.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,20 @@ app.use((req, res, next) => {
 
 // ============ Middleware ============
 app.use(express.json({ limit: '10mb' }));
+
+// Explicit MIME types for Service Worker and manifest
+const swContent = readFileSync(path.join(__dirname, 'public', 'sw.js'), 'utf-8');
+app.get('/sw.js', (req, res) => {
+  res.type('application/javascript; charset=utf-8');
+  res.header('Cache-Control', 'public, max-age=0');
+  res.header('Service-Worker-Allowed', '/');
+  res.send(swContent);
+});
+app.get('/manifest.json', (req, res) => {
+  res.type('application/manifest+json');
+  res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============ Database initialization ============
@@ -135,6 +150,7 @@ async function start() {
   try {
     await initializeDatabase();
     setupEmailSender();
+    if (!process.env.VAPID_SUBJECT) console.warn('[PUSH] VAPID_SUBJECT non défini (valeur par défaut factice): Apple peut refuser les notifications iPhone (HTTP 403). Définissez VAPID_SUBJECT=mailto:votre@adresse');
     app.listen(PORT, () => {
       console.log(`[SERVER] DailyKids Quest running on http://localhost:${PORT}`);
       console.log(`[SERVER] Node ${process.version}, ${NODE_ENV} mode`);

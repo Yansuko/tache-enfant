@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: [],
-    include: ['test/**/*.{test,spec}.{js,mjs}'],
+    include: ['test/**/*.test.js'], // les tests d'interface sont dans e2e/ (Playwright: npm run test:e2e)
     exclude: ['node_modules', 'dist'],
     testTimeout: 10000,
     coverage: {
@@ -15,8 +15,8 @@ export default defineConfig({
         'node_modules/',
         'test/',
         'tests/',
-        'netlify/functions/migrate*.mjs',
-        'netlify/functions/dump-blobs.mjs'
+        'src/migrate*.mjs',
+        'src/dump-blobs.mjs'
       ]
     }
   }

@@ -113,8 +113,10 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/rollover.js"></script>
+<script src="/proposals.js"></script>
 <script>
-// ── Auth sans Firebase — utilise l'API backend et localStorage ──
+// ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
 const SESSION_KEY = 'dailykids_session';
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 jours
@@ -152,68 +154,49 @@ const SessionManager = {
   }
 };
 
-// Remplace l'initialisation Firebase par une simple vérification du token
+// Récupère le jeton stocké et prévient les écouteurs d'état d'authentification
 function initAuth() {
   // Récupère le token stocké dans localStorage s'il existe
   const storedToken = localStorage.getItem(TOKEN_KEY);
   if (storedToken) {
-    window.firebaseToken = storedToken;
+    window.authToken = storedToken;
   }
 
   // Signal que le système d'auth est prêt
-  window.firebaseReady = true;
+  window.authReady = true;
 
-  // Simule onAuthStateChanged en vérifiant si un token existe
-  // Cela permet au reste du code de continuer à fonctionner sans modification
-  if (window.firebaseOnAuthStateChangedCallbacks) {
-    window.firebaseOnAuthStateChangedCallbacks.forEach(cb => {
-      cb(storedToken ? { hasToken: true } : null);
+  // Notifie les écouteurs (boot) de l'état courant: jeton présent ou non
+  if (window.authStateCallbacks) {
+    window.authStateCallbacks.forEach(cb => {
+      if (storedToken) {
+        // boot() lit le jeton via user.getIdToken()
+        cb({
+          hasToken: true,
+          getIdToken: async () => storedToken
+        });
+      } else {
+        cb(null);
+      }
     });
   }
 }
 
-// Stub pour les appels Firebase — simule les fonctions Firebase
-window.firebaseSignIn = async (_, email, password) => {
-  // fetch vers l'API backend pour le login
-  const res = await fetch('/api', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'login', email, password })
-  });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw errorData.error || `HTTP ${res.status}`;
-  }
-  const data = await res.json();
-  // Retourne un objet compatif avec le code existant
-  return { user: { uid: email, getIdToken: async () => data.token } };
-};
-
-window.firebaseSignUp = async (_, email, password) => {
-  // Ce sera appelé avec les bons paramètres depuis l'action signup
-  // Les vrais params (name, familyName) sont passés à l'API signup
-  return { user: { uid: email, getIdToken: async () => '' } };
-};
-
-window.firebaseSignOut = async () => {
+// Déconnexion locale
+window.authSignOut = async () => {
   // Rien à faire — le backend ne maintient pas de session
-  window.firebaseToken = null;
+  window.authToken = null;
   localStorage.removeItem(TOKEN_KEY);
 };
 
-window.getFirebaseIdToken = async (user) => {
-  return localStorage.getItem(TOKEN_KEY) || null;
-};
-
 // Setup auth state listener callbacks
-window.firebaseOnAuthStateChangedCallbacks = [];
-window.firebaseOnAuthStateChanged = (callback) => {
+window.authStateCallbacks = [];
+window.onAuthStateChanged = (callback) => {
   if (typeof callback !== 'function') return () => {};
-  window.firebaseOnAuthStateChangedCallbacks.push(callback);
-  // Appelle le callback avec l'état courant — en différé, comme Firebase, pour que l'appelant ait reçu unsubscribe
+  window.authStateCallbacks.push(callback);
+  // Appelle le callback avec l'état courant, en différé pour que l'appelant ait reçu unsubscribe
   const storedToken = localStorage.getItem(TOKEN_KEY);
   queueMicrotask(() => callback(storedToken ? { uid: 'authenticated-user', getIdToken: async () => storedToken } : null));
-  // Retourne une fonction unsubscribe (no-op pour le remplacement Firebase)
+  // Retourne une fonction unsubscribe (no-op)
   return () => {};
 };
 
@@ -236,7 +219,7 @@ initAuth();
   <main id="main"></main>
   <nav class="bottom-nav" id="nav"></nav>
 </div>
-<div id="toast">⚠️ Synchronisation échouée — vérifie ta connexion</div>
+<div id="toast" style="display:none">⚠️ Synchronisation échouée — vérifie ta connexion</div>
 
 <script>
 'use strict';
@@ -257,6 +240,7 @@ const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
 // push notifications state
 let swRegistration = null;           // enregistrement du service worker
 let pushSubscription = null;         // souscription push actuelle
+let pushError = ''; // dernière raison d'échec de l'abonnement, affichée sur la carte Notifications
 let pushNotificationEnabled = false; // permission utilisateur accordée
 
 // stats state
@@ -295,70 +279,11 @@ async function registerServiceWorker() {
     console.warn('[PUSH] Service Workers non supportés');
     return;
   }
-
-  // Log l'environnement
-  console.log('[PUSH-ENV] URL:', window.location.href);
-  console.log('[PUSH-ENV] Protocol:', window.location.protocol);
-  console.log('[PUSH-ENV] HTTPS:', window.location.protocol === 'https:');
-
-  // Diagnostic: vérifier que sw.js est accessible
   try {
-    const response = await fetch('/sw.js', { method: 'HEAD' });
-    if (!response.ok) {
-      console.error(`[PUSH-DIAG] sw.js non accessible (${response.status} ${response.statusText})`);
-      return;
-    }
-    console.log('[PUSH-DIAG] sw.js accessible (HTTP 200)');
-  } catch (err) {
-    console.error('[PUSH-DIAG] Erreur vérification sw.js:', err.message);
-    return;
-  }
-
-  try {
-    console.log('[PUSH] Tentative d\'enregistrement du Service Worker...');
     swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    console.log('[PUSH] Service Worker enregistré avec succès');
-    console.log('[PUSH-SCOPE] Scope:', swRegistration.scope);
-    console.log('[PUSH-STATE] État active:', swRegistration.active);
-    console.log('[PUSH-STATE] État installing:', swRegistration.installing);
-    console.log('[PUSH-STATE] État waiting:', swRegistration.waiting);
+    console.log('[PUSH-SUCCESS] Service Worker registered');
   } catch (err) {
-    console.error('[PUSH-ERROR] Enregistrement SW échoué');
-    console.error('[PUSH-ERROR] Message:', err.message);
-    console.error('[PUSH-ERROR] Name:', err.name);
-    console.error('[PUSH-ERROR] Code:', err.code);
-
-    // Diagnostic spécifiques
-    if (err.name === 'SecurityError') {
-      console.error('[PUSH-DIAG] ⚠️ Erreur de sécurité - probable certificat HTTPS invalide');
-      console.error('[PUSH-DIAG] Solution: Accepter le certificat dans le navigateur');
-      if (window.location.hostname.includes('synology') || window.location.hostname.includes('nas')) {
-        console.error('[PUSH-DIAG] NAS Synology détecté - certificat auto-signé probable');
-        console.error('[PUSH-DIAG] Accédez à la page, acceptez le certificat, puis rechargez');
-      }
-    } else if (err.message.includes('cross-origin')) {
-      console.error('[PUSH-DIAG] Erreur CORS - sw.js doit être sur le même origin');
-    } else if (err.message.includes('syntax') || err.message.includes('parse')) {
-      console.error('[PUSH-DIAG] Erreur de syntaxe JavaScript dans sw.js');
-    } else if (err.message.includes('scope')) {
-      console.error('[PUSH-DIAG] Erreur scope - vérifiez que le chemin est valide');
-    }
-  }
-
-  // Afficher l'état enregistré (ou erreur)
-  if (swRegistration) {
-    console.log('[PUSH-SUCCESS] Service Worker enregistré avec succès');
-    console.log('[PUSH-SUCCESS] Vous pouvez maintenant recevoir des notifications push');
-    // Écouter les changements d'état
-    swRegistration.onupdatefound = () => {
-      console.log('[PUSH-UPDATE] Service Worker update en cours...');
-      const newWorker = swRegistration.installing;
-      newWorker.onstatechange = () => {
-        console.log('[PUSH-UPDATE-STATE] Nouvel état:', newWorker.state);
-      };
-    };
-  } else {
-    console.warn('[PUSH-WARNING] Service Worker n\'a pas pu être enregistré - vérifiez la console');
+    console.error('[PUSH-ERROR] SW registration failed:', err.message);
   }
 }
 
@@ -389,6 +314,7 @@ async function requestNotificationPermission() {
 }
 
 async function subscribeToPush() {
+  if (!swRegistration) swRegistration = await navigator.serviceWorker?.ready.catch(() => null);
   if (!swRegistration) {
     console.log('[PUSH] Service Worker non enregistré');
     return false;
@@ -399,6 +325,7 @@ async function subscribeToPush() {
     return false;
   }
 
+  pushError = '';
   try {
     // Récupérer la clé publique VAPID depuis le serveur
     const keyResponse = await api('pushKey');
@@ -432,9 +359,43 @@ async function subscribeToPush() {
     pushNotificationEnabled = true;
     return true;
   } catch (err) {
+    pushError = 'Abonnement impossible : ' + ((err && err.message) || String(err));
     console.error('[PUSH] Erreur lors de la subscription:', err);
     return false;
   }
+}
+
+// À la déconnexion, cet appareil ne doit plus recevoir les notifications du compte (l'abonnement du navigateur est conservé)
+async function releasePush() {
+  try {
+    const reg = swRegistration || await navigator.serviceWorker?.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) await api('unsubscribePush', { endpoint: sub.endpoint, familyId: state?.id });
+  } catch (err) { /* sans conséquence: au pire l'appareil reste abonné jusqu'à la prochaine connexion */ }
+}
+
+// Abonne l'appareil sans rien demander: seulement si l'autorisation a déjà été accordée.
+// La demande d'autorisation elle-même ne peut venir que d'un clic (obligatoire sur iPhone): bouton « Activer les notifications ».
+async function ensurePushSubscription() {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !state?.id || !token) return;
+  if (await subscribeToPush()) render();
+}
+
+function pushStatusCard() {
+  const note = (txt, detail = '') => `<div class="card elev-sm" style="gap:6px"><div style="font-size:13px">${txt}</div>${detail ? `<div class="text-muted" style="font-size:11px">${detail}</div>` : ''}</div>`;
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    // Sur iPhone, ces deux fonctions n'existent que pour une application lancée depuis l'icône de l'écran d'accueil (iOS 16.4 minimum)
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+    const yn = v => (v ? 'oui' : 'non');
+    const detail = `Mode application : ${yn(standalone)} · Notification : ${yn('Notification' in window)} · PushManager : ${yn('PushManager' in window)}`;
+    if (ios && !standalone) return note("🔕 Tu es dans Safari, pas dans l'application. Ferme-la puis ouvre DailyKids depuis son icône sur l'écran d'accueil. Si tu l'as déjà fait, supprime l'icône et ajoute-la de nouveau (Partager, « Sur l'écran d'accueil », en gardant « Ouvrir comme app web » activé).", detail);
+    if (ios) return note("🔕 Cet iPhone ne propose pas les notifications ici. Il faut iOS 16.4 ou plus récent (Réglages, Général, Informations) et le navigateur Safari pour créer l'icône; le mode Isolement le désactive aussi.", detail);
+    return note("🔕 Ce navigateur ne propose pas les notifications.", detail);
+  }
+  if (Notification.permission === 'denied') return note("🔕 Notifications bloquées : autorise-les dans les réglages de l'appareil ou du navigateur.");
+  if (Notification.permission === 'granted' && pushNotificationEnabled) return note('🔔 Notifications activées sur cet appareil');
+  return `<div class="card elev-sm" style="gap:8px"><div style="font-size:13px">Reçois une alerte quand il y a du nouveau.</div>${pushError ? `<div style="font-size:12px;color:var(--color-accent-800)">⚠️ ${esc(pushError)}</div>` : ''}<button class="btn btn-secondary btn-block" data-action="enable-push">🔔 Activer les notifications</button></div>`;
 }
 
 async function unsubscribeFromPush() {
@@ -493,13 +454,17 @@ async function api(action, body = {}) {
   const url = new URL('/api', window.location.origin).toString();
   if (action === 'saveFamily') console.log(`[API] Calling: ${url} with action=${action}`);
 
-  // Get Firebase token if available, fall back to legacy token
+  // Jeton de session (window.authToken en priorité, sinon la variable locale)
   let authHeader = {};
-  if (window.firebaseToken) {
-    authHeader = { Authorization: 'Bearer ' + window.firebaseToken };
-  } else if (token) {
+  const hasWindowToken = !!window.authToken;
+  const hasLocalToken = !!token;
+  if (hasWindowToken) {
+    authHeader = { Authorization: 'Bearer ' + window.authToken };
+  } else if (hasLocalToken) {
     authHeader = { Authorization: 'Bearer ' + token };
   }
+
+  console.log(`[API-${action}] Token: window=${hasWindowToken}, local=${hasLocalToken}, header=${!!authHeader.Authorization}`);
 
   const res = await fetch('/api', {
     method: 'POST',
@@ -510,9 +475,23 @@ async function api(action, body = {}) {
   try { json = await res.json(); } catch {}
   if (action === 'saveFamily') console.log(`[API] Response status: ${res.status}, ok: ${res.ok}`);
   if (!res.ok) throw (json.error || `Erreur ${res.status}`);
+  stampBases(json);
   return json;
 }
-function toast(on) { document.getElementById('toast').style.display = on ? 'block' : 'none'; }
+
+// xp / or tels que reçus du serveur: renvoyés avec chaque enregistrement pour que le serveur fusionne la variation
+// de cet appareil (et non la valeur absolue, souvent périmée quand un autre appareil a crédité entre-temps)
+function stampBases(r) {
+  for (const f of [...(r.families || []), ...(r.family ? [r.family] : [])]) {
+    if (!f || !Array.isArray(f.children)) continue;
+    for (const c of f.children) if (c && typeof c === 'object') { c.xpBase = c.xp; c.goldBase = c.gold; }
+  }
+}
+function toast(on, detail = '') {
+  const el = document.getElementById('toast');
+  el.textContent = '⚠️ Synchronisation échouée — vérifie ta connexion' + (on && detail ? ` (${String(detail).slice(0, 140)})` : '');
+  el.style.display = on ? 'block' : 'none';
+}
 
 // Log action to audit trail
 function logAction(actionType, target, details = {}, status = 'success') {
@@ -548,6 +527,7 @@ function setActiveFamily(i) {
       }
     }
     if (rolloverDay(state, today()) || needsSave) save();
+    ensurePushSubscription();
   }
 }
 // Normaliser la structure de la famille (assurer que children et tasks sont des arrays)
@@ -612,31 +592,46 @@ function normalizeFamilyData(f) {
 // reset des quêtes quotidiennes au chargement d'un nouveau jour (persisté)
 function rolloverDay(f, day) {
   normalizeFamilyData(f);
-  if (f.day === day) return false;
+  const dayChanged = f.day !== day;
   f.day = day;
+  let changed = dayChanged;
+  const now = Date.now();
   f.children.forEach(c => {
-    if (!c.tasks) c.tasks = [];
-    // Ensure tasks is an array
-    if (c.tasks && typeof c.tasks === 'object' && !Array.isArray(c.tasks)) {
-      c.tasks = Object.values(c.tasks).filter(v => v != null);
-    }
-    c.tasks = (c.tasks || []).filter(t => {
-      if ((t.frequency || 'daily') === 'unique' && t.done) return false;
-      if ((t.frequency || 'daily') === 'daily') t.done = false;
-      return true;
-    });
+    if (c.tasks && typeof c.tasks === 'object' && !Array.isArray(c.tasks)) c.tasks = Object.values(c.tasks).filter(v => v != null);
+    const before = c.tasks || [];
+    // idempotent: s'applique aussi hors changement de jour (rattrape les tâches restées "faites" d'une période passée)
+    c.tasks = Rollover.rolloverTasks(before, day, now, { dayChanged });
+    if (c.tasks.length !== before.length || c.tasks.some((t, i) => t !== before[i])) changed = true;
   });
-  return true;
+  return changed;
 }
 
 // persistance de la famille active vers le serveur — coalescée (dernier gagne)
 // ponytail: dernier-écrit-gagne, pas de verrou/etag — suffisant à l'échelle d'une famille ; passer à un merge/etag si conflits multi-appareils
 let saving = false, dirty = false;
+// Signature de l'état tel que le serveur le connaît: une synchro sans changement local n'envoie rien.
+let lastSyncedSig = null;
+function stateSig() {
+  try { const f = stripUi(state); normalizeFamilyData(f); return JSON.stringify(f); } catch { return null; }
+}
+let lastNotificationTime = 0; // Track when we received a push notification
+
+// Listen for messages from Service Worker (e.g., notification received)
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.controller?.postMessage({ type: 'GET_STATE' });
+  navigator.serviceWorker.onmessage = event => {
+    if (event.data?.type === 'NOTIFICATION_RECEIVED') {
+      console.log('[CLIENT] Notification received from SW, debouncing sync for 2s');
+      lastNotificationTime = Date.now();
+    }
+  };
+}
 async function persistFamily() {
   if (!token || !state) return;
   dirty = true;
   if (saving) return;
   saving = true;
+  let saveRetries = 0;
   const persistId = Math.random().toString(36).substring(7);
   const persistTime = new Date().toISOString();
   console.log(`[PERSIST-START-${persistId}] ${persistTime} Starting persistFamily`);
@@ -646,11 +641,21 @@ async function persistFamily() {
       const payload = { family: stripUi(state) };
       normalizeFamilyData(payload.family);
 
+      // Log GRADES before sending
+      console.log(`[PERSIST-SEND-GRADES-${persistId}] gradeRequests count:`, payload.family.gradeRequests?.length || 0);
+      if (payload.family.gradeRequests?.length > 0) {
+        console.log(`[PERSIST-SEND-GRADES-DETAIL-${persistId}] grades:`, JSON.stringify(payload.family.gradeRequests.map(g => ({ id: g.id, child: g.child, subject: g.subject, grade: g.grade, status: g.status }))));
+      }
+
       // Log shop data before sending
-      console.log(`[PERSIST-SEND-SHOP-${persistId}] requests:`, JSON.stringify(payload.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status, cost: r.cost })) || []));
-      console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold })) || []));
-      console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 })) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] requests:`, JSON.stringify(payload.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status, cost: r.cost }))?.slice(0,2) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] sanctionsList:`, JSON.stringify(payload.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0,2) || []));
+      console.log(`[PERSIST-SEND-SHOP-${persistId}] children sanctions:`, JSON.stringify(payload.family.children?.map(c => ({ name: c.name, gold: c.gold, sanctions: c.sanctions?.length || 0 }))?.slice(0,1) || []));
       console.log(`[PERSIST-SEND-ACTIONLOG-${persistId}] actionLog in payload:`, payload.family.actionLog?.length || 0, 'entries');
+      console.log(`[PERSIST-SEND-PROPOSALS-${persistId}] proposals in payload:`, payload.family.proposals?.length || 0);
+      if (payload.family.proposals?.length > 0) {
+        console.log(`[PERSIST-SEND-PROPOSALS-DETAIL-${persistId}] proposals:`, JSON.stringify(payload.family.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+      }
 
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
@@ -659,9 +664,17 @@ async function persistFamily() {
       if (!res.family) throw new Error('saveFamily returned no family: ' + JSON.stringify(res));
 
       // Log what we received from backend
+      console.log(`[PERSIST-RECV-GRADES-${persistId}] Backend returned gradeRequests:`, res.family.gradeRequests?.length || 0);
+      if (res.family.gradeRequests?.length > 0) {
+        console.log(`[PERSIST-RECV-GRADES-DETAIL-${persistId}] grades in response:`, JSON.stringify(res.family.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))?.slice(0,3)));
+      }
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - requests:`, JSON.stringify(res.family.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-SHOP-${persistId}] Backend returned - sanctionsList:`, JSON.stringify(res.family.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
       console.log(`[PERSIST-RECV-ACTIONLOG-${persistId}] Backend returned actionLog:`, res.family.actionLog?.length || 0, 'entries');
+      console.log(`[PERSIST-RECV-PROPOSALS-${persistId}] Backend returned proposals:`, res.family.proposals?.length || 0);
+      if (res.family.proposals?.length > 0) {
+        console.log(`[PERSIST-RECV-PROPOSALS-DETAIL-${persistId}] proposals in response:`, JSON.stringify(res.family.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
+      }
 
       normalizeFamilyData(res.family);
       console.log(`[SAVE] Backend returned Lucas:`, JSON.stringify(res.family.children?.find(c => c.name === 'Lucas')?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
@@ -672,35 +685,7 @@ async function persistFamily() {
         let mergedChild = { ...remoteChild };
         if (state.children && state.children[i]) {
           const localChild = state.children[i];
-          // Merge tasks array - use name+xp matching for safety (not just index)
-          const localTasksByNameXp = new Map();
-          (localChild.tasks || []).forEach(t => {
-            const key = `${t.name}|${t.xp}`;
-            if (t.done && t.completedAt) {
-              localTasksByNameXp.set(key, t.completedAt);
-            }
-          });
-
-          mergedChild.tasks = (remoteChild.tasks || []).map((remoteTask, j) => {
-            // Try to find matching local task by name+xp (more reliable than index)
-            const key = `${remoteTask.name}|${remoteTask.xp}`;
-            const localCompletedAt = localTasksByNameXp.get(key);
-
-            if (localCompletedAt) {
-              // Preserve local approved tasks even if server returns them as unapproved
-              console.log(`[MERGE] Preserving completedAt for ${remoteTask.name}: ${new Date(localCompletedAt).toISOString()}`);
-              return { ...remoteTask, done: true, completedAt: Number(localCompletedAt) };
-            }
-
-            // Also fall back to index-based match for backward compatibility
-            const localTask = localChild.tasks?.[j];
-            if (localTask && localTask.done && localTask.completedAt) {
-              console.log(`[MERGE] Preserving completedAt by index for ${remoteTask.name}: ${new Date(localTask.completedAt).toISOString()}`);
-              return { ...remoteTask, done: true, completedAt: Number(localTask.completedAt) };
-            }
-
-            return remoteTask;
-          });
+          mergedChild.tasks = Rollover.mergeValidations(remoteChild.tasks, localChild.tasks);
         }
         mergedChildren.push(mergedChild);
       }
@@ -733,9 +718,15 @@ async function persistFamily() {
       console.log(`[PERSIST-MERGE-ACTIONLOG-${persistId}] After merge - actionLog:`, state.actionLog?.length || 0, 'entries');
       console.log(`[PERSIST-MERGE] After merge: requests=${state.requests?.length || 0}, sanctionsList=${state.sanctionsList?.length || 0}`);
       console.log(`[SAVE] Success`);
+      lastSyncedSig = stateSig();
       toast(false);
     }
-    catch (e) { console.error(`[SAVE] Error:`, e.message || String(e), e); toast(true); break; }
+    catch (e) {
+      console.error(`[SAVE] Error:`, e.message || String(e), e);
+      // coupure réseau passagère (iOS coupe les requêtes d'une application passée en arrière-plan): on réessaie avant d'alerter
+      if (e instanceof TypeError && ++saveRetries <= 2) { dirty = true; await new Promise(r => setTimeout(r, 1500)); continue; }
+      toast(true, (e && e.message) || String(e)); break;
+    }
   }
   saving = false;
   localStorage.setItem('statsChildIndex', statsChildIndex);
@@ -797,6 +788,7 @@ function screenAccueil() {
       </div>
     </div>`;
   })()}
+  <div style="padding:10px 20px 0">${pushStatusCard()}</div>
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
   <div class="deck deck-2" style="padding:4px 20px 16px">
     ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || "<p class='text-muted' style='padding-top:8px'>Aucune quête pour aujourd'hui 🎉</p>"}
@@ -804,13 +796,8 @@ function screenAccueil() {
   <div style="padding:14px 20px 4px" class="kicker">💡 Proposer une quête</div>
   <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;flex:1">
     <div class="card elev-sm" style="gap:8px">
-      <div class="field" style="margin:0"><label>Nom de la quête</label><input class="input" id="propose-task-name" placeholder="Ex : Laver la voiture"></div>
-      <div style="display:flex;gap:8px">
-        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="propose-task-xp" type="number" min="1" placeholder="Ex : 25"></div>
-        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="propose-task-gold" type="number" min="0" placeholder="Ex : 15"></div>
-      </div>
-      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="propose-task-frequency"><option value="unique">🎯 Tâche unique</option><option value="daily" selected>📅 Quotidienne</option><option value="weekly">📆 Hebdomadaire</option><option value="monthly">🗓️ Mensuelle</option></select></div>
-      <button class="btn btn-primary btn-block" data-action="propose-task">Proposer</button>
+      <div class="field" style="margin:0"><label>Nom de la quête</label><input class="input" id="propose-quest-name" placeholder="Ex : Laver la voiture"></div>
+      <button class="btn btn-primary btn-block" data-action="propose-quest">Proposer aux parents</button>
     </div>
   </div>`;
 }
@@ -939,7 +926,7 @@ function screenRecompenses() {
   </div>
   <div style="padding:0 20px 8px" class="kicker">Mes idées d'articles</div>
   <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
-    ${state.proposals.map((p, i) => p.child !== c.name ? '' : `
+    ${state.proposals.map((p, i) => (p.child !== c.name || p.type === 'quest' || !['pending', 'refused'].includes(p.status)) ? '' : `
     <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
       <span>💡 ${esc(p.name)} (${p.cost} 🪙)</span>
       <div style="display:flex;align-items:center;gap:6px">
@@ -962,7 +949,11 @@ function childSeg() {
 }
 
 function screenTaches() {
-  if (state) normalizeFamilyData(state);
+  if (state) {
+    console.log('[SCREEN-TACHES-BEFORE-NORM] questList:', state.questList?.length, state.questList?.map(q => ({ id: q?.id, name: q?.name })));
+    normalizeFamilyData(state);
+    console.log('[SCREEN-TACHES-AFTER-NORM] questList:', state.questList?.length, state.questList?.map(q => ({ id: q?.id, name: q?.name })));
+  }
   const c = child();
   const pending = (state.taskRequests || []).filter(t => t.child === c.name && t.status === 'pending');
   return `
@@ -1101,11 +1092,27 @@ function screenSanctions() {
   <div style="padding:0 20px 8px;display:flex;flex-direction:column;gap:8px">
     ${state.proposals.map((p, i) => p.status !== 'pending' ? '' : `
     <div class="card elev-sm" style="gap:8px">
-      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">${p.cost} 🪙</span></div>
+      ${p.type === 'quest' ? `
+      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose une quête : 💡 ${esc(p.name)}</div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input quest-xp-${i}" type="number" min="1" value="10" placeholder="Ex : 25"></div>
+        <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input quest-gold-${i}" type="number" min="0" value="5" placeholder="Ex : 10"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" data-action="approve-quest-proposal" data-i="${i}">Accepter</button>
+        <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
+      </div>
+      ` : `
+      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">proposé : ${p.cost} 🪙</span></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>Prix 🪙</label><input class="input reward-cost-${i}" type="number" min="1" value="${p.cost}"></div>
+        <div class="field" style="margin:0;flex:1"><label>Niveau requis</label><input class="input reward-lvl-${i}" type="number" min="1" value="1"></div>
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1" data-action="approve-proposal" data-i="${i}">Accepter</button>
         <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
       </div>
+      `}
     </div>`).join('')}
   </div>` : ''}
   <div style="padding:16px 20px 8px" class="kicker">Articles de la boutique</div>
@@ -1260,6 +1267,7 @@ function screenFamille() {
     <h2 style="margin:0;font-size:22px">Famille</h2>
     <p class="text-muted" style="font-size:13px;margin:4px 0 0">Connecté : ${esc(me.name)} · ${esc(me.email)}</p>
   </div>
+  <div style="padding:10px 20px 0">${pushStatusCard()}</div>
   <div style="padding:14px 20px 4px" class="kicker">Familles que je gère</div>
   <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
     ${families.map(f => `
@@ -1331,8 +1339,8 @@ function renderAuthChild() {
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton nom et le code PIN</p>
     </div>
     ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
-    <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo"></div>
-    <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma"></div>
+    <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo" value="${esc(authDraft.famname || '')}"></div>
+    <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma" value="${esc(authDraft.cname || '')}"></div>
     <div class="field" style="margin:0"><label>Ton code PIN (4 chiffres)</label><input class="input" id="ec-pin" type="password" placeholder="****"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:-4px"><input type="checkbox" id="ec-remember" style="width:18px;height:18px;cursor:pointer"><label style="margin:0;cursor:pointer;font-size:13px" for="ec-remember">Se souvenir de moi</label></div>
     <button class="btn btn-primary btn-block" data-action="unlock-child-direct">Se connecter</button>
@@ -1382,12 +1390,12 @@ function renderAuth() {
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
     </div>
     ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
-    ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
-    <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>
+    ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa" value="${esc(authDraft.name || '')}"></div>` : ''}
+    <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr" value="${esc(authDraft.email || '')}"></div>
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
     ${!signup ? '<div style="display:flex;align-items:center;gap:8px;margin-top:-4px"><input type="checkbox" id="au-remember" style="width:18px;height:18px;cursor:pointer"><label style="margin:0;cursor:pointer;font-size:13px" for="au-remember">Se souvenir de moi</label></div>' : ''}
     ${!signup ? '<div style="text-align:right"><button class="btn btn-ghost" style="font-size:12px;padding:0;margin-top:-8px" data-action="show-reset-password">Mot de passe oublié?</button></div>' : ''}
-    ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
+    ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin" value="${esc(authDraft.fam || '')}"></div>` : ''}
     <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
     <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? "J'ai déjà un compte" : "Créer un nouveau compte"}</button>
     ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
@@ -1583,6 +1591,37 @@ function screenStats() {
       <div id="chart-progression" style="overflow-x:auto"></div>
     </div>
   </div>
+
+  ${(() => {
+    const dateToISO = t => new Date(t).toLocaleDateString('fr-CA'); // converts timestamp to YYYY-MM-DD
+    const completedTasks = (c.tasks || [])
+      .filter(t => t && t.completedAt)
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+      .slice(0, 20);
+    return completedTasks.length > 0 ? `
+  <div style="padding:14px 20px 4px" class="kicker">Historique des tâches</div>
+  <div style="padding:0 20px 10px">
+    <div class="card elev-sm" style="padding:16px">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+          <thead>
+            <tr style="border-bottom:2px solid var(--color-divider)">
+              <th style="padding:10px;text-align:left">Tâche</th>
+              <th style="padding:10px;text-align:right">Date complétée</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${completedTasks.map(t => `
+            <tr style="border-bottom:1px solid var(--color-divider)">
+              <td style="padding:10px"><strong>${esc(t.name || 'Sans nom')}</strong></td>
+              <td style="padding:10px;text-align:right">${xsDay(dateToISO(t.completedAt))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>` : '';
+  })()}
 
   ${children.length > 1 ? `
   <div style="padding:14px 20px 4px" class="kicker">Statistiques des autres enfants</div>
@@ -1849,7 +1888,10 @@ function childAuth(c) {
 /* ── actions ── */
 
 const val = id => document.getElementById(id).value.trim();
-function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
+// Champs de connexion conservés après une erreur (jamais le mot de passe ni le PIN)
+let authDraft = {};
+const field = id => document.getElementById(id)?.value.trim() || '';
+function addQuestTo(c, t) { if (c && t) c.tasks.push({ id: 'task-' + Math.random().toString(36).substring(2, 10), icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
 function replaceFamily(f) {
   const i = families.findIndex(x => x.id === f.id);
   if (i < 0) return;
@@ -1874,18 +1916,6 @@ function onAuthed(r, rememberMe = false) {
     });
   }
 
-  // Demander la permission pour les notifications push
-  if (state?.id) {
-    (async () => {
-      const permGranted = await requestNotificationPermission();
-      if (permGranted) {
-        const subSuccess = await subscribeToPush();
-        if (subSuccess) {
-          console.log('[PUSH] Notifications push activées pour la famille:', state.id);
-        }
-      }
-    })();
-  }
 }
 
 const ACTIONS = {
@@ -1931,7 +1961,7 @@ const ACTIONS = {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
     const frequency = document.getElementById('new-task-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, completedAt: null, frequency });
+    child().tasks.push({ id: 'task-' + Math.random().toString(36).substring(2, 10), icon: '⭐', name, xp, gold, done: false, completedAt: null, frequency });
     document.getElementById('new-task-name').value = '';
     document.getElementById('new-task-xp').value = '';
     document.getElementById('new-task-gold').value = '';
@@ -1945,7 +1975,9 @@ const ACTIONS = {
     const name = val('qd-name'), xp = parseInt(val('qd-xp'), 10), gold = parseInt(val('qd-gold') || '0', 10);
     const frequency = document.getElementById('qd-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    state.questList.push({ icon: '⭐', name, xp, gold, frequency });
+    // ponytail: generate ID immediately to prevent triplication on syncs (each sync was generating a new random ID)
+    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
+    state.questList.push({ id, icon: '⭐', name, xp, gold, frequency });
     document.getElementById('qd-name').value = '';
     document.getElementById('qd-xp').value = '';
     document.getElementById('qd-gold').value = '';
@@ -1998,6 +2030,7 @@ const ACTIONS = {
             c.gold = (c.gold || 0) + req.gold;
           }
           console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
+          maybeAwardDailyBonus(c);
           found = true;
           childIndex = i;
           logAction('task_approved', req.taskName, { child: req.child, xp: req.xp, gold: req.gold, approver: me?.name });
@@ -2032,17 +2065,14 @@ const ACTIONS = {
     await save();
     render();
   },
-  'propose-task': () => {
-    const name = val('propose-task-name'), xp = parseInt(val('propose-task-xp'), 10), gold = parseInt(val('propose-task-gold') || '0', 10), frequency = val('propose-task-frequency') || 'daily';
-    if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
+  'propose-quest': () => {
+    const name = val('propose-quest-name');
+    if (!name) return alert('Nom requis.');
     state.proposals = state.proposals || [];
     const c = child();
-    state.proposals.push({ icon: '⭐', name, xp, gold, frequency, child: c.name, status: 'pending', proposedAt: Date.now() });
-    logAction('task_proposed', name, { child: c.name, xp, gold, frequency });
-    document.getElementById('propose-task-name').value = '';
-    document.getElementById('propose-task-xp').value = '';
-    document.getElementById('propose-task-gold').value = '';
-    document.getElementById('propose-task-frequency').value = 'daily';
+    state.proposals.push({ icon: '⭐', name, child: c.name, status: 'pending', type: 'quest', proposedAt: Date.now() });
+    logAction('quest_proposed', name, { child: c.name });
+    document.getElementById('propose-quest-name').value = '';
     save(); render();
   },
   'save-grades': () => {
@@ -2065,7 +2095,7 @@ const ACTIONS = {
     state.requests.push({ id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8), child: c.name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
     logAction('reward_requested', r.name, { child: c.name, cost: r.cost });
   },
-  approve: el => {
+  approve: async el => {
     const q = state.requests[+el.dataset.i];
     console.log(`[APPROVE-BEFORE] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
     if (!q) { console.log(`[APPROVE-ERROR] Request not found at index ${+el.dataset.i}`); return; }
@@ -2076,13 +2106,20 @@ const ACTIONS = {
     logAction('reward_approved', q.name, { child: q.child, cost: q.cost, approver: me?.name });
     console.log(`[APPROVE-AFTER] state.requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status })) || []));
     console.log(`[APPROVE-REWARD] Approved "${q.name}" for ${q.child}: gold cost=${q.cost}, new gold=${c?.gold || 0}. Total requests: ${state.requests?.length || 0}`);
+    // CRITICAL: Must await save() to persist before other tabs see the change
+    // This prevents race condition where sync pulls stale data
+    await save();
+    render();
   },
-  refuse: el => {
+  refuse: async el => {
     const q = state.requests[+el.dataset.i];
     if (q) {
       q.status = 'refused';
       logAction('reward_refused', q.name, { child: q.child, cost: q.cost, refuser: me?.name });
     }
+    // CRITICAL: Must await save() to persist before other tabs see the change
+    await save();
+    render();
   },
   'apply-sanction': async el => {
     // Defensive: ensure arrays are normalized
@@ -2135,18 +2172,26 @@ const ACTIONS = {
     const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
     if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
     const c = child();
-    console.log(`[GRADE-SUBMIT-START] Submitting: ${subject} ${gradeVal} (${gold}🪙)`);
-    const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
-    console.log(`[GRADE-SUBMIT-RESPONSE] Received family with ${result.family?.gradeRequests?.length || 0} grades:`, result.family?.gradeRequests?.map(g => `${g.subject}`) || []);
-    if (result.family) {
-      // API returns updated family - sync it to state
-      state.gradeRequests = result.family.gradeRequests || [];
-      console.log(`[GRADE-STATE-UPDATED] state.gradeRequests now has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.subject}`));
-      // Persist the update to backend so other users see it
-      console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, state.gradeRequests.map(g => `${g.subject}`));
-      await save();
-      logAction('grade_submitted', subject, { child: c.name, grade: gradeVal, goldAwarded: gold });
-      console.log(`[GRADE-SAVE-AFTER] After save(). state.gradeRequests:`, state.gradeRequests?.map(g => `${g.subject}`) || []);
+    console.log(`[GRADE-SUBMIT-START] Submitting: ${subject} ${gradeVal} (${gold}🪙) for child: ${c.name}`);
+    console.log(`[GRADE-SUBMIT-TOKEN] Using token:`, token ? `${token.substring(0, 20)}...` : 'NONE');
+    try {
+      const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+      console.log(`[GRADE-SUBMIT-RESPONSE] Received:`, JSON.stringify({ status: 200, gradeCount: result.family?.gradeRequests?.length || 0, grades: result.family?.gradeRequests?.map(g => `${g.subject}/${g.grade}`) || [] }));
+      if (result.family) {
+        // API returns updated family - sync it to state
+        state.gradeRequests = result.family.gradeRequests || [];
+        console.log(`[GRADE-STATE-UPDATED] state.gradeRequests NOW has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.id}|${g.subject}/${g.grade}/${g.status}`));
+        // Persist the update to backend so other users see it
+        console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, JSON.stringify(state.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))));
+        await save();
+        logAction('grade_submitted', subject, { child: c.name, grade: gradeVal, goldAwarded: gold });
+        console.log(`[GRADE-SAVE-AFTER] After save() completed. state.gradeRequests now:`, JSON.stringify(state.gradeRequests?.map(g => ({ id: g.id, subject: g.subject, status: g.status })) || []));
+      } else {
+        console.error(`[GRADE-SUBMIT-ERROR] No family in response:`, JSON.stringify(result));
+      }
+    } catch (e) {
+      console.error(`[GRADE-SUBMIT-EXCEPTION] Error during submit:`, e.message);
+      throw e;
     }
     document.getElementById('grade-subject').value = '';
     document.getElementById('grade-value').value = '';
@@ -2157,13 +2202,39 @@ const ACTIONS = {
   'propose-reward': () => {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
     if (!name || !(cost > 0)) return alert('Idée et points (> 0) requis.');
-    state.proposals.push({ child: child().name, name, cost, status: 'pending' });
+    state.proposals.push({ child: child().name, name, cost, type: 'reward', status: 'pending' });
   },
-  'del-proposal': el => { state.proposals.splice(+el.dataset.i, 1); },
-  'approve-proposal': el => {
-    const [p] = state.proposals.splice(+el.dataset.i, 1);
+  'enable-push': async () => {
+    // requestPermission doit être appelée pendant le clic (premier appel, avant tout await)
+    if (await requestNotificationPermission()) await subscribeToPush();
+  },
+  'del-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'withdrawn'; },
+  'approve-quest-proposal': el => {
+    const i = +el.dataset.i;
+    const p = state.proposals[i];
     if (!p) return;
-    state.rewards.push({ icon: '💡', name: p.name, cost: p.cost, lvl: 1 });
+    const xp = parseInt(document.querySelector(`.quest-xp-${i}`)?.value || '0', 10);
+    const gold = parseInt(document.querySelector(`.quest-gold-${i}`)?.value || '0', 10);
+    if (!(xp > 0) || !(gold >= 0)) return alert('XP (> 0) et Or (≥ 0) requis.');
+    p.status = 'approved'; // statut, pas suppression (voir approve-proposal)
+    state.questList = state.questList || [];
+    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
+    state.questList.push({ id, icon: p.icon, name: p.name, xp, gold, frequency: 'unique', child: p.child });
+    logAction('quest_approved', p.name, { child: p.child, xp, gold, approver: me?.name });
+    save(); render();
+  },
+  'approve-proposal': el => {
+    const i = +el.dataset.i;
+    const p = state.proposals[i];
+    if (!p) return;
+    const cost = parseInt(document.querySelector(`.reward-cost-${i}`)?.value, 10);
+    const lvl = parseInt(document.querySelector(`.reward-lvl-${i}`)?.value, 10);
+    const reward = Proposals.rewardFromProposal(p, { cost, lvl });
+    if (!reward) return alert('Prix (≥ 1) et niveau (≥ 1) requis.');
+    p.status = 'approved'; // statut, pas suppression: le serveur ré-ajouterait une proposition retirée côté client
+    state.rewards.push(reward);
+    logAction('reward_approved', p.name, { child: p.child, cost, lvl, approver: me?.name });
+    save(); render();
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
   'approve-grade': async el => {
@@ -2179,12 +2250,13 @@ const ACTIONS = {
     if (i < pending.length) {
       const grade = pending[i];
       const newGold = parseInt(document.getElementById(`grade-gold-${i}`).value, 10) || 0;
-      await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold });
+      const r = await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold });
       grade.status = 'approved';
       grade.approvedAt = Date.now();
       grade.gold = newGold;
+      // le serveur a déjà crédité l'or: on adopte son solde (et on le prend comme base, sans variation à renvoyer)
       const child = state.children.find(c => c.name === grade.child);
-      if (child) child.gold = (child.gold || 0) + newGold;
+      if (child && r.child) { child.gold = r.child.gold; child.goldBase = r.child.gold; }
       render();
     }
   },
@@ -2211,7 +2283,6 @@ const ACTIONS = {
     const id = 'child-' + Math.random().toString(36).substring(2, 10);
     state.children.push({ id, name, xp: 0, gold: 0, tasks: [], grades: [], sanctions: [] });
     document.getElementById('new-child-name').value = '';
-    save(); render();
   },
   'del-child': el => {
     const c = state.children[+el.dataset.i];
@@ -2258,7 +2329,7 @@ const ACTIONS = {
     token = r.token; // Store token for child authentication
     localStorage.setItem(TOKEN_KEY, token);
     families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
-    state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
+    setActiveFamily(0); state.role = 'enfant'; state.tab = 'accueil'; // setActiveFamily applique aussi la remise à zéro du jour
     // Find the correct child by name and set activeChild to their index
     state.activeChild = state.children.findIndex(c => c.name === name);
     if (state.activeChild < 0) state.activeChild = 0; // fallback if not found
@@ -2326,8 +2397,11 @@ const ACTIONS = {
       // Appel direct à l'API backend pour le login
       const r = await api('login', { email, password });
       const idToken = r.token;
-      window.firebaseToken = idToken;
+      // Mise à jour IMMÉDIATE du token global pour les appels API suivants
+      token = idToken;
+      window.authToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
+      localStorage.setItem('te-email', email);
 
       // Appel à 'me' pour récupérer les données utilisateur et familles
       const meData = await api('me', { email });
@@ -2343,7 +2417,9 @@ const ACTIONS = {
       // Appel direct à l'API backend pour la création de compte + famille
       const r = await api('signup', { name, email, password, familyName });
       const idToken = r.token;
-      window.firebaseToken = idToken;
+      // Mise à jour IMMÉDIATE du token global pour les appels API suivants
+      token = idToken;
+      window.authToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
 
       // Utilise le token pour initialiser la session
@@ -2354,7 +2430,8 @@ const ACTIONS = {
   },
   unlockParent: async () => {
     const password = document.getElementById('pu-pass').value;
-    const r = await api('verifyPassword', { password, firebaseToken: window.firebaseToken });
+    const email = me?.email || localStorage.getItem('te-email');
+    const r = await api('verifyPassword', { email, password });
     if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
   },
   'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
@@ -2379,13 +2456,15 @@ const ACTIONS = {
     render();
   },
   logout: async () => {
+    authDraft = {};
     try {
       const userName = me?.name || 'Unknown';
       if (state) logAction('user_logout', userName, { role: authRole });
       // Save audit log before logout
       if (state) await save();
-      await window.firebaseSignOut();
-      window.firebaseToken = null;
+      await releasePush();
+      await window.authSignOut();
+      window.authToken = null;
       token = null; localStorage.removeItem(TOKEN_KEY);
       SessionManager.clear(); // Clear persistent session
       me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = ''; unlocked.clear();
@@ -2457,7 +2536,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'change-password']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'enable-push', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -2472,12 +2551,12 @@ function celebrate(text) {
   setTimeout(() => o.remove(), 1900);
 }
 
-// bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant actif sont faites
-function maybeAwardDailyBonus() {
-  const c = state && state.children[state.activeChild];
+// bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant sont VALIDÉES par un parent
+// (cochée par l'enfant = done sans date: pas encore validée)
+function maybeAwardDailyBonus(c = state && state.children[state.activeChild]) {
   if (!c) return;
   const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
-  if (daily.length && daily.every(t => t.done) && c.dailyBonusDay !== state.day) {
+  if (daily.length && daily.every(t => t.done && t.completedAt) && c.dailyBonusDay !== state.day) {
     const bonus = state.dailyBonus || { xp: 30, gold: 15 };
     c.dailyBonusDay = state.day;
     c.xp += bonus.xp;
@@ -2490,6 +2569,7 @@ document.body.addEventListener('click', async e => {
   if (!el) return;
   const act = el.dataset.action, fn = ACTIONS[act];
   if (!fn) return;
+  if (act === 'login' || act === 'signup' || act === 'unlock-child-direct') authDraft = { name: field('au-name'), email: field('au-email'), fam: field('au-fam'), famname: field('ec-famname'), cname: field('ec-name') };
   if (SERVER_ACTIONS.has(act)) {
     try { await fn(el); } catch (err) { authMsg = String(err); }
     render();
@@ -2582,14 +2662,14 @@ console.assert(gradeReward('25') === null && gradeReward('abc') === null, 'grade
 console.assert(level(0) === 1 && level(99) === 1 && level(230) === 3, 'level');
 console.assert(nextReward(128, [{ cost: 50 }, { cost: 80 }, { cost: 150 }]).cost === 150, 'nextReward');
 console.assert(esc('<b>&"') === '&lt;b&gt;&amp;&quot;', 'esc');
-console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true }, { daily: true, done: true }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
+console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true, completedAt: 1 }, { daily: true, done: true, completedAt: 1 }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
 // ponytail: sanctions handler test with normalization
 console.assert((() => {
   const saved = state;
   state = {
     children: [{ name: 'Emma', gold: 50, sanctions: [] }, { name: 'Pierre', gold: 100, sanctions: [] }],
     activeChild: 0,
-    sanctionsList: { '0': { name: 'Insolence', gold: 10 }, '1': { name: 'Retard', gold: 5 } },  // object form from Firebase
+    sanctionsList: { '0': { name: 'Insolence', gold: 10 }, '1': { name: 'Retard', gold: 5 } },  // forme objet (anciennes données)
     role: 'parent'
   };
   normalizeFamilyData(state);  // Should convert to array
@@ -2686,29 +2766,32 @@ console.assert((() => {
   return result;
 })(), 'reward approval and sanctions persistence');
 
-/* boot : restaure la session via Firebase onAuthStateChanged */
+/* boot : restaure la session via onAuthStateChanged */
 async function boot() {
-  // Wait for Firebase to be initialized
-  while (!window.firebaseReady) {
+  // Attendre l'initialisation de l'auth
+  while (!window.authReady) {
     await new Promise(r => setTimeout(r, 50));
   }
 
-  // Wait for Firebase auth state to be ready
+  // Attendre l'état d'authentification
   await new Promise((resolve) => {
     console.log('[BOOT] Waiting for auth state...');
-    const unsubscribe = window.firebaseOnAuthStateChanged(async (user) => {
+    const unsubscribe = window.onAuthStateChanged(async (user) => {
       console.log('[BOOT-AUTH] Auth callback called, user:', !!user);
       unsubscribe(); // Unsubscribe from initial check
 
       if (user) {
         try {
-          // Firebase user exists, get their ID token and restore session
+          // Un jeton existe: restaurer la session
           const idToken = await user.getIdToken();
-          window.firebaseToken = idToken;
+          window.authToken = idToken;
           token = idToken;
           const r = await api('me');
           if (!r.me) throw 'session invalide';
           me = r.me;
+          // Jeton d'enfant: restauré seulement si « Se souvenir de moi » avait été coché, sinon retour à la connexion par PIN
+          const childSession = /@[^@]+\.enfant\.local$/.test(me.email || '');
+          if (childSession) { const sess = SessionManager.load(); if (!(sess && sess.role === 'enfant')) throw 'session enfant non mémorisée'; }
 
       // Save ALL currently approved tasks BEFORE loading new families
       const approvedTasks = {};
@@ -2808,8 +2891,15 @@ async function boot() {
       }
 
       parentUnlocked = false;
-      // Restored session = the parent's: land on the (locked) parent space, not a child's PIN screen
-      if (families.length) { setActiveFamily(0); state.role = 'parent'; }
+      if (childSession) {
+        // session enfant mémorisée: retour direct sur sa page (le PIN a déjà été saisi)
+        setActiveFamily(0); state.role = 'enfant'; state.tab = 'accueil';
+        state.activeChild = Math.max(0, state.children.findIndex(c => c.name === me.name));
+        unlocked.add(me.name);
+      } else if (families.length) {
+        // Restored session = the parent's: land on the (locked) parent space, not a child's PIN screen
+        setActiveFamily(0); state.role = 'parent';
+      }
       if (localStorage.getItem('statsChildIndex')) {
         statsChildIndex = +localStorage.getItem('statsChildIndex');
       }
@@ -2876,23 +2966,28 @@ async function boot() {
       }
           resolve();
         } catch (err) {
-          console.error('Boot error:', err);
-          window.firebaseToken = null;
+          console.error('[BOOT-ERROR] Error during auth:', err.message || err);
+          console.log(`[BOOT-ERROR] Token state before clearing: window.authToken=${!!window.authToken}, local=${!!token}`);
+          // Only clear token on network errors (TypeError), NOT on auth errors (401)
+          // 401 means token exists but is invalid - should be fixed, not deleted
+          if (err instanceof TypeError) {
+            localStorage.removeItem(TOKEN_KEY);
+          }
+          window.authToken = null;
           token = null;
-          if (!(err instanceof TypeError)) localStorage.removeItem(TOKEN_KEY); // server rejected it; keep it on network failure
           me = null; families = []; state = null;
           render();
           resolve();
         }
       } else {
-        // No Firebase user logged in, check for persistent session
+        // Pas de jeton: chercher une session persistante
         const persistentSession = SessionManager.load();
         if (persistentSession) {
           console.log('[BOOT-PERSISTENT] Valid persistent session found, attempting auto-login');
           try {
             if (persistentSession.role === 'parent') {
               // Auto-login parent
-              window.firebaseToken = persistentSession.token;
+              window.authToken = persistentSession.token;
               token = persistentSession.token;
               const r = await api('me', { email: persistentSession.email });
               if (!r.me) throw 'session invalide';
@@ -2900,13 +2995,13 @@ async function boot() {
               render();
             } else if (persistentSession.role === 'enfant') {
               // Auto-login child using stored token
-              window.firebaseToken = persistentSession.token;
+              window.authToken = persistentSession.token;
               token = persistentSession.token;
               const r = await api('me'); // Use existing token in header
               if (!r || !r.families || !r.families.length) throw 'Family or child not found';
               me = { email: persistentSession.childName + '@enfant.local', name: persistentSession.childName };
               families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
-              state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
+              setActiveFamily(0); state.role = 'enfant'; state.tab = 'accueil';
               state.activeChild = state.children.findIndex(c => c.name === persistentSession.childName);
               if (state.activeChild < 0) state.activeChild = 0;
               unlocked.add(persistentSession.childName);
@@ -2954,13 +3049,100 @@ async function checkServiceWorkerStatus() {
 checkServiceWorkerStatus();
 registerServiceWorker();
 
-// Auto-refresh family data every 5 seconds to ensure mobile is always up-to-date
-setInterval(() => {
-  if (token && state) {
-    console.log('[AUTO-REFRESH] Syncing at', new Date().toLocaleTimeString());
-    persistFamily().catch(e => console.error('[AUTO-REFRESH] Error:', e.message));
+// Auto-refresh family data every 30 seconds to ensure mobile is always up-to-date
+// Multi-client sync: pull server state + push local changes every 30 seconds
+// Only run on app page, not on login page
+// Autorefresh: une synchronisation (envoi des changements puis récupération) toutes les 10 s
+const SYNC_INTERVAL_MS = 10000;
+let lastSyncTime = 0;
+let syncInProgress = false;
+setInterval(async () => {
+  // Only sync if: authenticated + have app state (not login page) + not already syncing
+  if (token && state && state.children && !syncInProgress) {
+    const now = Date.now();
+    if (now - lastSyncTime < SYNC_INTERVAL_MS) return; // Debounce
+    syncInProgress = true;
+    lastSyncTime = now;
+    const syncId = Math.random().toString(36).substring(7);
+    console.log(`[SYNC-${syncId}] Starting bidirectional sync at ${new Date().toLocaleTimeString()}`);
+
+    try {
+      // Step 1: PUSH FIRST - Send local changes (but debounce if we just received a notification)
+      // CRITICAL: Do PUSH before PULL to avoid race condition where PULL fetches stale data
+      const timeSinceNotif = now - lastNotificationTime;
+      if (timeSinceNotif < 2000) {
+        console.log(`[SYNC-${syncId}] PUSH: Skipped (received notification ${timeSinceNotif}ms ago, debouncing)`);
+      } else {
+        console.log(`[SYNC-${syncId}] PUSH: Sending local changes to server`);
+        if (stateSig() === lastSyncedSig) console.log(`[SYNC-${syncId}] PUSH: Skipped (no local change)`);
+        else await persistFamily();
+        console.log(`[SYNC-${syncId}] PUSH: Complete`);
+      }
+    } catch (e) {
+      console.error(`[SYNC-${syncId}] PUSH failed:`, e.message);
+    }
+
+    try {
+      // Step 2: PULL - Get latest from server (AFTER push completes to ensure we have latest)
+      console.log(`[SYNC-${syncId}] PULL: Fetching latest from server`);
+      const serverRes = await api('me');
+      if (serverRes.families && serverRes.families[0]) {
+        const serverFamily = serverRes.families[0];
+        // Merge: keep local role/profile but merge data intelligently
+        // IMPORTANT: ALWAYS merge children intelligently, even if updatedAt is same
+        // This ensures multi-device sync works: if Device A validated a task, Device B MUST see it
+        // even if Device B did a PUSH right before the PULL
+        if (serverFamily.updatedAt >= (state.updatedAt || 0)) {
+          const isNewer = serverFamily.updatedAt > (state.updatedAt || 0);
+          console.log(`[SYNC-${syncId}] PULL: ${isNewer ? 'Server has newer' : 'Doing intelligent merge of'} data (server: ${new Date(serverFamily.updatedAt).toISOString()}, local: ${new Date(state.updatedAt || 0).toISOString()}), merging`);
+
+          // Smart merge for children: trust server's task validations from other devices
+          if (serverFamily.children && state.children) {
+            for (let i = 0; i < serverFamily.children.length && i < state.children.length; i++) {
+              const serverChild = serverFamily.children[i];
+              const localChild = state.children[i];
+              if (serverChild.tasks && localChild.tasks) {
+                serverChild.tasks = Rollover.mergeValidations(serverChild.tasks, localChild.tasks);
+              }
+            }
+          }
+
+          // Update all data fields
+          state.children = serverFamily.children || state.children;
+          state.rewards = serverFamily.rewards || state.rewards;
+          state.requests = serverFamily.requests || state.requests;
+          state.gradeRequests = serverFamily.gradeRequests || state.gradeRequests;
+          state.taskRequests = serverFamily.taskRequests || state.taskRequests;
+          state.sanctionsList = serverFamily.sanctionsList || state.sanctionsList;
+          state.proposals = serverFamily.proposals || state.proposals;
+          state.questList = serverFamily.questList || state.questList;
+          state.updatedAt = serverFamily.updatedAt;
+          normalizeFamilyData(state);
+          lastSyncedSig = stateSig();
+          rolloverDay(state, today());   // idempotent: la référence ci-dessus reste celle du serveur, un changement sera envoyé à la prochaine synchro
+
+          // Saisie en cours dans un formulaire: ne pas redessiner (render() effacerait les champs non focalisés).
+          // Les données sont déjà à jour; le prochain render (action de l'utilisateur) les affichera.
+          const formEl = e => e && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.tagName) && document.getElementById('main')?.contains(e);
+          const editing = formEl(document.activeElement) ||
+            [...document.querySelectorAll('#main input:not([type=checkbox]):not([type=radio]), #main textarea')].some(e => e.value !== '' && e.value !== e.defaultValue);
+          if (editing) {
+            console.log(`[SYNC-${syncId}] Form in progress - render skipped`);
+          } else {
+            const savedScroll = window.scrollY;
+            render();
+            window.scrollTo(0, savedScroll);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[SYNC-${syncId}] PULL failed:`, e.message);
+    }
+
+    console.log(`[SYNC-${syncId}] Complete`);
+    syncInProgress = false;
   }
-}, 5000);
+}, SYNC_INTERVAL_MS);
 
 boot();
 </script>

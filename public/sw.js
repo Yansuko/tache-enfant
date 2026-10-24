@@ -1,26 +1,24 @@
-// Service Worker pour DailyKids - Gestion des notifications push
-// self.addEventListener('push', event) - reçoit les notifications
-// self.addEventListener('notificationclick', event) - gère les clics
-// self.addEventListener('notificationclose', event) - gère la fermeture
+// Service Worker — Ultra-minimal for debugging
 
-// Log au démarrage du Service Worker
-console.log('[SW] Service Worker script loaded');
-console.log('[SW-SCOPE] Scope:', self.location.href);
+self.addEventListener('install', event => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(clients.claim());
+});
 
 self.addEventListener('push', event => {
   console.log('[SW-PUSH] Notification received:', event);
 
-  if (!event.data) {
-    console.log('[SW-PUSH] Empty notification received');
-    return;
-  }
-
-  let payload = {};
-  try {
-    payload = event.data.json();
-  } catch {
-    // Fallback if not JSON
-    payload = { title: 'DailyKids', body: event.data.text() };
+  // iOS exige qu'un push affiche toujours une notification (sinon l'abonnement est révoqué): même sans contenu
+  let payload = { title: 'DailyKids', body: 'Il y a du nouveau' };
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { title: 'DailyKids', body: event.data.text() };
+    }
   }
 
   const {
@@ -36,15 +34,32 @@ self.addEventListener('push', event => {
     body,
     icon,
     badge,
-    tag,
-    data,
-    requireInteraction: false,
-    vibrate: [200, 100, 200],
+    tag, // Deduplicates: same tag = same notification (replaced, not doubled)
+    data: {
+      ...data,
+      receivedAt: Date.now() // Track when notification was received
+    },
+    requireInteraction: true, // iOS 16+ requiert ceci pour garder la notification affichée
+    // Note: Ne pas utiliser 'vibrate' - iOS ne supporte pas la Vibration API
+    actions: [
+      { action: 'open', title: 'Ouvrir' }
+    ]
   };
 
   event.waitUntil(
     self.registration.showNotification(title, options)
-      .then(() => console.log('[SW-PUSH] Notification shown:', title))
+      .then(() => {
+        console.log('[SW-PUSH] Notification shown:', title);
+        // Signal to clients that notification was just received to prevent re-save loops
+        return clients.matchAll({ type: 'window' }).then(clientList => {
+          clientList.forEach(client => {
+            client.postMessage({
+              type: 'NOTIFICATION_RECEIVED',
+              receivedAt: Date.now()
+            });
+          });
+        });
+      })
       .catch(err => console.error('[SW-PUSH] Failed to show notification:', err))
   );
 });

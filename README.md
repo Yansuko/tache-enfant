@@ -87,7 +87,7 @@ npm install          # Install dependencies
 npm run dev:docker   # Run with Docker Compose
 npm run test         # Run all tests
 npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests
+npm run test:e2e     # E2E UI (Playwright; CHROMIUM_PATH=<chemin> pour utiliser un Chromium déjà installé)
 ```
 
 ## Deployment
@@ -113,7 +113,8 @@ docker run -d \
 NODE_ENV              # development|production
 PORT                  # Default: 3000
 DATABASE_URL          # postgresql://... or sqlite://...
-ADMIN_KEY             # Secret for admin operations
+ADMIN_KEY             # Required for /admin.html and admin actions (refused when unset)
+VAPID_SUBJECT        # mailto:you@real-address (required by Apple for iPhone push; default is a placeholder)
 JWT_SECRET            # Auto-generated if not set
 BREVO_API_KEY         # Optional: for email features
 LOG_LEVEL             # debug|info|warn|error
