@@ -151,10 +151,22 @@ async function start() {
     await initializeDatabase();
     setupEmailSender();
     if (!process.env.VAPID_SUBJECT) console.warn('[PUSH] VAPID_SUBJECT non défini (valeur par défaut factice): Apple peut refuser les notifications iPhone (HTTP 403). Définissez VAPID_SUBJECT=mailto:votre@adresse');
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`[SERVER] DailyKids Quest running on http://localhost:${PORT}`);
       console.log(`[SERVER] Node ${process.version}, ${NODE_ENV} mode`);
     });
+    // Arrêt propre (docker stop envoie SIGTERM; sans gestionnaire, un processus PID 1 l'ignore puis est tué après 10 s)
+    const shutdown = (signal) => {
+      console.log(`[SERVER] ${signal} reçu: arrêt en cours`);
+      server.close(() => {
+        try { if (db instanceof Pool) db.end(); else db?.close(); } catch (e) { console.error('[SHUTDOWN]', e.message); }
+        process.exit(0);
+      });
+      server.closeIdleConnections?.();
+      setTimeout(() => process.exit(0), 3000).unref();   // au plus 3 s d'attente des requêtes en cours
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     console.error('[STARTUP] Fatal error:', error);
     process.exit(1);

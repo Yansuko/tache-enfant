@@ -65,12 +65,17 @@ export function verifyToken(token, secret) {
 }
 
 // ponytail: secret auto-généré et stocké dans le store si absent. Course possible au tout premier boot (double génération), négligeable.
+// Secrets d'exemple publiés dans l'historique du dépôt: connus de tous, ils ne protègent aucun compte et sont ignorés.
+const PUBLISHED_SECRETS = new Set(['dailykids_jwt_secret_production_v1_2026']);
+let secretWarned = false;
 async function getSecret(store) {
-  // Production: use JWT_SECRET env var if available (required for container consistency)
-  if (process.env.JWT_SECRET) {
-    return process.env.JWT_SECRET;
+  const fromEnv = process.env.JWT_SECRET;
+  if (fromEnv && !PUBLISHED_SECRETS.has(fromEnv)) {
+    if (fromEnv.length < 32 && !secretWarned) { secretWarned = true; console.warn('[AUTH] JWT_SECRET trop court (moins de 32 caractères): utilisez par exemple `openssl rand -hex 32`.'); }
+    return fromEnv;
   }
-  // Fallback: auto-generate and store (for dev only)
+  if (fromEnv && !secretWarned) { secretWarned = true; console.warn('[AUTH] JWT_SECRET correspond à la valeur d\'exemple publiée dans le dépôt: ignorée. Un secret aléatoire est généré et conservé dans la base. Définissez votre propre JWT_SECRET (openssl rand -hex 32).'); }
+  // Sans JWT_SECRET valide: secret aléatoire généré une fois et conservé dans la base (il faut donc un volume persistant)
   let s = await store.get('secret');
   if (!s) { s = { key: crypto.randomBytes(32).toString('hex') }; await store.set('secret', s); }
   return s.key;

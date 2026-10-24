@@ -41,8 +41,8 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV DATABASE_URL=sqlite://./data/dailykids.db
 ENV LOG_LEVEL=info
-# CRITICAL: Fixed JWT secret for consistent token validation across restarts
-ENV JWT_SECRET=dailykids_jwt_secret_production_v1_2026
+# JWT_SECRET n'est volontairement pas défini ici (une valeur dans l'image serait lisible par tous): fournissez-le au lancement
+# (-e JWT_SECRET=$(openssl rand -hex 32)), sinon un secret aléatoire est généré et conservé dans la base (volume /app/data).
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
