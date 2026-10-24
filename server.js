@@ -150,6 +150,7 @@ async function start() {
   try {
     await initializeDatabase();
     setupEmailSender();
+    if (!process.env.VAPID_SUBJECT) console.warn('[PUSH] VAPID_SUBJECT non défini (valeur par défaut factice): Apple peut refuser les notifications iPhone (HTTP 403). Définissez VAPID_SUBJECT=mailto:votre@adresse');
     app.listen(PORT, () => {
       console.log(`[SERVER] DailyKids Quest running on http://localhost:${PORT}`);
       console.log(`[SERVER] Node ${process.version}, ${NODE_ENV} mode`);

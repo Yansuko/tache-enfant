@@ -1436,7 +1436,12 @@ export async function sendPush(store, familyId, payload, opts = {}) {
   let sent = 0;
   await Promise.all(subs.map(s => webpush.sendNotification(s.subscription, JSON.stringify(payload), wp).then(
     () => { sent++; },
-    e => { if (e.statusCode === 404 || e.statusCode === 410) dead.add(s.subscription.endpoint); else console.error('[PUSH] send failed:', e.statusCode || e.message); })));
+    e => {
+      if (e.statusCode === 404 || e.statusCode === 410) { dead.add(s.subscription.endpoint); return; }
+      // fournisseur (apple, google, mozilla...) et raison, jamais l'adresse complète de l'appareil
+      let host = '?'; try { host = new URL(s.subscription.endpoint).host; } catch { /* adresse invalide */ }
+      console.error(`[PUSH] send failed: ${e.statusCode || e.message} host=${host} ${String(e.body || '').slice(0, 160)}`.trim());
+    })));
   if (dead.size) await store.set('push:' + familyId, all.filter(s => !dead.has(s.subscription.endpoint)));
   return { sent, removed: dead.size };
 }

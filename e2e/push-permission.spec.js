@@ -1,7 +1,9 @@
-import { test, expect, newFamily, parentLogin, childLogin, tab, settle } from './helpers.js';
+import { test, expect, newFamily, api, parentLogin, childLogin, tab, settle } from './helpers.js';
+
+test.beforeEach(async ({ page }) => { await page.clock.install(); });
 
 // Faux navigateur de notifications: on enregistre qui demande l'autorisation, avec ou sans geste de l'utilisateur.
-const stubPush = ({ permission, supported, standalone }) => {
+const stubPush = ({ permission, supported, standalone, subscribeError }) => {
   window.__push = { permissionCalls: [], subscribeCalls: 0 };
   if (standalone !== undefined) Object.defineProperty(navigator, 'standalone', { get: () => standalone });
   if (!supported) { delete window.Notification; if (window.PushManager) delete window.PushManager; return; }
@@ -11,7 +13,7 @@ const stubPush = ({ permission, supported, standalone }) => {
   N.requestPermission = async () => { window.__push.permissionCalls.push({ gesture: navigator.userActivation.isActive }); perm = 'granted'; return perm; };
   window.Notification = N;
   const sub = { endpoint: 'https://push.example/dev-' + Math.random().toString(36).slice(2), getKey: () => new Uint8Array([1, 2, 3]).buffer };
-  PushManager.prototype.subscribe = async () => { window.__push.subscribeCalls++; return sub; };
+  PushManager.prototype.subscribe = async () => { if (subscribeError) throw new Error(subscribeError); window.__push.subscribeCalls++; return sub; };
   PushManager.prototype.getSubscription = async () => (window.__push.subscribeCalls ? sub : null);
 };
 
@@ -119,3 +121,51 @@ test('iPhone lancé comme application mais sans notifications: indique la versio
   await d.ctx.close();
 });
 
+test('l\'abonnement échoue sur l\'appareil: la raison est affichée, le bouton reste disponible', async ({ browser, request }) => {
+  const f = await newFamily(request);
+  const d = await device(browser, { subscribeError: 'Registration failed - push service error' });
+  await childLogin(d.page, f);
+  await enableButton(d.page).click();
+  await settle(d.page);
+  await expect(d.page.locator('#main')).toContainText('Abonnement impossible');
+  await expect(d.page.locator('#main')).toContainText('push service error');
+  await expect(enableButton(d.page)).toBeVisible();
+  expect(d.subscribed).toEqual([]);
+  await d.ctx.close();
+});
+
+test('une sauvegarde refusée par le serveur: le message de synchronisation donne la cause', async ({ page, request }) => {
+  const f = await newFamily(request);
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  await page.route('**/api', async route => {
+    if ((route.request().postData() || '').includes('"action":"saveFamily"')) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Erreur serveur : disque plein' }) });
+    return route.continue();
+  });
+  await page.locator('#new-task-name').fill('Vider le lave-vaisselle');
+  await page.locator('#new-task-xp').fill('15');
+  await page.getByRole('button', { name: 'Ajouter la quête' }).click();
+  await expect(page.locator('#toast')).toBeVisible();
+  await expect(page.locator('#toast')).toContainText('disque plein');
+});
+
+test('coupure réseau passagère pendant une sauvegarde (iOS en arrière-plan): réessayée sans alerter', async ({ page, request }) => {
+  const f = await newFamily(request);
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  let cut = 0;
+  await page.route('**/api', async route => {
+    if ((route.request().postData() || '').includes('"action":"saveFamily"') && cut++ === 0) return route.abort('failed');
+    return route.continue();
+  });
+  await page.locator('#new-task-name').fill('Sortir les poubelles');
+  await page.locator('#new-task-xp').fill('5');
+  await page.getByRole('button', { name: 'Ajouter la quête' }).click();
+  await expect.poll(() => cut).toBeGreaterThan(0);        // la coupure a eu lieu
+  await page.waitForTimeout(150);                         // le nouvel essai est programmé
+  await page.clock.runFor(2000);                          // ... et se déclenche
+  await settle(page);
+  await expect(page.locator('#toast')).toBeHidden();
+  const names = (await api(request, 'me', {}, f.token)).body.families[0].children[0].tasks.map(t => t.name);
+  expect(names).toContain('Sortir les poubelles');
+});

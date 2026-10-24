@@ -240,6 +240,7 @@ const unlocked = new Set(); // enfants déverrouillés (PIN) — en mémoire
 // push notifications state
 let swRegistration = null;           // enregistrement du service worker
 let pushSubscription = null;         // souscription push actuelle
+let pushError = ''; // dernière raison d'échec de l'abonnement, affichée sur la carte Notifications
 let pushNotificationEnabled = false; // permission utilisateur accordée
 
 // stats state
@@ -324,6 +325,7 @@ async function subscribeToPush() {
     return false;
   }
 
+  pushError = '';
   try {
     // Récupérer la clé publique VAPID depuis le serveur
     const keyResponse = await api('pushKey');
@@ -357,6 +359,7 @@ async function subscribeToPush() {
     pushNotificationEnabled = true;
     return true;
   } catch (err) {
+    pushError = 'Abonnement impossible : ' + ((err && err.message) || String(err));
     console.error('[PUSH] Erreur lors de la subscription:', err);
     return false;
   }
@@ -392,7 +395,7 @@ function pushStatusCard() {
   }
   if (Notification.permission === 'denied') return note("🔕 Notifications bloquées : autorise-les dans les réglages de l'appareil ou du navigateur.");
   if (Notification.permission === 'granted' && pushNotificationEnabled) return note('🔔 Notifications activées sur cet appareil');
-  return `<div class="card elev-sm" style="gap:8px"><div style="font-size:13px">Reçois une alerte quand il y a du nouveau.</div><button class="btn btn-secondary btn-block" data-action="enable-push">🔔 Activer les notifications</button></div>`;
+  return `<div class="card elev-sm" style="gap:8px"><div style="font-size:13px">Reçois une alerte quand il y a du nouveau.</div>${pushError ? `<div style="font-size:12px;color:var(--color-accent-800)">⚠️ ${esc(pushError)}</div>` : ''}<button class="btn btn-secondary btn-block" data-action="enable-push">🔔 Activer les notifications</button></div>`;
 }
 
 async function unsubscribeFromPush() {
@@ -484,7 +487,11 @@ function stampBases(r) {
     for (const c of f.children) if (c && typeof c === 'object') { c.xpBase = c.xp; c.goldBase = c.gold; }
   }
 }
-function toast(on) { document.getElementById('toast').style.display = on ? 'block' : 'none'; }
+function toast(on, detail = '') {
+  const el = document.getElementById('toast');
+  el.textContent = '⚠️ Synchronisation échouée — vérifie ta connexion' + (on && detail ? ` (${String(detail).slice(0, 140)})` : '');
+  el.style.display = on ? 'block' : 'none';
+}
 
 // Log action to audit trail
 function logAction(actionType, target, details = {}, status = 'success') {
@@ -624,6 +631,7 @@ async function persistFamily() {
   dirty = true;
   if (saving) return;
   saving = true;
+  let saveRetries = 0;
   const persistId = Math.random().toString(36).substring(7);
   const persistTime = new Date().toISOString();
   console.log(`[PERSIST-START-${persistId}] ${persistTime} Starting persistFamily`);
@@ -713,7 +721,12 @@ async function persistFamily() {
       lastSyncedSig = stateSig();
       toast(false);
     }
-    catch (e) { console.error(`[SAVE] Error:`, e.message || String(e), e); toast(true); break; }
+    catch (e) {
+      console.error(`[SAVE] Error:`, e.message || String(e), e);
+      // coupure réseau passagère (iOS coupe les requêtes d'une application passée en arrière-plan): on réessaie avant d'alerter
+      if (e instanceof TypeError && ++saveRetries <= 2) { dirty = true; await new Promise(r => setTimeout(r, 1500)); continue; }
+      toast(true, (e && e.message) || String(e)); break;
+    }
   }
   saving = false;
   localStorage.setItem('statsChildIndex', statsChildIndex);

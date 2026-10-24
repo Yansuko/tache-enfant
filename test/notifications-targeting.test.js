@@ -146,3 +146,29 @@ describe('e-mails', () => {
     expect(emails).toEqual([]);                                            // « tâche complétée » concerne l'enfant
   });
 });
+
+describe('journal des échecs d\'envoi', () => {
+  it('un échec 403 indique l\'appareil concerné (fournisseur) et la raison, sans l\'adresse complète', async () => {
+    const wp = (await import('web-push')).default;
+    const original = wp.sendNotification;
+    wp.sendNotification = async (sub) => {
+      if (sub.endpoint.includes('apple')) { const e = new Error('rejected'); e.statusCode = 403; e.body = '{"reason":"BadJwtToken"}'; throw e; }
+      sent.push({ endpoint: sub.endpoint }); return {};
+    };
+    const { devices, A, base, save } = await setup();
+    const apple = { endpoint: 'https://web.push.apple.com/secret-token-123', keys: { p256dh: 'k', auth: 'a' } };
+    await api('subscribePush', { familyId: A.family.id, subscription: apple }, devices.B.token);
+    const errors = []; const spy = vi.spyOn(console, 'error').mockImplementation((...a) => errors.push(a.join(' ')));
+    const f = structuredClone(base);
+    f.children[0].tasks[0].done = true;
+    f.taskRequests = [{ id: 'tr9', child: 'Emma', taskIndex: 0, taskName: 'Faire son lit', xp: 10, gold: 5, status: 'pending', submittedAt: Date.now() }];
+    await save('C', f);
+    spy.mockRestore(); wp.sendNotification = original;
+    const line = errors.find(l => l.includes('[PUSH] send failed'));
+    expect(line).toContain('403');
+    expect(line).toContain('web.push.apple.com');
+    expect(line).toContain('BadJwtToken');
+    expect(line).not.toContain('secret-token-123');
+  });
+});
+
