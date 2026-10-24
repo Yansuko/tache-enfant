@@ -26,14 +26,44 @@ export function signToken(email, secret, ttlMs = 1000 * 60 * 60 * 24 * 30) {
   return payload + '.' + sig;
 }
 export function verifyToken(token, secret) {
-  if (!token || !token.includes('.')) return null;
+  if (!token || !token.includes('.')) {
+    console.error('[VERIFY-TOKEN-DEBUG] Token missing or no dot separator');
+    return null;
+  }
   const [payload, sig] = token.split('.');
   const expect = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-  if (!sig || sig.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
+  if (!sig) {
+    console.error('[VERIFY-TOKEN-DEBUG] No signature in token');
+    return null;
+  }
+  if (sig.length !== expect.length) {
+    console.error('[VERIFY-TOKEN-DEBUG] Signature length mismatch - got', sig.length, 'expected', expect.length);
+    return null;
+  }
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) {
+    console.error('[VERIFY-TOKEN-DEBUG] Signature verification failed');
+    return null;
+  }
   try {
-    const { email, exp } = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return exp > Date.now() ? email : null;
-  } catch { return null; }
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    const { email, exp } = decoded;
+    if (!email) {
+      console.error('[VERIFY-TOKEN-DEBUG] No email in token payload');
+      return null;
+    }
+    if (!exp) {
+      console.error('[VERIFY-TOKEN-DEBUG] No expiry in token payload');
+      return null;
+    }
+    if (exp <= Date.now()) {
+      console.error('[VERIFY-TOKEN-DEBUG] Token expired');
+      return null;
+    }
+    return email;
+  } catch(e) {
+    console.error('[VERIFY-TOKEN-DEBUG] Failed to parse payload:', e.message);
+    return null;
+  }
 }
 
 // ponytail: secret auto-généré et stocké dans le store si absent — zéro config sur Netlify. Course possible au tout premier boot (double génération), négligeable.
@@ -77,6 +107,17 @@ function normalizeFamilyData(f) {
         if (!c || !c.id) return true;
         if (seen.has(c.id)) return false;
         seen.add(c.id);
+        return true;
+      });
+    }
+
+    // Deduplicate questList, proposals, requests, taskRequests by ID (fix for duplicates from Firebase object conversion)
+    if (['questList', 'proposals', 'requests', 'taskRequests'].includes(field) && f[field].length > 0) {
+      const seen = new Set();
+      f[field] = f[field].filter(item => {
+        if (!item || !item.id) return true;
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
         return true;
       });
     }
