@@ -113,7 +113,7 @@ docker run -d \
 NODE_ENV              # development|production
 PORT                  # Default: 3000
 DATABASE_URL          # postgresql://... or sqlite://...
-ADMIN_KEY             # Secret for admin operations
+ADMIN_KEY             # Required for /admin.html and admin actions (refused when unset)
 JWT_SECRET            # Auto-generated if not set
 BREVO_API_KEY         # Optional: for email features
 LOG_LEVEL             # debug|info|warn|error

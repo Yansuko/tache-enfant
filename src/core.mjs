@@ -1125,12 +1125,20 @@ async function approveGrade(store, email, b) {
   return { status: 200, body: { ok: true } };
 }
 
+// ADMIN_KEY est obligatoire: sans elle (ou avec une clé vide/différente) toute action admin est refusée.
+function isAdminKey(key) {
+  const expected = process.env.ADMIN_KEY;
+  if (!expected || typeof key !== 'string' || !key) return false;
+  const digest = v => crypto.createHash('sha256').update(v).digest();
+  return crypto.timingSafeEqual(digest(key), digest(expected));
+}
+
 async function getLevelConfig(store, b) {
   const { familyId, adminKey } = b;
   if (!familyId) return err(400, 'familyId requis.');
 
   // Verify admin key
-  if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+  if (!isAdminKey(adminKey)) {
     return err(403, 'Clé admin invalide.');
   }
 
@@ -1166,7 +1174,7 @@ async function updateLevelConfig(store, b) {
   if (!levelConfig) return err(400, 'levelConfig requis.');
 
   // Verify admin key
-  if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+  if (!isAdminKey(adminKey)) {
     return err(403, 'Clé admin invalide.');
   }
 
@@ -1218,7 +1226,7 @@ async function resetLevelConfig(store, b) {
   if (!familyId) return err(400, 'familyId requis.');
 
   // Verify admin key
-  if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+  if (!isAdminKey(adminKey)) {
     return err(403, 'Clé admin invalide.');
   }
 
@@ -1844,7 +1852,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'resetLevelConfig': return resetLevelConfig(store, body);
     case 'getAdminStats': {
       // Verify admin key
-      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+      if (!isAdminKey(body.adminKey)) {
         return err(403, 'Clé admin invalide.');
       }
       const families = [];
@@ -2000,7 +2008,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'adminResetPassword': {
       // Verify admin key
-      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+      if (!isAdminKey(body.adminKey)) {
         return err(403, 'Clé admin invalide.');
       }
       const targetEmail = body.email?.toLowerCase();
@@ -2023,7 +2031,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'adminDeleteAccount': {
       // Verify admin key
-      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+      if (!isAdminKey(body.adminKey)) {
         return err(403, 'Clé admin invalide.');
       }
       const targetEmail = body.email?.toLowerCase();
@@ -2053,7 +2061,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'adminResetPin': {
       // Verify admin key
-      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+      if (!isAdminKey(body.adminKey)) {
         return err(403, 'Clé admin invalide.');
       }
       const famId = body.familyId;
@@ -2079,7 +2087,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'adminDeleteFamily': {
       // Verify admin key
-      if (body.adminKey !== process.env.ADMIN_KEY && body.adminKey !== 'demo-admin-key') {
+      if (!isAdminKey(body.adminKey)) {
         return err(403, 'Clé admin invalide.');
       }
       const famId = body.familyId;

@@ -328,3 +328,44 @@ describe('statistiques de tâches (getTaskStats)', () => {
   });
 });
 
+describe('clé admin', () => {
+  const ADMIN_ACTIONS = ['getAdminStats', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily'];
+  const saved = process.env.ADMIN_KEY;
+  const restore = () => { if (saved === undefined) delete process.env.ADMIN_KEY; else process.env.ADMIN_KEY = saved; };
+
+  it('la clé "demo-admin-key" n\'ouvre aucune action admin', async () => {
+    process.env.ADMIN_KEY = 'vraie-cle-secrete';
+    const p = await newParent();
+    for (const action of ADMIN_ACTIONS) {
+      const r = await api(action, { adminKey: 'demo-admin-key', familyId: p.family.id, email: p.email, levelConfig: { levels: [{ level: 1, xpRequired: 1 }] } });
+      expect(r.status, action).toBe(403);
+    }
+    // le compte n'a pas été touché
+    expect((await api('login', { email: p.email, password: p.password })).status).toBe(200);
+    restore();
+  });
+
+  it('sans ADMIN_KEY configurée, toutes les actions admin sont refusées, avec ou sans clé', async () => {
+    delete process.env.ADMIN_KEY;
+    const p = await newParent();
+    for (const action of ADMIN_ACTIONS) {
+      for (const adminKey of [undefined, '', 'undefined']) {
+        const r = await api(action, { adminKey, familyId: p.family.id, email: p.email, levelConfig: { levels: [{ level: 1, xpRequired: 1 }] } });
+        expect(r.status, `${action} / ${JSON.stringify(adminKey)}`).toBe(403);
+      }
+    }
+    expect((await api('login', { email: p.email, password: p.password })).status).toBe(200);
+    restore();
+  });
+
+  it('la clé configurée fonctionne: statistiques et réinitialisation de mot de passe', async () => {
+    process.env.ADMIN_KEY = 'vraie-cle-secrete';
+    const p = await newParent();
+    expect((await api('getAdminStats', { adminKey: 'vraie-cle-secrete' })).status).toBe(200);
+    expect((await api('getAdminStats', { adminKey: 'vraie-cle-secrete ' })).status).toBe(403);
+    const r = await api('adminResetPassword', { adminKey: 'vraie-cle-secrete', email: p.email });
+    expect(r.status).toBe(200);
+    restore();
+  });
+});
+
