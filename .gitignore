@@ -11,3 +11,8 @@ firebase-export.json
 migration.sql
 dailykids-*.tar
 test-results/
+
+# bases de données locales (jamais versionnées)
+data/*.db
+data/*.db-shm
+data/*.db-wal

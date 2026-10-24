@@ -1,6 +1,6 @@
 {
   "name": "tache-enfant",
-  "version": "1.0.34",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "dev:docker:build": "docker-compose -f docker-compose.dev.yml build",
     "dev:seed": "DATABASE_URL=${DATABASE_URL:-postgresql://dailykids:dailykids@localhost:5432/dailykids} node seed-demo-only.mjs",
     "migrate": "docker-compose -f docker-compose.dev.yml exec -T db psql -v ON_ERROR_STOP=1 -U dailykids -d dailykids < migration.sql",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:image": "playwright test -c playwright.container.config.js"
   },
   "dependencies": {
     "better-sqlite3": "^9.2.2",
