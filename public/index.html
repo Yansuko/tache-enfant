@@ -115,7 +115,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/rollover.js"></script>
 <script>
-// ── Auth sans Firebase — utilise l'API backend et localStorage ──
+// ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
 const SESSION_KEY = 'dailykids_session';
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 jours
@@ -153,24 +153,22 @@ const SessionManager = {
   }
 };
 
-// Remplace l'initialisation Firebase par une simple vérification du token
+// Récupère le jeton stocké et prévient les écouteurs d'état d'authentification
 function initAuth() {
   // Récupère le token stocké dans localStorage s'il existe
   const storedToken = localStorage.getItem(TOKEN_KEY);
   if (storedToken) {
-    window.firebaseToken = storedToken;
+    window.authToken = storedToken;
   }
 
   // Signal que le système d'auth est prêt
-  window.firebaseReady = true;
+  window.authReady = true;
 
-  // Simule onAuthStateChanged en vérifiant si un token existe
-  // Cela permet au reste du code de continuer à fonctionner sans modification
-  if (window.firebaseOnAuthStateChangedCallbacks) {
-    window.firebaseOnAuthStateChangedCallbacks.forEach(cb => {
+  // Notifie les écouteurs (boot) de l'état courant: jeton présent ou non
+  if (window.authStateCallbacks) {
+    window.authStateCallbacks.forEach(cb => {
       if (storedToken) {
-        // CRITICAL FIX: Return a mock user object with getIdToken() method
-        // The boot() code expects user.getIdToken() to return the token
+        // boot() lit le jeton via user.getIdToken()
         cb({
           hasToken: true,
           getIdToken: async () => storedToken
@@ -182,48 +180,22 @@ function initAuth() {
   }
 }
 
-// Stub pour les appels Firebase — simule les fonctions Firebase
-window.firebaseSignIn = async (_, email, password) => {
-  // fetch vers l'API backend pour le login
-  const res = await fetch('/api', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'login', email, password })
-  });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw errorData.error || `HTTP ${res.status}`;
-  }
-  const data = await res.json();
-  // Retourne un objet compatif avec le code existant
-  return { user: { uid: email, getIdToken: async () => data.token } };
-};
-
-window.firebaseSignUp = async (_, email, password) => {
-  // Ce sera appelé avec les bons paramètres depuis l'action signup
-  // Les vrais params (name, familyName) sont passés à l'API signup
-  return { user: { uid: email, getIdToken: async () => '' } };
-};
-
-window.firebaseSignOut = async () => {
+// Déconnexion locale
+window.authSignOut = async () => {
   // Rien à faire — le backend ne maintient pas de session
-  window.firebaseToken = null;
+  window.authToken = null;
   localStorage.removeItem(TOKEN_KEY);
 };
 
-window.getFirebaseIdToken = async (user) => {
-  return localStorage.getItem(TOKEN_KEY) || null;
-};
-
 // Setup auth state listener callbacks
-window.firebaseOnAuthStateChangedCallbacks = [];
-window.firebaseOnAuthStateChanged = (callback) => {
+window.authStateCallbacks = [];
+window.onAuthStateChanged = (callback) => {
   if (typeof callback !== 'function') return () => {};
-  window.firebaseOnAuthStateChangedCallbacks.push(callback);
-  // Appelle le callback avec l'état courant — en différé, comme Firebase, pour que l'appelant ait reçu unsubscribe
+  window.authStateCallbacks.push(callback);
+  // Appelle le callback avec l'état courant, en différé pour que l'appelant ait reçu unsubscribe
   const storedToken = localStorage.getItem(TOKEN_KEY);
   queueMicrotask(() => callback(storedToken ? { uid: 'authenticated-user', getIdToken: async () => storedToken } : null));
-  // Retourne une fonction unsubscribe (no-op pour le remplacement Firebase)
+  // Retourne une fonction unsubscribe (no-op)
   return () => {};
 };
 
@@ -473,12 +445,12 @@ async function api(action, body = {}) {
   const url = new URL('/api', window.location.origin).toString();
   if (action === 'saveFamily') console.log(`[API] Calling: ${url} with action=${action}`);
 
-  // Get Firebase token if available, fall back to legacy token
+  // Jeton de session (window.authToken en priorité, sinon la variable locale)
   let authHeader = {};
-  const hasWindowToken = !!window.firebaseToken;
+  const hasWindowToken = !!window.authToken;
   const hasLocalToken = !!token;
   if (hasWindowToken) {
-    authHeader = { Authorization: 'Bearer ' + window.firebaseToken };
+    authHeader = { Authorization: 'Bearer ' + window.authToken };
   } else if (hasLocalToken) {
     authHeader = { Authorization: 'Bearer ' + token };
   }
@@ -2398,7 +2370,7 @@ const ACTIONS = {
       const idToken = r.token;
       // Mise à jour IMMÉDIATE du token global pour les appels API suivants
       token = idToken;
-      window.firebaseToken = idToken;
+      window.authToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
       localStorage.setItem('te-email', email);
 
@@ -2418,7 +2390,7 @@ const ACTIONS = {
       const idToken = r.token;
       // Mise à jour IMMÉDIATE du token global pour les appels API suivants
       token = idToken;
-      window.firebaseToken = idToken;
+      window.authToken = idToken;
       localStorage.setItem(TOKEN_KEY, idToken);
 
       // Utilise le token pour initialiser la session
@@ -2430,7 +2402,7 @@ const ACTIONS = {
   unlockParent: async () => {
     const password = document.getElementById('pu-pass').value;
     const email = me?.email || localStorage.getItem('te-email');
-    const r = await api('verifyPassword', { email, password, firebaseToken: window.firebaseToken });
+    const r = await api('verifyPassword', { email, password });
     if (r.ok) { parentUnlocked = true; authMsg = ''; } else authMsg = 'Mot de passe incorrect.';
   },
   'auth-toggle': () => { authMode = authMode === 'login' ? 'signup' : 'login'; authMsg = ''; },
@@ -2460,8 +2432,8 @@ const ACTIONS = {
       if (state) logAction('user_logout', userName, { role: authRole });
       // Save audit log before logout
       if (state) await save();
-      await window.firebaseSignOut();
-      window.firebaseToken = null;
+      await window.authSignOut();
+      window.authToken = null;
       token = null; localStorage.removeItem(TOKEN_KEY);
       SessionManager.clear(); // Clear persistent session
       me = null; families = []; state = null; parentUnlocked = false; authMode = 'login'; authMsg = ''; unlocked.clear();
@@ -2665,7 +2637,7 @@ console.assert((() => {
   state = {
     children: [{ name: 'Emma', gold: 50, sanctions: [] }, { name: 'Pierre', gold: 100, sanctions: [] }],
     activeChild: 0,
-    sanctionsList: { '0': { name: 'Insolence', gold: 10 }, '1': { name: 'Retard', gold: 5 } },  // object form from Firebase
+    sanctionsList: { '0': { name: 'Insolence', gold: 10 }, '1': { name: 'Retard', gold: 5 } },  // forme objet (anciennes données)
     role: 'parent'
   };
   normalizeFamilyData(state);  // Should convert to array
@@ -2762,25 +2734,25 @@ console.assert((() => {
   return result;
 })(), 'reward approval and sanctions persistence');
 
-/* boot : restaure la session via Firebase onAuthStateChanged */
+/* boot : restaure la session via onAuthStateChanged */
 async function boot() {
-  // Wait for Firebase to be initialized
-  while (!window.firebaseReady) {
+  // Attendre l'initialisation de l'auth
+  while (!window.authReady) {
     await new Promise(r => setTimeout(r, 50));
   }
 
-  // Wait for Firebase auth state to be ready
+  // Attendre l'état d'authentification
   await new Promise((resolve) => {
     console.log('[BOOT] Waiting for auth state...');
-    const unsubscribe = window.firebaseOnAuthStateChanged(async (user) => {
+    const unsubscribe = window.onAuthStateChanged(async (user) => {
       console.log('[BOOT-AUTH] Auth callback called, user:', !!user);
       unsubscribe(); // Unsubscribe from initial check
 
       if (user) {
         try {
-          // Firebase user exists, get their ID token and restore session
+          // Un jeton existe: restaurer la session
           const idToken = await user.getIdToken();
-          window.firebaseToken = idToken;
+          window.authToken = idToken;
           token = idToken;
           const r = await api('me');
           if (!r.me) throw 'session invalide';
@@ -2953,27 +2925,27 @@ async function boot() {
           resolve();
         } catch (err) {
           console.error('[BOOT-ERROR] Error during auth:', err.message || err);
-          console.log('[BOOT-ERROR] Token state before clearing: window.firebaseToken=${!!window.firebaseToken}, local=${!!token}');
+          console.log(`[BOOT-ERROR] Token state before clearing: window.authToken=${!!window.authToken}, local=${!!token}`);
           // Only clear token on network errors (TypeError), NOT on auth errors (401)
           // 401 means token exists but is invalid - should be fixed, not deleted
           if (err instanceof TypeError) {
             localStorage.removeItem(TOKEN_KEY);
           }
-          window.firebaseToken = null;
+          window.authToken = null;
           token = null;
           me = null; families = []; state = null;
           render();
           resolve();
         }
       } else {
-        // No Firebase user logged in, check for persistent session
+        // Pas de jeton: chercher une session persistante
         const persistentSession = SessionManager.load();
         if (persistentSession) {
           console.log('[BOOT-PERSISTENT] Valid persistent session found, attempting auto-login');
           try {
             if (persistentSession.role === 'parent') {
               // Auto-login parent
-              window.firebaseToken = persistentSession.token;
+              window.authToken = persistentSession.token;
               token = persistentSession.token;
               const r = await api('me', { email: persistentSession.email });
               if (!r.me) throw 'session invalide';
@@ -2981,7 +2953,7 @@ async function boot() {
               render();
             } else if (persistentSession.role === 'enfant') {
               // Auto-login child using stored token
-              window.firebaseToken = persistentSession.token;
+              window.authToken = persistentSession.token;
               token = persistentSession.token;
               const r = await api('me'); // Use existing token in header
               if (!r || !r.families || !r.families.length) throw 'Family or child not found';

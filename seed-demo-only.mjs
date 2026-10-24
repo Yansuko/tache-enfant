@@ -18,5 +18,4 @@ if (r.status && r.status !== 200) {
   process.exit(1);
 }
 console.log('Demo account ready: parent@demo.fr / demo');
-// Firebase admin keeps the event loop alive when configured
 process.exit(0);

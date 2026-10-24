@@ -1,14 +1,5 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
-
-vi.mock('../src/firebase-admin.mjs', () => ({
-  db: { ref: () => ({ set: async () => {}, once: async () => ({ exists: () => false, val: () => null }) }) },
-  auth: {
-    createUser: async () => { throw new Error('firebase disabled in tests'); },
-    getUserByEmail: async () => { throw new Error('firebase disabled in tests'); },
-    verifyIdToken: async () => { throw new Error('firebase disabled in tests'); }
-  }
-}));
 
 let app;
 let n = 0;

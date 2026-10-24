@@ -76,7 +76,7 @@ async function getSecret(store) {
   return s.key;
 }
 
-// Normalize family data: convert Firebase object-stored arrays to actual arrays
+// Normalize family data: convert object-stored arrays (index-keyed objects from older data) to actual arrays
 function normalizeFamilyData(f) {
   if (!f || typeof f !== 'object') return f;
   const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog'];
@@ -159,7 +159,7 @@ function normalizeFamilyData(f) {
   return f;
 }
 
-/* ── JWT token verification (replaces Firebase) ── */
+/* ── JWT token verification ── */
 
 async function verifyJWTToken(token, secret) {
   if (!token) return null;
@@ -439,8 +439,6 @@ async function login(store, secret, b) {
   if (acc && !pwCheck) console.log(`[LOGIN] Password mismatch for ${email}`);
   if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
 
-  // Firebase removed - using JWT auth only
-
   // Log activity
   await logActivity(store, 'login', email, acc.name, 'Parent login');
 
@@ -496,7 +494,7 @@ async function resetPassword(store, secret, b) {
 // Un achat de récompense = une request passée à 'approved'. On l'horodate côté serveur (approvedAt),
 // c'est ce que lit getRewardStats. Appariement par enfant+nom, une ancienne approuvée par nouvelle :
 // les achats déjà connus gardent leur date, un même achat répété est daté séparément.
-// ponytail: pas d'INSERT SQL dans reward_purchases, le store est un KV JSON (SQLite/PG/Firebase) sans
+// ponytail: pas d'INSERT SQL dans reward_purchases, le store est un KV JSON (SQLite/PG) sans
 // tables families/children/rewards, les FK échoueraient. À brancher si le core passe en relationnel.
 export function stampRewardPurchases(oldRequests, newRequests) {
   if (!Array.isArray(newRequests)) return;
@@ -1322,7 +1320,7 @@ function aggregateTaskStats(child, period = 'week') {
 
   // Ensure tasks array exists and all have completedAt field
   let rawTasks = child.tasks || [];
-  // Convert tasks object to array if needed (from Firebase)
+  // Convert tasks object to array if needed (older data stored index-keyed objects)
   if (rawTasks && typeof rawTasks === 'object' && !Array.isArray(rawTasks)) {
     rawTasks = Object.values(rawTasks).filter(v => v !== null && v !== undefined);
   }
@@ -1697,22 +1695,13 @@ export async function handleApi({ action, token, body = {} }, store) {
   await ensureSeed(store);
   const secret = await getSecret(store);
   let email = null;
-  let firebaseUid = null;
   if (!PUBLIC.has(action)) {
     console.log('[HANDLEAPI] action:', action, 'token exists:', !!token, 'token length:', token?.length);
-    // Try Firebase token first (Firebase tokens are JWTs)
-    // JWT-based token verification (Firebase removed - using secret-based JWT)
-    if (token) {
-      console.log('[HANDLEAPI] Attempting JWT token verification...');
-      email = verifyToken(token, secret);
-      if (email) console.log('[HANDLEAPI] Legacy verification succeeded, email:', email);
-    }
-    // Require either email (from legacy auth) or firebaseUid (from Firebase auth)
-    if (!email && !firebaseUid) {
-      console.log('[HANDLEAPI] Authentication failed - no email or firebaseUid');
+    if (token) email = verifyToken(token, secret);
+    if (!email) {
+      console.log('[HANDLEAPI] Authentication failed for action:', action);
       return err(401, 'Non authentifié.');
     }
-    console.log('[HANDLEAPI] Authentication passed - email:', email, 'firebaseUid:', firebaseUid);
   }
   switch (action) {
     case 'signup': return signup(store, secret, body);
@@ -1798,24 +1787,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     }
     case 'me': {
       try {
-        // For backward compatibility, support both Firebase and legacy auth
-        let userEmail = email || body.email; // Support email from body (Firebase login flow)
-        let uid = firebaseUid;
-
-        // Firebase removed - only JWT/legacy auth supported
-
-        console.log('[ME-ENDPOINT] uid:', uid, 'userEmail:', userEmail);
-        if (!userEmail && !uid) return err(401, 'Non authentifié.');
-
-        // Use store for user data
-        if (userEmail) {
-          // Use legacy store auth
-          return { status: 200, body: await stateFor(store, userEmail) };
-        }
-
-        // Fall back to legacy store auth if no email
-        if (!userEmail) return err(401, 'Non authentifié.');
-        return { status: 200, body: await stateFor(store, userEmail) };
+        return { status: 200, body: await stateFor(store, email) };
       } catch (error) {
         console.error('[ME-ERROR]', error.message);
         return err(401, 'Non authentifié.');
@@ -1841,7 +1813,6 @@ export async function handleApi({ action, token, body = {} }, store) {
         return err(400, 'Le mot de passe doit faire au moins 6 caractères.');
       }
       try {
-        // Update password in local store (Firebase removed)
         const account = await store.get('account:' + email);
         if (!account) return err(404, 'Compte non trouvé.');
         const { salt, hash } = hashPassword(newPassword);
