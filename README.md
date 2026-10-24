@@ -116,7 +116,9 @@ PORT                  # Default: 3000
 DATABASE_URL          # postgresql://... or sqlite://...
 ADMIN_KEY             # Required for /admin.html and admin actions (refused when unset)
 VAPID_SUBJECT        # mailto:you@real-address (required by Apple for iPhone push; default is a placeholder)
-JWT_SECRET            # Auto-generated if not set
+JWT_SECRET            # Signs login sessions. Use a long random value (openssl rand -hex 32) and keep it private; never commit it.
+                      # If unset, a random one is generated and stored in the database (needs a persistent /app/data volume).
+                      # The sample value that was once in the Dockerfile is public and is ignored. Changing it logs everyone out.
 BREVO_API_KEY         # E-mail provider. Required in production for "mot de passe oublié" (the reset code is only ever sent by e-mail; without it the endpoint answers 503)
 AUTH_MAX_ATTEMPTS     # Failed logins / PIN / reset codes before an identifier is locked (default 8)
 AUTH_LOCK_MS          # Lock duration in ms (default 900000 = 15 min)
