@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: [],
-    include: ['test/**/*.test.js'], // les *.spec.js sont des tests Playwright (npm run test:e2e)
+    include: ['test/**/*.test.js'], // les tests d'interface sont dans e2e/ (Playwright: npm run test:e2e)
     exclude: ['node_modules', 'dist'],
     testTimeout: 10000,
     coverage: {

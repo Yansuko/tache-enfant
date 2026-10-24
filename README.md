@@ -87,7 +87,7 @@ npm install          # Install dependencies
 npm run dev:docker   # Run with Docker Compose
 npm run test         # Run all tests
 npm run test:watch   # Watch mode
-npm run test:e2e     # Run E2E tests
+npm run test:e2e     # E2E UI (Playwright; CHROMIUM_PATH=<chemin> pour utiliser un Chromium déjà installé)
 ```
 
 ## Deployment

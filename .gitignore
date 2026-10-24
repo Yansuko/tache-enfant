@@ -10,3 +10,4 @@ firebase-service-account.json
 firebase-export.json
 migration.sql
 dailykids-*.tar
+test-results/

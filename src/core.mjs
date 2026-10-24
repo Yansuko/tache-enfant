@@ -603,7 +603,8 @@ async function saveFamily(store, email, b) {
     return { ...incChild, tasks: mergedTasks };
   });
 
-  merged.children = [...mergedChildren, ...serverOnlyChildren];
+  // ponytail: un parent fait foi (sinon un enfant supprimé revient à chaque sauvegarde); un enfant ne peut pas retirer ses frères et sœurs
+  merged.children = isParent ? mergedChildren : [...mergedChildren, ...serverOnlyChildren];
 
   // Normalize completedAt timestamps to always be numbers
   for (const child of merged.children || []) {
