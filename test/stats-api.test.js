@@ -40,17 +40,14 @@ beforeAll(async () => {
       action: 'me'
     });
 
-  const family = familyRes.body.me.families[0];
+  const family = familyRes.body.families[0];
 
-  // Add test children
-  const childRes = await request(app)
+  // Add test children (l'API n'a pas d'action saveChild: tout passe par saveFamily)
+  family.children = [{ id: 'child-1', name: 'Emma', xp: 100, gold: 50, tasks: [], grades: [], sanctions: [] }];
+  await request(app)
     .post('/api')
     .set('Authorization', `Bearer ${token}`)
-    .send({
-      action: 'saveChild',
-      familyId: family.id,
-      child: { id: 'child-1', name: 'Emma', xp: 100, gold: 50, tasks: [], grades: [], sanctions: [] }
-    });
+    .send({ action: 'saveFamily', family });
 });
 
 describe('Stats API - getGradeStats', () => {
@@ -95,7 +92,7 @@ describe('Stats API - getGradeStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -120,7 +117,7 @@ describe('Stats API - getGradeStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -140,7 +137,7 @@ describe('Stats API - getGradeStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -161,7 +158,7 @@ describe('Stats API - getGradeStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -192,7 +189,7 @@ describe('Stats API - getRewardStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -238,7 +235,7 @@ describe('Stats API - getSanctionStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -273,7 +270,7 @@ describe('Stats API - getSanctionStats', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ action: 'me' });
 
-    const familyId = meRes.body.me.families[0].id;
+    const familyId = meRes.body.families[0].id;
 
     const res = await request(app)
       .post('/api')
@@ -293,7 +290,7 @@ describe('API - PWA Routes', () => {
   it('GET /api/vapid-key returns VAPID public key', async () => {
     const res = await request(app).get('/api/vapid-key');
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('vapidPublicKey');
+    expect(res.body).toHaveProperty('key');
   });
 
   it('POST /api/subscribe handles push subscription', async () => {

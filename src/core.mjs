@@ -628,9 +628,12 @@ async function saveFamily(store, email, b) {
 
   // Generate missing IDs for all mergeable arrays (must happen BEFORE merge because mergeById filters out items without IDs)
   // ponytail: centralized ID generation for all arrays that use mergeById
+  // ponytail: id déterministe (hash du contenu hors horodatages serveur) pour que la copie serveur et la copie client
+  // d'une même ancienne donnée sans id reçoivent le même id; des éléments strictement identiques fusionnent.
   const generateIdIfMissing = (item, prefix) => {
     if (item && !item.id) {
-      item.id = `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
+      const content = JSON.stringify({ ...item, approvedAt: undefined, id: undefined });
+      item.id = `${prefix}-${crypto.createHash('sha1').update(content).digest('hex').slice(0, 8)}`;
     }
     return item;
   };

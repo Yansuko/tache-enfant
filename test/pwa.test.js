@@ -14,7 +14,7 @@ describe('PWA - Static Files', () => {
     const res = await request(app).get('/manifest.json');
 
     expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('application/json');
+    expect(res.headers['content-type']).toMatch(/application\/(manifest\+)?json/);
     expect(res.body).toHaveProperty('name');
     expect(res.body).toHaveProperty('short_name', 'DailyKids');
     expect(res.body).toHaveProperty('start_url', '/');

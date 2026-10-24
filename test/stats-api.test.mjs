@@ -111,4 +111,3 @@ assert.strictEqual(f.gradeRequests.find(g => g.id === 'g4')?.status, 'pending');
 assert.ok(f.taskRequests.some(t => t.id === 't1'));
 
 console.log('stats-api: all assertions passed');
-process.exit(0);

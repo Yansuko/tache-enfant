@@ -136,3 +136,17 @@ describe('demandes (validation de tâche, boutique)', () => {
     expect(f.requests.map(r => r.id).sort()).toEqual(['rq-1', 'rq-2']);
   });
 });
+
+describe('anciennes données sans id', () => {
+  it('des demandes sans id ne se multiplient pas à chaque sauvegarde', async () => {
+    const { family, save } = await setup();
+    const legacy = () => [{ child: 'Emma', name: 'Pizza', cost: 25, status: 'approved', approvedAt: 1792317600000 }];
+    family.requests = legacy();
+    await save(family);
+    family.requests = legacy();
+    await save(family);
+    family.requests = legacy();
+    const f = await save(family);
+    expect(f.requests.filter(r => r.name === 'Pizza').length).toBe(1);
+  });
+});
