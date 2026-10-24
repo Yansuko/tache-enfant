@@ -112,29 +112,29 @@ function normalizeFamilyData(f) {
       });
     }
 
-    // Deduplicate questList, proposals, requests, taskRequests by ID or content (for items without IDs)
-    // ponytail: content-based dedup for missing IDs — prevents triplication from repeated normalization
+    // Deduplicate questList, proposals, requests, taskRequests by ID and content
+    // ponytail: content-based dedup prevents duplicates even with different IDs
     if (['questList', 'proposals', 'requests', 'taskRequests'].includes(field) && f[field].length > 0) {
       const seen = new Set();
-      const seenByContent = new Set(); // Track items without IDs by content hash
+      const seenByContent = new Set();
       const before = f[field].length;
       f[field] = f[field].filter(item => {
         if (!item) return false;
 
-        // If item has ID, deduplicate by ID
-        if (item.id) {
-          if (seen.has(item.id)) return false;
-          seen.add(item.id);
-          return true;
-        }
-
-        // If no ID, deduplicate by content hash (name+xp+gold for quests/requests, etc)
+        // Compute content key for all items (both with and without IDs)
         const contentKey = field === 'questList' || field === 'requests'
           ? `${item.name}|${item.xp}|${item.gold}`
           : field === 'taskRequests'
           ? `${item.taskIndex}|${item.child}`
           : `${item.name}|${JSON.stringify(item)}`;
 
+        // Deduplicate by ID first
+        if (item.id) {
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+        }
+
+        // Then deduplicate by content (catches duplicates with different IDs)
         if (seenByContent.has(contentKey)) return false;
         seenByContent.add(contentKey);
         return true;
