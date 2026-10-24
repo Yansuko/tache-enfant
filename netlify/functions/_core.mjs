@@ -142,6 +142,17 @@ function normalizeFamilyData(f) {
       if (before !== f[field].length) {
         console.log(`[DEDUP] ${field}: ${before} → ${f[field].length}`, f[field].map(x => ({ id: x?.id, name: x?.name })));
       }
+
+      // Sanitize questList: remove task-specific fields that shouldn't be in templates
+      // ponytail: quest templates should never carry done, completedAt, etc
+      if (field === 'questList') {
+        for (const item of f[field]) {
+          if (item) {
+            delete item.done;
+            delete item.completedAt;
+          }
+        }
+      }
     }
   }
   // Ensure each child has an array of tasks

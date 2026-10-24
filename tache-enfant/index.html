@@ -350,6 +350,14 @@ function normalizeFamilyData(f) {
       }
     }
   }
+  // Ensure all quest templates have IDs for proper dedup (ponytail: migrate old templates)
+  if (f.questList && Array.isArray(f.questList)) {
+    for (const item of f.questList) {
+      if (item && !item.id) {
+        item.id = 'quest-' + Math.random().toString(36).substring(2, 10);
+      }
+    }
+  }
   return f;
 }
 
@@ -366,7 +374,10 @@ function rolloverDay(f, day) {
     }
     c.tasks = (c.tasks || []).filter(t => {
       if ((t.frequency || 'daily') === 'unique' && t.done) return false;
-      if ((t.frequency || 'daily') === 'daily') t.done = false;
+      if ((t.frequency || 'daily') === 'daily') {
+        t.done = false;
+        t.completedAt = null;  // ponytail: clear completedAt for daily reset so tasks appear fresh
+      }
       return true;
     });
   });
@@ -1440,7 +1451,20 @@ function childAuth(c) {
 /* ── actions ── */
 
 const val = id => document.getElementById(id).value.trim();
-function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
+function addQuestTo(c, t) {
+  if (c && t) {
+    // ponytail: explicitly list fields to prevent template contamination
+    c.tasks.push({
+      icon: t.icon,
+      name: t.name,
+      xp: t.xp,
+      gold: t.gold,
+      done: false,
+      completedAt: null,  // always start fresh, never inherit from template
+      frequency: t.frequency || 'daily'
+    });
+  }
+}
 function replaceFamily(f) {
   const i = families.findIndex(x => x.id === f.id);
   if (i < 0) return;
@@ -1511,7 +1535,9 @@ const ACTIONS = {
     const name = val('qd-name'), xp = parseInt(val('qd-xp'), 10), gold = parseInt(val('qd-gold') || '0', 10);
     const frequency = document.getElementById('qd-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    state.questList.push({ icon: '⭐', name, xp, gold, frequency });
+    // ponytail: generate ID immediately to enable dedup before backend sees it
+    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
+    state.questList.push({ icon: '⭐', name, xp, gold, frequency, id });
     document.getElementById('qd-name').value = '';
     document.getElementById('qd-xp').value = '';
     document.getElementById('qd-gold').value = '';
