@@ -1619,6 +1619,37 @@ function screenStats() {
     </div>
   </div>
 
+  ${(() => {
+    const dateToISO = t => new Date(t).toLocaleDateString('fr-CA'); // converts timestamp to YYYY-MM-DD
+    const completedTasks = (c.tasks || [])
+      .filter(t => t && t.completedAt)
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+      .slice(0, 20);
+    return completedTasks.length > 0 ? `
+  <div style="padding:14px 20px 4px" class="kicker">Historique des tâches</div>
+  <div style="padding:0 20px 10px">
+    <div class="card elev-sm" style="padding:16px">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">
+          <thead>
+            <tr style="border-bottom:2px solid var(--color-divider)">
+              <th style="padding:10px;text-align:left">Tâche</th>
+              <th style="padding:10px;text-align:right">Date complétée</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${completedTasks.map(t => `
+            <tr style="border-bottom:1px solid var(--color-divider)">
+              <td style="padding:10px"><strong>${esc(t.name || 'Sans nom')}</strong></td>
+              <td style="padding:10px;text-align:right">${xsDay(dateToISO(t.completedAt))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>` : '';
+  })()}
+
   ${children.length > 1 ? `
   <div style="padding:14px 20px 4px" class="kicker">Statistiques des autres enfants</div>
   <div style="padding:0 20px 20px">
