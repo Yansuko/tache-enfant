@@ -379,9 +379,16 @@ async function ensurePushSubscription() {
 }
 
 function pushStatusCard() {
-  const note = txt => `<div class="card elev-sm" style="gap:6px"><div style="font-size:13px">${txt}</div></div>`;
+  const note = (txt, detail = '') => `<div class="card elev-sm" style="gap:6px"><div style="font-size:13px">${txt}</div>${detail ? `<div class="text-muted" style="font-size:11px">${detail}</div>` : ''}</div>`;
   if (!('Notification' in window) || !('PushManager' in window)) {
-    return note("🔕 Notifications indisponibles ici. Sur iPhone : ouvre ce site dans Safari, appuie sur Partager puis « Sur l'écran d'accueil », et lance l'application depuis son icône.");
+    // Sur iPhone, ces deux fonctions n'existent que pour une application lancée depuis l'icône de l'écran d'accueil (iOS 16.4 minimum)
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+    const yn = v => (v ? 'oui' : 'non');
+    const detail = `Mode application : ${yn(standalone)} · Notification : ${yn('Notification' in window)} · PushManager : ${yn('PushManager' in window)}`;
+    if (ios && !standalone) return note("🔕 Tu es dans Safari, pas dans l'application. Ferme-la puis ouvre DailyKids depuis son icône sur l'écran d'accueil. Si tu l'as déjà fait, supprime l'icône et ajoute-la de nouveau (Partager, « Sur l'écran d'accueil », en gardant « Ouvrir comme app web » activé).", detail);
+    if (ios) return note("🔕 Cet iPhone ne propose pas les notifications ici. Il faut iOS 16.4 ou plus récent (Réglages, Général, Informations) et le navigateur Safari pour créer l'icône; le mode Isolement le désactive aussi.", detail);
+    return note("🔕 Ce navigateur ne propose pas les notifications.", detail);
   }
   if (Notification.permission === 'denied') return note("🔕 Notifications bloquées : autorise-les dans les réglages de l'appareil ou du navigateur.");
   if (Notification.permission === 'granted' && pushNotificationEnabled) return note('🔔 Notifications activées sur cet appareil');

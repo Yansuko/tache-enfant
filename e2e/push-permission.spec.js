@@ -1,8 +1,9 @@
 import { test, expect, newFamily, parentLogin, childLogin, tab, settle } from './helpers.js';
 
 // Faux navigateur de notifications: on enregistre qui demande l'autorisation, avec ou sans geste de l'utilisateur.
-const stubPush = ({ permission, supported }) => {
+const stubPush = ({ permission, supported, standalone }) => {
   window.__push = { permissionCalls: [], subscribeCalls: 0 };
+  if (standalone !== undefined) Object.defineProperty(navigator, 'standalone', { get: () => standalone });
   if (!supported) { delete window.Notification; if (window.PushManager) delete window.PushManager; return; }
   let perm = permission;
   const N = function () {};
@@ -14,8 +15,9 @@ const stubPush = ({ permission, supported }) => {
   PushManager.prototype.getSubscription = async () => (window.__push.subscribeCalls ? sub : null);
 };
 
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 async function device(browser, opts = {}) {
-  const ctx = await browser.newContext({ baseURL: 'http://localhost:3100' });
+  const ctx = await browser.newContext({ baseURL: 'http://localhost:3100', ...(opts.iphone ? { userAgent: IPHONE_UA } : {}) });
   await ctx.addInitScript(stubPush, { permission: 'default', supported: true, ...opts });
   const page = await ctx.newPage();
   await page.clock.install();
@@ -85,11 +87,35 @@ test('notifications refusées dans les réglages: message clair, pas de bouton i
   await d.ctx.close();
 });
 
-test('iPhone hors écran d\'accueil (notifications indisponibles): explique comment installer l\'application', async ({ browser, request }) => {
+test('navigateur sans notifications (hors iPhone): message simple, pas de bouton', async ({ browser, request }) => {
   const f = await newFamily(request);
   const d = await device(browser, { supported: false });
   await childLogin(d.page, f);
-  await expect(d.page.locator('#main')).toContainText('écran d\'accueil');
+  await expect(d.page.locator('#main')).toContainText('Ce navigateur ne propose pas les notifications');
   await expect(enableButton(d.page)).toHaveCount(0);
   await d.ctx.close();
 });
+
+test('iPhone dans Safari (pas lancé depuis l\'icône): le message le dit et les valeurs détectées sont affichées', async ({ browser, request }) => {
+  const f = await newFamily(request);
+  const d = await device(browser, { supported: false, iphone: true, standalone: false });
+  await childLogin(d.page, f);
+  const main = d.page.locator('#main');
+  await expect(main).toContainText('Safari');
+  await expect(main).toContainText('icône');
+  await expect(main).toContainText('Mode application : non');
+  await expect(main).toContainText('Notification : non');
+  await expect(main).toContainText('PushManager : non');
+  await d.ctx.close();
+});
+
+test('iPhone lancé comme application mais sans notifications: indique la version d\'iOS requise', async ({ browser, request }) => {
+  const f = await newFamily(request);
+  const d = await device(browser, { supported: false, iphone: true, standalone: true });
+  await childLogin(d.page, f);
+  const main = d.page.locator('#main');
+  await expect(main).toContainText('16.4');
+  await expect(main).toContainText('Mode application : oui');
+  await d.ctx.close();
+});
+
