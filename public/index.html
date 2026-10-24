@@ -114,6 +114,7 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/rollover.js"></script>
+<script src="/proposals.js"></script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -889,7 +890,7 @@ function screenRecompenses() {
   </div>
   <div style="padding:0 20px 8px" class="kicker">Mes idées d'articles</div>
   <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
-    ${state.proposals.map((p, i) => (p.child !== c.name || p.type === 'quest') ? '' : `
+    ${state.proposals.map((p, i) => (p.child !== c.name || p.type === 'quest' || !['pending', 'refused'].includes(p.status)) ? '' : `
     <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
       <span>💡 ${esc(p.name)} (${p.cost} 🪙)</span>
       <div style="display:flex;align-items:center;gap:6px">
@@ -1066,7 +1067,11 @@ function screenSanctions() {
         <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
       </div>
       ` : `
-      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">${p.cost} 🪙</span></div>
+      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">proposé : ${p.cost} 🪙</span></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label>Prix 🪙</label><input class="input reward-cost-${i}" type="number" min="1" value="${p.cost}"></div>
+        <div class="field" style="margin:0;flex:1"><label>Niveau requis</label><input class="input reward-lvl-${i}" type="number" min="1" value="1"></div>
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1" data-action="approve-proposal" data-i="${i}">Accepter</button>
         <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
@@ -2170,7 +2175,7 @@ const ACTIONS = {
     if (!name || !(cost > 0)) return alert('Idée et points (> 0) requis.');
     state.proposals.push({ child: child().name, name, cost, status: 'pending' });
   },
-  'del-proposal': el => { state.proposals.splice(+el.dataset.i, 1); },
+  'del-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'withdrawn'; },
   'approve-quest-proposal': el => {
     const i = +el.dataset.i;
     const p = state.proposals[i];
@@ -2178,7 +2183,7 @@ const ACTIONS = {
     const xp = parseInt(document.querySelector(`.quest-xp-${i}`)?.value || '0', 10);
     const gold = parseInt(document.querySelector(`.quest-gold-${i}`)?.value || '0', 10);
     if (!(xp > 0) || !(gold >= 0)) return alert('XP (> 0) et Or (≥ 0) requis.');
-    state.proposals.splice(i, 1);
+    p.status = 'approved'; // statut, pas suppression (voir approve-proposal)
     state.questList = state.questList || [];
     const id = 'quest-' + Math.random().toString(36).substring(2, 10);
     state.questList.push({ id, icon: p.icon, name: p.name, xp, gold, frequency: 'unique', child: p.child });
@@ -2186,26 +2191,16 @@ const ACTIONS = {
     save(); render();
   },
   'approve-proposal': el => {
-    const [p] = state.proposals.splice(+el.dataset.i, 1);
+    const i = +el.dataset.i;
+    const p = state.proposals[i];
     if (!p) return;
-    // Add approved quest to questList
-    state.questList = state.questList || [];
-    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
-    state.questList.push({ id, icon: p.icon, name: p.name, xp: p.xp, gold: p.gold, frequency: p.frequency });
-    // Remove any pending task requests for this quest (they're now a quest, not a task validation request)
-    state.taskRequests = (state.taskRequests || []).filter(req =>
-      !(req.child === p.child && req.taskName === p.name && req.status === 'pending')
-    );
-    // Mark corresponding task as completedAt to prevent server from regenerating task requests
-    for (const child of state.children || []) {
-      if (child.name === p.child) {
-        for (const task of child.tasks || []) {
-          if (task.name === p.name && task.done && !task.completedAt) {
-            task.completedAt = Date.now();
-          }
-        }
-      }
-    }
+    const cost = parseInt(document.querySelector(`.reward-cost-${i}`)?.value, 10);
+    const lvl = parseInt(document.querySelector(`.reward-lvl-${i}`)?.value, 10);
+    const reward = Proposals.rewardFromProposal(p, { cost, lvl });
+    if (!reward) return alert('Prix (≥ 1) et niveau (≥ 1) requis.');
+    p.status = 'approved'; // statut, pas suppression: le serveur ré-ajouterait une proposition retirée côté client
+    state.rewards.push(reward);
+    logAction('reward_approved', p.name, { child: p.child, cost, lvl, approver: me?.name });
     save(); render();
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },

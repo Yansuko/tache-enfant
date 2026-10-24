@@ -91,3 +91,73 @@ test('la synchro automatique n\'efface pas une saisie en cours', async ({ page }
   await expect(page.locator('#new-task-xp')).toHaveValue('25');
   await expect(page.locator('#new-task-gold')).toHaveValue('7');
 });
+
+test('proposition de récompense: le parent modifie prix et niveau avant de valider', async ({ page, request }) => {
+  const lg = await (await request.post('/api', { data: { action: 'login', email: 'parent@demo.fr', password: 'demo' } })).json();
+  const fam = lg.families[0];
+  fam.proposals = [...(fam.proposals || []), { id: 'prop-e2e', child: 'Emma', name: 'Aller à la piscine', cost: 60, status: 'pending' }];
+  const saved = await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'saveFamily', family: fam } });
+  expect(saved.ok()).toBeTruthy();
+
+  await login(page);
+  await tab(page, 'Boutique');
+  const proposal = page.locator('.card', { hasText: 'propose' }).filter({ hasText: 'Aller à la piscine' });
+  await expect(proposal).toContainText('proposé : 60');
+  await expect(proposal.locator('input[class*="reward-cost-"]')).toHaveValue('60');
+  await expect(proposal.locator('input[class*="reward-lvl-"]')).toHaveValue('1');
+
+  await proposal.locator('input[class*="reward-cost-"]').fill('45');
+  await proposal.locator('input[class*="reward-lvl-"]').fill('2');
+  await proposal.getByRole('button', { name: 'Accepter' }).click();
+  await expect(proposal).toHaveCount(0);
+
+  const row = page.locator('div:has([data-action="del-reward"])', { hasText: 'Aller à la piscine' }).last();
+  await expect(row).toContainText('45');
+  await expect(row).toContainText('Niv. 2');
+
+  // persisté côté serveur, avec le prix du parent (pas celui de l'enfant); et aucun faux modèle de quête
+  await page.waitForLoadState('networkidle');
+  const me = await (await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'me' } })).json();
+  const reward = me.families[0].rewards.find(r => r.name === 'Aller à la piscine');
+  expect([reward.cost, reward.lvl]).toEqual([45, 2]);
+  expect(me.families[0].questList.some(q => q.name === 'Aller à la piscine')).toBe(false);
+  expect(me.families[0].proposals.some(p => p.name === 'Aller à la piscine' && p.status === 'pending')).toBe(false);
+});
+
+test('une proposition avec un prix ou un niveau invalide n\'est pas validée', async ({ page, request }) => {
+  const lg = await (await request.post('/api', { data: { action: 'login', email: 'parent@demo.fr', password: 'demo' } })).json();
+  const fam = lg.families[0];
+  fam.proposals = [...(fam.proposals || []), { id: 'prop-e2e-2', child: 'Emma', name: 'Cinéma', cost: 30, status: 'pending' }];
+  await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'saveFamily', family: fam } });
+
+  await login(page);
+  await tab(page, 'Boutique');
+  const proposal = page.locator('.card', { hasText: 'propose' }).filter({ hasText: 'Cinéma' });
+  page.once('dialog', d => d.accept());
+  await proposal.locator('input[class*="reward-cost-"]').fill('0');
+  await proposal.getByRole('button', { name: 'Accepter' }).click();
+  await expect(proposal).toHaveCount(1);       // toujours en attente
+});
+
+test('proposition de quête acceptée: XP et or du parent, et elle ne revient pas en attente', async ({ page, request }) => {
+  const lg = await (await request.post('/api', { data: { action: 'login', email: 'parent@demo.fr', password: 'demo' } })).json();
+  const fam = lg.families[0];
+  fam.proposals = [...(fam.proposals || []), { id: 'prop-e2e-q', child: 'Emma', name: 'Apprendre le piano', type: 'quest', status: 'pending' }];
+  await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'saveFamily', family: fam } });
+
+  await login(page);
+  await tab(page, 'Boutique');
+  const proposal = page.locator('.card', { hasText: 'propose une quête' }).filter({ hasText: 'Apprendre le piano' });
+  await proposal.locator('input[class*="quest-xp-"]').fill('40');
+  await proposal.locator('input[class*="quest-gold-"]').fill('9');
+  await proposal.getByRole('button', { name: 'Accepter' }).click();
+  await expect(proposal).toHaveCount(0);
+
+  await page.waitForLoadState('networkidle');
+  await syncCycle(page);
+  await expect(proposal).toHaveCount(0);
+  const me = await (await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'me' } })).json();
+  const quest = me.families[0].questList.find(q => q.name === 'Apprendre le piano');
+  expect([quest.xp, quest.gold]).toEqual([40, 9]);
+  expect(me.families[0].proposals.some(p => p.name === 'Apprendre le piano' && p.status === 'pending')).toBe(false);
+});
