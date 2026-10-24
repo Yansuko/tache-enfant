@@ -701,31 +701,16 @@ async function saveFamily(store, email, b) {
     console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] merged.proposals:`, JSON.stringify(merged.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
   }
   stampRewardPurchases(cur.requests, merged.requests);
-  // notifier les parents pour les nouvelles demandes et les approbations
-  if (emailSender && inc.requests) {
-    const owner = await store.get('account:' + cur.owner);
-    for (const req of inc.requests) {
-      const oldReq = cur.requests?.find(r => r.child === req.child && r.name === req.name);
-      // Nouvelle demande en attente
-      if (!oldReq && req.status === 'pending') {
-        if (owner?.email) {
-          await emailSender({
-            to: owner.email,
-            subject: `Nouvelle demande à valider: ${req.child} - ${req.name}`,
-            body: `${req.child} a soumis une demande de récompense à valider:\n\nRécompense: ${req.name}\nCoût: ${req.cost} or\n\nVeuillez vous connecter pour approuver ou refuser cette demande.`
-          });
-        }
-        // Push notification for new reward request
-        await notifyParents(store, inc.id, `🎁 ${req.child} a acheté '${req.name}'`, `Coût: ${req.cost} or`, req.icon || '🎁', 'reward')
-          .catch(e => console.error('[NOTIFY-REWARD-REQUEST] Error:', e.message));
-      }
-      // Demande approuvée
-      if (oldReq?.status === 'pending' && req.status === 'approved') {
-        if (owner?.email) { await emailSender({ to: owner.email, subject: `Demande approuvée: ${req.name}`, body: `La demande « ${req.name} » de ${req.child} a été approuvée!` }); }
-        // Notify child that reward was approved
-        await notifyChild(store, inc.id, req.child, `🎁 Ta récompense '${req.name}' a été approuvée!`, `Validée par les parents`, req.icon || '🎁', 'reward')
-          .catch(e => console.error('[NOTIFY-REWARD-APPROVED] Error:', e.message));
-      }
+  // Demandes d'achat: nouvelle demande -> parents (une fois, par id); approbation -> l'enfant concerné
+  for (const req of inc.requests || []) {
+    if (!req || typeof req !== 'object') continue;
+    const oldReq = (cur.requests || []).find(r => (req.id && r.id === req.id) || (!req.id && r.child === req.child && r.name === req.name && r.status === 'pending'));
+    if (!oldReq && req.status === 'pending') {
+      await notifyParents(store, inc.id, `🎁 ${req.child} demande '${req.name}'`, `Coût: ${req.cost} or — à valider`, req.icon || '🎁', 'reward', email);
+    }
+    if (oldReq?.status === 'pending' && req.status === 'approved') {
+      await notifyChild(store, inc.id, req.child, `🎁 Ta récompense '${req.name}' a été approuvée!`, 'Validée par les parents', req.icon || '🎁', 'reward', email);
+      await logActivity(store, 'buyReward', req.child, inc.id, `${req.name} (${req.cost} or)`);
     }
   }
 
@@ -752,6 +737,7 @@ async function saveFamily(store, email, b) {
     children: ensureArray(merged.children),
     day: merged.day,
     dailyBonus: merged.dailyBonus,
+    emailNotifications: !!merged.emailNotifications,
     questList: ensureArray(merged.questList),
     proposals: ensureArray(merged.proposals),
     sanctionsList: ensureArray(merged.sanctionsList),
@@ -793,43 +779,28 @@ async function saveFamily(store, email, b) {
       await store.set('child-id-index', childIdx);
     }
   }
-  // Log completed tasks and notify parents
-  // Also detect new tasks added by parent and notify child
-  console.log(`[NOTIFY-DEBUG] Starting task completion detection. merged.children length: ${merged.children?.length || 0}`);
+  // L'enfant coche une quête -> les parents sont prévenus (une fois par demande, par id)
+  const knownTaskRequests = new Set((cur.taskRequests || []).map(r => r?.id).filter(Boolean));
+  for (const r of inc.taskRequests || []) {
+    if (r?.id && r.status === 'pending' && !knownTaskRequests.has(r.id)) {
+      await notifyParents(store, inc.id, `⏳ ${r.child} a terminé '${r.taskName}'`, `À valider: +${r.xp || 0} XP, +${r.gold || 0} or`, '⏳', 'task-request', email);
+    }
+  }
+  // Validation d'une quête -> l'enfant; nouvelle quête ajoutée par un parent -> l'enfant. Appariement par id.
   for (const mergedChild of merged.children || []) {
     const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
-    console.log(`[NOTIFY-DEBUG] Checking ${mergedChild.name}: curChild=${!!curChild}, tasks=${mergedChild.tasks?.length || 0}, oldTasks=${curChild?.tasks?.length || 0}`);
-    if (curChild && mergedChild.tasks && curChild.tasks) {
-      // Build map of old tasks by (name, xp) for reliable matching
-      const oldTasksByKey = new Map();
-      (curChild.tasks || []).forEach(t => {
-        const key = `${t.name}|${t.xp}`;
-        oldTasksByKey.set(key, t);
-      });
-
-      // Check all new tasks against old tasks by (name, xp) matching
-      for (const newTask of mergedChild.tasks || []) {
-        console.log(`[NOTIFY-DEBUG-TASK] Checking task: ${newTask.name}, done=${newTask.done}, completedAt=${newTask.completedAt}`);
-        const key = `${newTask.name}|${newTask.xp}`;
-        const oldTask = oldTasksByKey.get(key);
-
-        // Detect task completion: transition from not-done to done
-        if (newTask.done === true && (!oldTask || oldTask.done !== true) && newTask.completedAt) {
-          console.log(`[NOTIFY-TASK] ${mergedChild.name}: '${newTask.name}' transitioned to done`);
-          await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
-          // Notify parents about task completion
-          await notifyParents(store, inc.id, `✅ ${mergedChild.name} a complété '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
-            .catch(e => console.error('[NOTIFY-TASK-COMPLETE] Error:', e.message));
-          // Notify child that task was completed
-          await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche complétée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task')
-            .catch(e => console.error('[NOTIFY-TASK-CHILD] Error:', e.message));
-        } else if (isParent && !newTask.done && !oldTask) {
-          // Parent added a new task (not matched with old task and not marked as done)
-          console.log(`[NOTIFY-TASK] ${mergedChild.name}: new task '${newTask.name}'`);
-          await notifyChild(store, inc.id, mergedChild.name, `📋 Nouvelle tâche: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, newTask.icon || '📋', 'task')
-            .catch(e => console.error('[NOTIFY-TASK-NEW] Error:', e.message));
-          await logActivity(store, 'addTask', email, inc.id, `${mergedChild.name}: ${newTask.name}`);
-        }
+    if (!(curChild && mergedChild.tasks && curChild.tasks)) continue;
+    const oldById = new Map((curChild.tasks || []).filter(t => t.id).map(t => [t.id, t]));
+    const oldByKey = new Map((curChild.tasks || []).filter(t => !t.id).map(t => [`${t.name}|${t.xp}`, t]));
+    for (const newTask of mergedChild.tasks || []) {
+      const oldTask = (newTask.id && oldById.get(newTask.id)) || oldByKey.get(`${newTask.name}|${newTask.xp}`);
+      // validation = une date de validation plus récente que celle connue (une copie périmée la ré-affirme à l'identique)
+      if (newTask.done === true && newTask.completedAt && Number(newTask.completedAt) > Number(oldTask?.completedAt || 0)) {
+        await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
+        await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche validée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task', email);
+      } else if (isParent && !newTask.done && !oldTask) {
+        await notifyChild(store, inc.id, mergedChild.name, `📋 Nouvelle tâche: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, newTask.icon || '📋', 'task-new', email);
+        await logActivity(store, 'addTask', email, inc.id, `${mergedChild.name}: ${newTask.name}`);
       }
     }
   }
@@ -845,62 +816,40 @@ async function saveFamily(store, email, b) {
     });
   }
 
-  // Detect reward purchases (new approved requests) and notify parents
-  if (inc.requests) {
-    for (const req of inc.requests) {
-      const oldReq = cur.requests?.find(r => (r.id && r.id === req.id) || (r.child === req.child && r.name === req.name && r.icon === req.icon));
-      // New purchase: status changed from pending to approved
-      if (oldReq?.status === 'pending' && req.status === 'approved') {
-        await notifyParents(store, inc.id, `🎁 ${req.child} a acheté '${req.name}'`, `Coût: ${req.cost} or`, req.icon || '🎁', 'reward')
-          .catch(e => console.error('[NOTIFY-REWARD-BUY] Error:', e.message));
-        await logActivity(store, 'buyReward', req.child, inc.id, `${req.name} (${req.cost} or)`);
-      }
-    }
-  }
-
-  // Detect sanctions and notify child
+  // Sanctions appliquées -> l'enfant (comparaison motif + date: une sanction déjà connue ne re-notifie pas)
+  const sanctionCounts = (list) => (list || []).reduce((m, x) => { const k = `${x.motif}|${x.date || ''}`; m.set(k, (m.get(k) || 0) + 1); return m; }, new Map());
   for (const mergedChild of merged.children || []) {
     const curChild = cur.children?.find(c => c.id === mergedChild.id || c.name === mergedChild.name);
-    if (curChild && mergedChild.sanctions && curChild.sanctions) {
-      // Compare sanctions: if child now has more sanctions, notify about new ones
-      const oldSanctionsSet = new Set((curChild.sanctions || []).map(s => s.motif));
-      for (const newSanction of mergedChild.sanctions) {
-        // If this sanction wasn't in the old list, it's new
-        if (!oldSanctionsSet.has(newSanction.motif)) {
-          const sanctionDef = cur.sanctionsList?.find(s => s.name === newSanction.motif);
-          const gold = newSanction.gold ?? sanctionDef?.gold ?? 0;
-          await notifyChild(store, inc.id, mergedChild.name, `⚠️ Tu as reçu une sanction`, `${newSanction.motif} (-${gold} or)`, '⚠️', 'sanction')
-            .catch(e => console.error('[NOTIFY-SANCTION] Error:', e.message));
-          await logActivity(store, 'applySanction', mergedChild.name, inc.id, `${newSanction.motif} (-${gold} or)`);
-        }
-      }
+    if (!(curChild && Array.isArray(mergedChild.sanctions) && Array.isArray(curChild.sanctions))) continue;
+    const before = sanctionCounts(curChild.sanctions);
+    const seen = new Map();
+    for (const newSanction of mergedChild.sanctions) {
+      const k = `${newSanction.motif}|${newSanction.date || ''}`;
+      seen.set(k, (seen.get(k) || 0) + 1);
+      if (seen.get(k) <= (before.get(k) || 0)) continue;
+      const sanctionDef = cur.sanctionsList?.find(x => x.name === newSanction.motif);
+      const gold = newSanction.gold ?? sanctionDef?.gold ?? 0;
+      await notifyChild(store, inc.id, mergedChild.name, '⚠️ Tu as reçu une sanction', `${newSanction.motif} (-${gold} or)`, '⚠️', 'sanction', email);
+      await logActivity(store, 'applySanction', mergedChild.name, inc.id, `${newSanction.motif} (-${gold} or)`);
     }
   }
 
-  // Detect proposals and notify parents
-  if (inc.proposals && Array.isArray(inc.proposals)) {
-    const oldProposals = cur.proposals || [];
+  // Nouvelle proposition (identifiant inconnu du serveur) -> les parents, une seule fois
+  if (Array.isArray(inc.proposals)) {
+    const knownProposals = new Set((cur.proposals || []).map(p => p?.id).filter(Boolean));
     // Les propositions de l'application enfant n'ont pas toujours de type: sans type, c'est une récompense.
     const typeOf = p => p.type || 'reward';
-    const keyOf = p => `${typeOf(p)}_${p.child || p.proposedBy || ''}_${p.name}`;
-    const oldProposalsSet = new Set(oldProposals.map(keyOf));
     for (const proposal of inc.proposals) {
-      const key = keyOf(proposal);
-      if (!oldProposalsSet.has(key)) {
-        const who = proposal.proposedBy || proposal.child;
-        // New proposal
-        if (typeOf(proposal) === 'task') {
-          await notifyParents(store, inc.id, `💡 ${who} propose: '${proposal.name}'`, `+${proposal.xp || 0} XP, +${proposal.gold || 0} or`, '💡', 'proposal')
-            .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
-        } else if (typeOf(proposal) === 'quest') {
-          await notifyParents(store, inc.id, `💡 ${who} propose une quête: '${proposal.name}'`, 'À valider avec XP/Or', '💡', 'proposal')
-            .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
-        } else {
-          await notifyParents(store, inc.id, `🛍️ ${who} propose: '${proposal.name}'`, `Coût: ${proposal.cost || 0} or`, '🛍️', 'proposal')
-            .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
-        }
-        await logActivity(store, 'propose', who || 'unknown', inc.id, `${typeOf(proposal)}: ${proposal.name}`);
+      if (!proposal?.id || knownProposals.has(proposal.id) || (proposal.status && proposal.status !== 'pending')) continue;
+      const who = proposal.proposedBy || proposal.child;
+      if (typeOf(proposal) === 'task') {
+        await notifyParents(store, inc.id, `💡 ${who} propose: '${proposal.name}'`, `+${proposal.xp || 0} XP, +${proposal.gold || 0} or`, '💡', 'proposal', email);
+      } else if (typeOf(proposal) === 'quest') {
+        await notifyParents(store, inc.id, `💡 ${who} propose une quête: '${proposal.name}'`, 'À valider avec XP/Or', '💡', 'proposal', email);
+      } else {
+        await notifyParents(store, inc.id, `🛍️ ${who} propose: '${proposal.name}'`, `Coût: ${proposal.cost || 0} or`, '🛍️', 'proposal', email);
       }
+      await logActivity(store, 'propose', who || 'unknown', inc.id, `${typeOf(proposal)}: ${proposal.name}`);
     }
   }
 
@@ -1134,20 +1083,8 @@ async function submitGrade(store, famId, b) {
   await logActivity(store, 'submitGrade', childName, `${fam.name}`, `Soumis: ${subject} (Note: ${grade}, Or: ${gold})`);
 
   // Envoyer un email au parent
-  if (emailSender) {
-    const owner = await store.get('account:' + fam.owner);
-    if (owner?.email) {
-      await emailSender({
-        to: owner.email,
-        subject: `Nouvelle note à valider: ${childName} - ${subject}`,
-        body: `${childName} a soumis une note à valider:\n\nMatière: ${subject}\nNote: ${grade}\nOr demandé: ${gold}\n\nVeuillez vous connecter pour valider ou refuser cette note.`
-      });
-    }
-  }
-
-  // Notify parents about submitted grade
-  await sendPush(store, famId, { title: `📝 ${childName} a soumis une note`, body: `${subject} (${grade})`, tag: 'grade', data: { url: '/?tab=grades' } })
-    .catch(e => console.error('[PUSH] submitGrade:', e.message));
+  // Parents prévenus une fois (push; e-mail seulement si l'option est activée)
+  await notifyParents(store, famId, `📝 ${childName} a soumis une note`, `${subject} (${grade}) — or demandé: ${gold}`, '📝', 'grade');
 
   // Return the updated family so frontend can update state directly
   return { status: 200, body: { family: fam } };
@@ -1175,7 +1112,7 @@ async function approveGrade(store, email, b) {
   await logActivity(store, 'approveGrade', email, familyId, `Note approuvée: ${req.child} - ${req.subject}`);
 
   // Notify child about approved grade
-  await notifyChild(store, familyId, req.child, `📝 Ta note en ${req.subject} (${req.grade}) a été validée!`, `+${goldAmount} or`, '✅', 'grade')
+  await notifyChild(store, familyId, req.child, `📝 Ta note en ${req.subject} (${req.grade}) a été validée!`, `+${goldAmount} or`, '✅', 'grade', email)
     .catch(e => console.error('[NOTIFY-GRADE] Error:', e.message));
 
   return { status: 200, body: { ok: true, child: child ? { name: child.name, gold: child.gold } : null } };
@@ -1480,18 +1417,27 @@ async function getVapid(store) {
   return v;
 }
 const str = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
-export async function sendPush(store, familyId, payload) {
-  const subs = (await store.get('push:' + familyId)) || [];
-  console.log(`[PUSH-SEND] Family ${familyId}: ${subs.length} subscription(s), payload: ${payload.title}`);
+// Garde anti-doublon: la même notification (même appareil, même texte) n'est pas renvoyée dans les 60 s.
+const recentPush = new Map();
+const PUSH_DEDUP_MS = 60000;
+// `opts.only(sub)`: ne garde que les appareils concernés (parents, un enfant...). Sans option: toute la famille.
+export async function sendPush(store, familyId, payload, opts = {}) {
+  const all = (await store.get('push:' + familyId)) || [];
+  console.log(`[PUSH-SEND] Family ${familyId}: ${all.length} subscription(s), payload: ${payload.title}`);
+  if (!all.length) return { sent: 0, removed: 0 };
+  const now = Date.now();
+  for (const [k, t] of recentPush) if (now - t > PUSH_DEDUP_MS) recentPush.delete(k);
+  const subs = all.filter(s => (!opts.only || opts.only(s)) && !recentPush.has(`${s.subscription.endpoint}|${payload.title}|${payload.body}`));
   if (!subs.length) return { sent: 0, removed: 0 };
+  for (const s of subs) recentPush.set(`${s.subscription.endpoint}|${payload.title}|${payload.body}`, now);
   const v = await getVapid(store);
-  const opts = { TTL: 3600, vapidDetails: { subject: process.env.VAPID_SUBJECT || 'mailto:admin@dailykids.local', publicKey: v.publicKey, privateKey: v.privateKey } };
+  const wp = { TTL: 3600, vapidDetails: { subject: process.env.VAPID_SUBJECT || 'mailto:admin@dailykids.local', publicKey: v.publicKey, privateKey: v.privateKey } };
   const dead = new Set();
   let sent = 0;
-  await Promise.all(subs.map(s => webpush.sendNotification(s.subscription, JSON.stringify(payload), opts).then(
+  await Promise.all(subs.map(s => webpush.sendNotification(s.subscription, JSON.stringify(payload), wp).then(
     () => { sent++; },
     e => { if (e.statusCode === 404 || e.statusCode === 410) dead.add(s.subscription.endpoint); else console.error('[PUSH] send failed:', e.statusCode || e.message); })));
-  if (dead.size) await store.set('push:' + familyId, subs.filter(s => !dead.has(s.subscription.endpoint)));
+  if (dead.size) await store.set('push:' + familyId, all.filter(s => !dead.has(s.subscription.endpoint)));
   return { sent, removed: dead.size };
 }
 async function subscribePush(store, email, b) {
@@ -1535,35 +1481,30 @@ async function notify(store, email, b) {
   return { status: 200, body: await sendPush(store, fam.id, payload) };
 }
 
-// Helper: send notification to all family members (parents and children)
-async function notifyFamily(store, familyId, title, body, icon = '📢', tag = 'action') {
+// Notifications ciblées: les parents (push + e-mail si l'option est activée) ou un enfant précis (push seulement).
+// `except` = l'auteur de l'action, qui n'est pas prévenu de ce qu'il vient de faire lui-même.
+async function notifyParents(store, familyId, title, body, icon = '📢', tag = 'action', except = null) {
   try {
-    await sendPush(store, familyId, { title, body, icon, badge: '/icon-96.svg', tag, data: { url: '/' } });
-
-    // Also send email to parents if they enabled email notifications
     const fam = await store.get('family:' + familyId);
-    if (fam && fam.emailNotifications && fam.members && emailSender) {
-      for (const parentEmail of fam.members) {
-        console.log(`[NOTIFY-EMAIL] Sending email to parent ${parentEmail}: ${title}`);
-        await emailSender({
-          to: parentEmail,
-          subject: title,
-          body: body
-        }).catch(e => console.error('[NOTIFY-EMAIL] Error sending to ' + parentEmail + ':', e.message));
+    if (!fam) return;
+    const members = fam.members || [];
+    await sendPush(store, familyId, { title, body, icon, badge: '/icon-96.svg', tag, data: { url: '/' } }, { only: s => members.includes(s.email) && s.email !== except });
+    if (fam.emailNotifications && emailSender) {
+      for (const parentEmail of members.filter(m => m !== except)) {
+        await emailSender({ to: parentEmail, subject: title, body }).catch(e => console.error('[NOTIFY-EMAIL] Error sending to ' + parentEmail + ':', e.message));
       }
     }
   } catch (e) {
-    console.error('[NOTIFY-FAMILY] Error:', e.message);
+    console.error('[NOTIFY-PARENTS] Error:', e.message);
   }
 }
 
-// Aliases for clarity
-async function notifyParents(store, familyId, title, body, icon = '📢', tag = 'action') {
-  return notifyFamily(store, familyId, title, body, icon, tag);
-}
-
-async function notifyChild(store, familyId, childName, title, body, icon = '📢', tag = 'action') {
-  return notifyFamily(store, familyId, title, body, icon, tag);
+async function notifyChild(store, familyId, childName, title, body, icon = '📢', tag = 'action', except = null) {
+  try {
+    await sendPush(store, familyId, { title, body, icon, badge: '/icon-96.svg', tag, data: { url: '/' } }, { only: s => parseChildEmail(s.email)?.name === childName && s.email !== except });
+  } catch (e) {
+    console.error('[NOTIFY-CHILD] Error:', e.message);
+  }
 }
 
 const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);

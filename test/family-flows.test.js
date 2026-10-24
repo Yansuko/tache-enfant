@@ -370,3 +370,16 @@ describe('clé admin', () => {
   });
 });
 
+describe('options de la famille', () => {
+  it('l\'option « notifications par e-mail » est enregistrée et restituée', async () => {
+    const p = await newParent();
+    p.family.emailNotifications = true;
+    const f = await p.save(p.family);
+    expect(f.emailNotifications).toBe(true);
+    expect((await p.me())[0].emailNotifications).toBe(true);
+    f.emailNotifications = false;
+    await p.save(f);
+    expect((await p.me())[0].emailNotifications).toBe(false);
+  });
+});
+

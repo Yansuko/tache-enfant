@@ -81,10 +81,10 @@ export async function childLogin(page, f, name = 'Emma', pin = '1234') {
 }
 
 export const tab = async (page, name) => { await page.locator('nav button', { hasText: name }).click(); await settle(page); };
-// Une synchro automatique complète (intervalle de 30 s, horloge simulée) puis attente des requêtes.
-// Deux passages: la synchro ignore un déclenchement à moins de 30 s du précédent, le second est donc toujours pris en compte.
+// Une synchro automatique complète (intervalle de 10 s, horloge simulée) puis attente des requêtes.
+// Deux passages: la synchro ignore un déclenchement à moins de 10 s du précédent, le second est donc toujours pris en compte.
 export const syncCycle = async (page) => {
-  for (let i = 0; i < 2; i++) { await page.clock.runFor(31000); await page.waitForTimeout(100); await settle(page); }
+  for (let i = 0; i < 2; i++) { await page.clock.runFor(11000); await page.waitForTimeout(100); await settle(page); }
 };
 
 export const task = (name, xp, gold, over = {}) => ({ id: `t-${name}`.replace(/\s+/g, '-'), icon: '⭐', name, xp, gold, frequency: 'daily', done: false, completedAt: null, ...over });

@@ -8,7 +8,7 @@ const login = async (page, password = 'demo') => {
   await page.getByRole('button', { name: 'Se connecter' }).click();
 };
 const tab = async (page, name) => { await page.locator('nav button', { hasText: name }).click(); await settle(page); };
-const syncCycle = async (page) => { for (let i = 0; i < 2; i++) { await page.clock.runFor(31000); await page.waitForTimeout(100); await settle(page); } };
+const syncCycle = async (page) => { for (let i = 0; i < 2; i++) { await page.clock.runFor(11000); await page.waitForTimeout(100); await settle(page); } };
 const templateCards = (page, name) => page.locator('.card:has([data-action="del-quest-def"])', { hasText: name });
 const taskChecks = (page, name) => page.locator('.card:has([data-action="toggle-task"])', { hasText: name }).locator('[data-action="toggle-task"]');
 

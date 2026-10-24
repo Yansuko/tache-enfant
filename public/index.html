@@ -390,6 +390,15 @@ async function subscribeToPush() {
   }
 }
 
+// À la déconnexion, cet appareil ne doit plus recevoir les notifications du compte (l'abonnement du navigateur est conservé)
+async function releasePush() {
+  try {
+    const reg = swRegistration || await navigator.serviceWorker?.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) await api('unsubscribePush', { endpoint: sub.endpoint, familyId: state?.id });
+  } catch (err) { /* sans conséquence: au pire l'appareil reste abonné jusqu'à la prochaine connexion */ }
+}
+
 async function unsubscribeFromPush() {
   if (!swRegistration || !pushSubscription) {
     console.log('[PUSH] Aucune subscription active');
@@ -2449,6 +2458,7 @@ const ACTIONS = {
       if (state) logAction('user_logout', userName, { role: authRole });
       // Save audit log before logout
       if (state) await save();
+      await releasePush();
       await window.authSignOut();
       window.authToken = null;
       token = null; localStorage.removeItem(TOKEN_KEY);
@@ -3038,13 +3048,15 @@ registerServiceWorker();
 // Auto-refresh family data every 30 seconds to ensure mobile is always up-to-date
 // Multi-client sync: pull server state + push local changes every 30 seconds
 // Only run on app page, not on login page
+// Autorefresh: une synchronisation (envoi des changements puis récupération) toutes les 10 s
+const SYNC_INTERVAL_MS = 10000;
 let lastSyncTime = 0;
 let syncInProgress = false;
 setInterval(async () => {
   // Only sync if: authenticated + have app state (not login page) + not already syncing
   if (token && state && state.children && !syncInProgress) {
     const now = Date.now();
-    if (now - lastSyncTime < 30000) return; // Debounce
+    if (now - lastSyncTime < SYNC_INTERVAL_MS) return; // Debounce
     syncInProgress = true;
     lastSyncTime = now;
     const syncId = Math.random().toString(36).substring(7);
@@ -3126,7 +3138,7 @@ setInterval(async () => {
     console.log(`[SYNC-${syncId}] Complete`);
     syncInProgress = false;
   }
-}, 30000);
+}, SYNC_INTERVAL_MS);
 
 boot();
 </script>
