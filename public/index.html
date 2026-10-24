@@ -275,43 +275,14 @@ const frDate = () => {
 // ── push notifications ──
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
-    console.warn('[PUSH] Service Workers non supportés - using Web Notifications fallback');
-    // Use Web Notifications API as fallback
-    if ('Notification' in window) {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          pushNotificationEnabled = true;
-          console.log('[PUSH-FALLBACK] Web Notifications API enabled');
-        }
-      });
-    }
+    console.warn('[PUSH] Service Workers non supportés');
     return;
   }
-
   try {
-    console.log('[PUSH] Registering Service Worker...');
     swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
     console.log('[PUSH-SUCCESS] Service Worker registered');
-    pushNotificationEnabled = true;
-
-    swRegistration.onupdatefound = () => {
-      const newWorker = swRegistration.installing;
-      newWorker.onstatechange = () => {
-        console.log('[PUSH-STATE] SW state:', newWorker.state);
-      };
-    };
   } catch (err) {
     console.error('[PUSH-ERROR] SW registration failed:', err.message);
-    console.log('[PUSH-FALLBACK] Falling back to Web Notifications API');
-    // Fallback to Web Notifications without Service Worker
-    if ('Notification' in window) {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          pushNotificationEnabled = true;
-          console.log('[PUSH-FALLBACK] Web Notifications API enabled as fallback');
-        }
-      });
-    }
   }
 }
 
@@ -342,6 +313,7 @@ async function requestNotificationPermission() {
 }
 
 async function subscribeToPush() {
+  if (!swRegistration) swRegistration = await navigator.serviceWorker?.ready.catch(() => null);
   if (!swRegistration) {
     console.log('[PUSH] Service Worker non enregistré');
     return false;
@@ -397,6 +369,23 @@ async function releasePush() {
     const sub = reg && await reg.pushManager.getSubscription();
     if (sub) await api('unsubscribePush', { endpoint: sub.endpoint, familyId: state?.id });
   } catch (err) { /* sans conséquence: au pire l'appareil reste abonné jusqu'à la prochaine connexion */ }
+}
+
+// Abonne l'appareil sans rien demander: seulement si l'autorisation a déjà été accordée.
+// La demande d'autorisation elle-même ne peut venir que d'un clic (obligatoire sur iPhone): bouton « Activer les notifications ».
+async function ensurePushSubscription() {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !state?.id || !token) return;
+  if (await subscribeToPush()) render();
+}
+
+function pushStatusCard() {
+  const note = txt => `<div class="card elev-sm" style="gap:6px"><div style="font-size:13px">${txt}</div></div>`;
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    return note("🔕 Notifications indisponibles ici. Sur iPhone : ouvre ce site dans Safari, appuie sur Partager puis « Sur l'écran d'accueil », et lance l'application depuis son icône.");
+  }
+  if (Notification.permission === 'denied') return note("🔕 Notifications bloquées : autorise-les dans les réglages de l'appareil ou du navigateur.");
+  if (Notification.permission === 'granted' && pushNotificationEnabled) return note('🔔 Notifications activées sur cet appareil');
+  return `<div class="card elev-sm" style="gap:8px"><div style="font-size:13px">Reçois une alerte quand il y a du nouveau.</div><button class="btn btn-secondary btn-block" data-action="enable-push">🔔 Activer les notifications</button></div>`;
 }
 
 async function unsubscribeFromPush() {
@@ -524,6 +513,7 @@ function setActiveFamily(i) {
       }
     }
     if (rolloverDay(state, today()) || needsSave) save();
+    ensurePushSubscription();
   }
 }
 // Normaliser la structure de la famille (assurer que children et tasks sont des arrays)
@@ -778,6 +768,7 @@ function screenAccueil() {
       </div>
     </div>`;
   })()}
+  <div style="padding:10px 20px 0">${pushStatusCard()}</div>
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
   <div class="deck deck-2" style="padding:4px 20px 16px">
     ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || "<p class='text-muted' style='padding-top:8px'>Aucune quête pour aujourd'hui 🎉</p>"}
@@ -1256,6 +1247,7 @@ function screenFamille() {
     <h2 style="margin:0;font-size:22px">Famille</h2>
     <p class="text-muted" style="font-size:13px;margin:4px 0 0">Connecté : ${esc(me.name)} · ${esc(me.email)}</p>
   </div>
+  <div style="padding:10px 20px 0">${pushStatusCard()}</div>
   <div style="padding:14px 20px 4px" class="kicker">Familles que je gère</div>
   <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
     ${families.map(f => `
@@ -1904,18 +1896,6 @@ function onAuthed(r, rememberMe = false) {
     });
   }
 
-  // Demander la permission pour les notifications push
-  if (state?.id) {
-    (async () => {
-      const permGranted = await requestNotificationPermission();
-      if (permGranted) {
-        const subSuccess = await subscribeToPush();
-        if (subSuccess) {
-          console.log('[PUSH] Notifications push activées pour la famille:', state.id);
-        }
-      }
-    })();
-  }
 }
 
 const ACTIONS = {
@@ -2203,6 +2183,10 @@ const ACTIONS = {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
     if (!name || !(cost > 0)) return alert('Idée et points (> 0) requis.');
     state.proposals.push({ child: child().name, name, cost, type: 'reward', status: 'pending' });
+  },
+  'enable-push': async () => {
+    // requestPermission doit être appelée pendant le clic (premier appel, avant tout await)
+    if (await requestNotificationPermission()) await subscribeToPush();
   },
   'del-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'withdrawn'; },
   'approve-quest-proposal': el => {
@@ -2532,7 +2516,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'enable-push', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];

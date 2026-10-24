@@ -11,17 +11,14 @@ self.addEventListener('activate', event => {
 self.addEventListener('push', event => {
   console.log('[SW-PUSH] Notification received:', event);
 
-  if (!event.data) {
-    console.log('[SW-PUSH] Empty notification received');
-    return;
-  }
-
-  let payload = {};
-  try {
-    payload = event.data.json();
-  } catch {
-    // Fallback if not JSON
-    payload = { title: 'DailyKids', body: event.data.text() };
+  // iOS exige qu'un push affiche toujours une notification (sinon l'abonnement est révoqué): même sans contenu
+  let payload = { title: 'DailyKids', body: 'Il y a du nouveau' };
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { title: 'DailyKids', body: event.data.text() };
+    }
   }
 
   const {
