@@ -19,7 +19,7 @@ export const test62ModifyLevelConfig = () =>
   withFamily('6.2 Modify level config', seed(), async ({ familyId }) => {
     const config = await readConfig(familyId);
     config.levels[1].xpRequired = 150;
-    // same validation as updateLevelConfig in netlify/functions/_core.mjs
+    // same validation as updateLevelConfig in src/core.mjs
     config.levels.forEach((l, i) => {
       assert.strictEqual(l.level, i + 1);
       if (i) assert.ok(l.xpRequired > config.levels[i - 1].xpRequired, `XP must increase (level ${i + 1})`);

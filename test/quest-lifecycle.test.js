@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 
-vi.mock('../netlify/functions/firebase-admin.mjs', () => ({
+vi.mock('../src/firebase-admin.mjs', () => ({
   db: { ref: () => ({ set: async () => {}, once: async () => ({ exists: () => false, val: () => null }) }) },
   auth: {
     createUser: async () => { throw new Error('firebase disabled in tests'); },
@@ -112,5 +112,27 @@ describe('tâches des enfants', () => {
     ];
     const f = await save(family);
     expect(tasksOf(f)[0].done).toBe(false);
+  });
+});
+
+describe('demandes (validation de tâche, boutique)', () => {
+  it('une nouvelle demande de validation au même rang qu\'une ancienne approuvée est conservée', async () => {
+    const { family, save } = await setup();
+    family.taskRequests = [
+      { id: 'tr-old', child: 'Emma', taskIndex: 4, taskName: 'Faire son lit', xp: 10, gold: 5, status: 'approved', submittedAt: Date.now() - 5000 },
+      { id: 'tr-new', child: 'Emma', taskIndex: 4, taskName: 'Faire son lit', xp: 10, gold: 5, status: 'pending', submittedAt: Date.now() },
+    ];
+    const f = await save(family);
+    expect(f.taskRequests.map(r => r.id).sort()).toEqual(['tr-new', 'tr-old']);
+  });
+
+  it('deux demandes d\'achat du même article (ids différents) sont conservées', async () => {
+    const { family, save } = await setup();
+    family.requests = [
+      { id: 'rq-1', child: 'Emma', name: 'Pizza', cost: 25, status: 'approved' },
+      { id: 'rq-2', child: 'Emma', name: 'Pizza', cost: 25, status: 'pending' },
+    ];
+    const f = await save(family);
+    expect(f.requests.map(r => r.id).sort()).toEqual(['rq-1', 'rq-2']);
   });
 });

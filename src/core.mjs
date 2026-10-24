@@ -1,6 +1,4 @@
-// Cœur de l'API — logique pure partagée entre la fonction Netlify (Blobs) et le
-// serveur de dev local (fichier). Aucune dépendance Netlify ici : tout passe par
-// une interface `store` minimale { get(key), set(key,val), del(key) } (valeurs JSON).
+// Cœur de l'API: logique pure, tout passe par le store clé/valeur passé en paramètre (SQLite ou PostgreSQL via database.js).
 import crypto from 'node:crypto';
 import webpush from 'web-push';
 
@@ -66,7 +64,7 @@ export function verifyToken(token, secret) {
   }
 }
 
-// ponytail: secret auto-généré et stocké dans le store si absent — zéro config sur Netlify. Course possible au tout premier boot (double génération), négligeable.
+// ponytail: secret auto-généré et stocké dans le store si absent. Course possible au tout premier boot (double génération), négligeable.
 async function getSecret(store) {
   // Production: use JWT_SECRET env var if available (required for container consistency)
   if (process.env.JWT_SECRET) {
@@ -112,31 +110,23 @@ function normalizeFamilyData(f) {
       });
     }
 
-    // Deduplicate questList, proposals, requests, taskRequests by ID and content
-    // ponytail: content-based dedup prevents duplicates even with different IDs
+    // Doublons: par id pour toutes les collections; par contenu (nom|xp|or) seulement pour les modèles de quêtes
+    // (anciennes données sans id). Deux demandes distinctes peuvent légitimement se ressembler: jamais de contenu pour elles.
     if (['questList', 'proposals', 'requests', 'taskRequests'].includes(field) && f[field].length > 0) {
       const seen = new Set();
       const seenByContent = new Set();
       const before = f[field].length;
       f[field] = f[field].filter(item => {
         if (!item) return false;
-
-        // Compute content key for all items (both with and without IDs)
-        const contentKey = field === 'questList' || field === 'requests'
-          ? `${item.name}|${item.xp}|${item.gold}`
-          : field === 'taskRequests'
-          ? `${item.taskIndex}|${item.child}`
-          : `${item.name}|${JSON.stringify(item)}`;
-
-        // Deduplicate by ID first
         if (item.id) {
           if (seen.has(item.id)) return false;
           seen.add(item.id);
         }
-
-        // Then deduplicate by content (catches duplicates with different IDs)
-        if (seenByContent.has(contentKey)) return false;
-        seenByContent.add(contentKey);
+        if (field === 'questList') {
+          const contentKey = `${item.name}|${item.xp}|${item.gold}`;
+          if (seenByContent.has(contentKey)) return false;
+          seenByContent.add(contentKey);
+        }
         return true;
       });
       if (before !== f[field].length) {

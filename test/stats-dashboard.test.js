@@ -15,7 +15,7 @@ const FAMILY = {
   rewards: [], requests: [], gradeRequests: [], sanctionsList: [],
 };
 
-// Server-shaped responses (see getGradeStats / getRewardStats / getSanctionStats in netlify/functions/_core.mjs)
+// Server-shaped responses (see getGradeStats / getRewardStats / getSanctionStats in src/core.mjs)
 const gradeRows = [
   { childId: EMMA, date: '2026-10-10', subject: 'Mathématiques', grade: '16/20', xp: 50, gold: 10 },
   { childId: EMMA, date: '2026-10-15', subject: 'Mathématiques', grade: '18/20', xp: 50, gold: 10 },

@@ -80,7 +80,7 @@ export const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8
 export const mkChild = (name, extra = {}) => ({ id: `child-${uniq()}`, name, xp: 0, gold: 0, level: 1, tasks: [], ...extra });
 export const mkTask = (name = 'Faire les devoirs', extra = {}) =>
   ({ id: `task-${uniq()}`, name, xp: 50, gold: 25, done: false, daily: false, createdAt: Date.now(), ...extra });
-// Same default config the backend writes at signup (netlify/functions/_core.mjs)
+// Same default config the backend writes at signup (src/core.mjs)
 export const defaultLevelConfig = () =>
   ({ name: 'Configuration par défaut', levels: Array.from({ length: 50 }, (_, i) => ({ level: i + 1, xpRequired: (i + 1) * 100 })), createdAt: Date.now() });
 
@@ -126,7 +126,7 @@ export async function withFamily(title, seed, fn) {
   }
 }
 
-// PIN check of unlockChildDirect (netlify/functions/_core.mjs): child by name, exact PIN match.
+// PIN check of unlockChildDirect (src/core.mjs): child by name, exact PIN match.
 export const childLogin = (family, name, pin) =>
   family.children.find(c => c.name === name && c.pin && c.pin === String(pin).trim()) || null;
 // Same formula as the app (tache-enfant/index.html): level = floor(xp / 100) + 1

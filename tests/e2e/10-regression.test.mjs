@@ -2,7 +2,7 @@
 import assert from 'assert';
 import { auth, db, withFamily, mkChild, mkTask, runAll } from './framework.mjs';
 
-// BUG FIX: children disappeared after a password change (changePassword in netlify/functions/_core.mjs).
+// BUG FIX: children disappeared after a password change (changePassword in src/core.mjs).
 export const test101ChildrenAfterPasswordChange = () =>
   withFamily('10.1 Children survive password change (BUG FIX)', {
     children: [

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 
-vi.mock('../netlify/functions/firebase-admin.mjs', () => ({
+vi.mock('../src/firebase-admin.mjs', () => ({
   db: { ref: () => ({ set: async () => {}, once: async () => ({ exists: () => false, val: () => null }) }) },
   auth: {
     createUser: async () => { throw new Error('firebase disabled in tests'); },

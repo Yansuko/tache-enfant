@@ -19,8 +19,8 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./netlify/functions:/app/netlify/functions:ro
-      - ./tache-enfant:/app/public:ro
+      - ./src:/app/src:ro
+      - ./public:/app/public:ro
       - ./server.js:/app/server.js:ro
     networks:
       - dailykids-net

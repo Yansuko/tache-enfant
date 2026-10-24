@@ -1,11 +1,11 @@
 // Serveur de dev local — sert les fichiers statiques et l'API /api,
-// utilise SQLite comme store. Reproduit netlify/functions/api.mjs.
+// utilise SQLite comme store. Même cœur que server.js.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
+import { handleApi, setEmailSender } from './src/core.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 // Load .env file if present
@@ -40,7 +40,7 @@ function initDatabase() {
   }
 }
 
-// Local store - same interface as netlify/functions/api.mjs
+// Store local: même interface { get, set, del, list } que database.js
 let store = null;
 function getStore() {
   if (!store) {
@@ -131,4 +131,4 @@ const server = http.createServer(async (req, res) => {
     res.end(data);
   });
 });
-server.listen(PORT, () => console.log(`tache-enfant dev sur http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`DailyKids dev sur http://localhost:${PORT}`));

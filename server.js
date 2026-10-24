@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import morgan from 'morgan';
-import { handleApi, setEmailSender } from './netlify/functions/_core.mjs';
+import { handleApi, setEmailSender } from './src/core.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

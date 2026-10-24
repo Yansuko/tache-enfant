@@ -3,7 +3,7 @@ import request from 'supertest';
 
 // Never touch real Firebase from tests (firebase-service-account.json is in the repo root).
 // Stubs mirror the "not configured" fallback in firebase-admin.mjs, so _core uses the legacy store only.
-vi.mock('../netlify/functions/firebase-admin.mjs', () => ({
+vi.mock('../src/firebase-admin.mjs', () => ({
   db: { ref: () => ({ set: async () => {}, once: async () => ({ exists: () => false, val: () => null }) }) },
   auth: {
     createUser: async () => { throw new Error('firebase disabled in tests'); },

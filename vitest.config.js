@@ -15,8 +15,8 @@ export default defineConfig({
         'node_modules/',
         'test/',
         'tests/',
-        'netlify/functions/migrate*.mjs',
-        'netlify/functions/dump-blobs.mjs'
+        'src/migrate*.mjs',
+        'src/dump-blobs.mjs'
       ]
     }
   }

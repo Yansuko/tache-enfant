@@ -1,6 +1,6 @@
 // node test/stats-api.test.mjs — getGradeStats / getRewardStats / getSanctionStats on an in-memory store
 import assert from 'node:assert';
-import { handleApi } from '../netlify/functions/_core.mjs';
+import { handleApi } from '../src/core.mjs';
 
 const mem = new Map();
 const store = {

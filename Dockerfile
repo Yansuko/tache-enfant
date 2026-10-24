@@ -31,7 +31,7 @@ COPY --from=backend-build /app/backend/node_modules ./node_modules/
 # Copy application files
 COPY package.json package-lock.json ./
 COPY server.js auth.js database.js ./
-COPY netlify/functions/ ./netlify/functions/
+COPY src/ ./src/
 
 # Create data directory for SQLite backups
 RUN mkdir -p ./data/backups
