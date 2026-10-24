@@ -981,7 +981,11 @@ function childSeg() {
 }
 
 function screenTaches() {
-  if (state) normalizeFamilyData(state);
+  if (state) {
+    console.log('[SCREEN-TACHES-BEFORE-NORM] questList:', state.questList?.length, state.questList?.map(q => ({ id: q?.id, name: q?.name })));
+    normalizeFamilyData(state);
+    console.log('[SCREEN-TACHES-AFTER-NORM] questList:', state.questList?.length, state.questList?.map(q => ({ id: q?.id, name: q?.name })));
+  }
   const c = child();
   const pending = (state.taskRequests || []).filter(t => t.child === c.name && t.status === 'pending');
   return `

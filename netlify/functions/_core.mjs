@@ -82,12 +82,31 @@ async function getSecret(store) {
 function normalizeFamilyData(f) {
   if (!f || typeof f !== 'object') return f;
   const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog'];
+
+  // Helper to generate ID if missing (matching saveFamily behavior)
+  const generateIdIfMissing = (item, prefix) => {
+    if (item && !item.id) {
+      item.id = `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
+    }
+    return item;
+  };
+
   for (const field of arrayFields) {
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
       const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
       f[field] = arr;
     }
     if (!f[field] || !Array.isArray(f[field])) f[field] = [];
+
+    // Generate missing IDs for fields that use ID-based deduplication
+    const idPrefixes = { questList: 'quest', proposals: 'proposal', requests: 'request', gradeRequests: 'grade', taskRequests: 'task', children: 'child' };
+    if (idPrefixes[field] && f[field].length > 0) {
+      const before = f[field].filter(item => !item.id).length;
+      f[field] = f[field].map(item => generateIdIfMissing(item, idPrefixes[field]));
+      if (before > 0) {
+        console.log(`[ID-GEN] ${field}: generated ${before} missing IDs`, f[field].map(x => ({ id: x?.id, name: x?.name })));
+      }
+    }
 
     // Deduplicate gradeRequests by ID
     if (field === 'gradeRequests' && f[field].length > 0) {
@@ -114,12 +133,16 @@ function normalizeFamilyData(f) {
     // Deduplicate questList, proposals, requests, taskRequests by ID (fix for duplicates from Firebase object conversion)
     if (['questList', 'proposals', 'requests', 'taskRequests'].includes(field) && f[field].length > 0) {
       const seen = new Set();
+      const before = f[field].length;
       f[field] = f[field].filter(item => {
         if (!item || !item.id) return true;
         if (seen.has(item.id)) return false;
         seen.add(item.id);
         return true;
       });
+      if (before !== f[field].length) {
+        console.log(`[DEDUP] ${field}: ${before} → ${f[field].length}`, f[field].map(x => ({ id: x?.id, name: x?.name })));
+      }
     }
   }
   // Ensure each child has an array of tasks
@@ -348,7 +371,9 @@ async function stateFor(store, email) {
       if (f) {
         // Ensure family ID is set correctly
         if (!f.id) f.id = id;
+        console.log(`[STATEFOR-BEFORE-NORM] family ${id}: questList=${f.questList?.length || 0} items`, (f.questList || []).map(q => ({ id: q?.id, name: q?.name })));
         normalizeFamilyData(f);
+        console.log(`[STATEFOR-AFTER-NORM] family ${id}: questList=${f.questList?.length || 0} items`, (f.questList || []).map(q => ({ id: q?.id, name: q?.name })));
         families.push(await withNames(store, f));
       }
     } catch (err) {
