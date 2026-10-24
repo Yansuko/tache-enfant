@@ -506,6 +506,17 @@ export function stampRewardPurchases(oldRequests, newRequests) {
 }
 // A stale client only knows the requests it loaded: keep server records (by id) it didn't send,
 // so a submission made meanwhile isn't erased. Id-less legacy records still follow the client.
+// Ajouts concurrents: un élément présent sur le serveur mais absent de la copie d'un appareil n'est supprimé que si
+// l'appareil le connaissait (ajouté avant sa dernière synchro, `addedAt` posé par le serveur). Sinon c'est un ajout
+// fait entre-temps par un autre appareil et on le garde. Sans `updatedAt` (client ancien, API directe): suppression honorée.
+function keepConcurrentAdds(cur, inc, basedAt, keyOf = x => x.id ?? `${x.name}|${x.cost ?? x.gold ?? x.xp}`) {
+  const list = Array.isArray(inc) ? inc : [];
+  if (!Array.isArray(cur) || !Number.isFinite(basedAt)) return list;
+  const have = new Set(list.map(x => x && keyOf(x)));
+  return [...list, ...cur.filter(x => x && !have.has(keyOf(x)) && Number(x.addedAt) > basedAt)];
+}
+const stampAdded = (list, now) => { for (const x of list || []) if (x && typeof x === 'object' && !x.addedAt) x.addedAt = now; return list; };
+
 // Union par id, l'entrant gagne, sauf qu'un statut final (approuvé, refusé, annulé...) posé côté serveur ne
 // repasse jamais en "pending" à cause d'une copie périmée d'un autre appareil.
 function mergeById(cur, inc) {
@@ -559,6 +570,7 @@ async function saveFamily(store, email, b) {
   const isParent = cur.members?.includes(email);
   const isChild = isChildOf(email, cur);
   if (!isParent && !isChild) return err(403, 'Accès refusé.');
+  const basedAt = inc.updatedAt ? Number(inc.updatedAt) : Infinity;   // moment de la dernière synchro de cet appareil
   // Un appareil enfant n'écrit que: ses propres quêtes, ses demandes, ses propositions, le jour. Tout le reste
   // (xp, or, PIN, boutique, sanctions, modèles, autres enfants) vient du serveur: sa copie est souvent périmée
   // et il ne doit pas pouvoir se créditer lui-même.
@@ -570,7 +582,12 @@ async function saveFamily(store, email, b) {
     for (const k of ['taskRequests', 'requests', 'proposals', 'gradeRequests', 'actionLog']) if (inc[k] !== undefined) safe[k] = inc[k];
     const own = (inc.children || []).find(c => c.name === childName);
     const target = safe.children.find(c => c.name === childName);
-    if (own && target && Array.isArray(own.tasks)) target.tasks = own.tasks;
+    if (own && target && Array.isArray(own.tasks)) {
+      const ownById = new Map(own.tasks.filter(t => t?.id).map(t => [t.id, t]));
+      // il ne retire qu'une quête unique déjà terminée (renouvellement du jour); les autres restent
+      target.tasks = (target.tasks || []).filter(t => !(t.id && !ownById.has(t.id) && t.frequency === 'unique' && t.done && t.completedAt))
+        .map(t => (t.id && ownById.get(t.id)) || t);
+    }
     inc = safe;
   }
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
@@ -626,12 +643,13 @@ async function saveFamily(store, email, b) {
       }
       return out.id ? out : { ...out, id: serverTask?.id || 'task-' + crypto.randomBytes(4).toString('hex') };
     });
+    mergedTasks.splice(0, mergedTasks.length, ...keepConcurrentAdds(serverChild.tasks, mergedTasks, basedAt, t => t.id ?? `${t.name}|${t.xp}`));
 
     return { ...incChild, tasks: mergedTasks };
   });
 
   // ponytail: un parent fait foi (sinon un enfant supprimé revient à chaque sauvegarde); un enfant ne peut pas retirer ses frères et sœurs
-  merged.children = isParent ? mergedChildren : [...mergedChildren, ...serverOnlyChildren];
+  merged.children = isParent ? keepConcurrentAdds(cur.children, mergedChildren, basedAt, c => c.id ?? c.name) : [...mergedChildren, ...serverOnlyChildren];
 
   // Normalize completedAt timestamps to always be numbers
   for (const child of merged.children || []) {
@@ -677,7 +695,7 @@ async function saveFamily(store, email, b) {
   }
   for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals']) merged[k] = mergeById(cur[k], inc[k]);
   // ponytail: questList = dernier parent écrit gagne (une union avec le serveur ressuscitait les modèles supprimés); un enfant ne la modifie pas
-  merged.questList = isParent && Array.isArray(inc.questList) ? inc.questList : (cur.questList || []);
+  merged.questList = isParent && Array.isArray(inc.questList) ? keepConcurrentAdds(cur.questList, inc.questList, basedAt) : (cur.questList || []);
   console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] After merge - merged.proposals count:`, merged.proposals?.length || 0);
   if (merged.proposals?.length > 0) {
     console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] merged.proposals:`, JSON.stringify(merged.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
@@ -722,6 +740,10 @@ async function saveFamily(store, email, b) {
 
   // Write to store (single source of truth)
   const ensureArray = (val) => Array.isArray(val) ? val : [];
+  if (isParent) {
+    merged.rewards = keepConcurrentAdds(cur.rewards, merged.rewards, basedAt);
+    merged.sanctionsList = keepConcurrentAdds(cur.sanctionsList, merged.sanctionsList, basedAt);
+  }
   const famPayload = {
     id: merged.id,
     name: merged.name,
@@ -755,6 +777,11 @@ async function saveFamily(store, email, b) {
   }
 
   console.log(`[SAVEFAMILY-WRITE-STORE-${saveId}] Calling store.set() with actionLog:`, famPayload.actionLog?.length || 0, 'entries');
+  // date d'ajout posée par le serveur (voir keepConcurrentAdds)
+  const stampNow = famPayload.updatedAt;
+  for (const c of famPayload.children) stampAdded(c.tasks, stampNow);
+  for (const l of [famPayload.children, famPayload.questList, famPayload.rewards, famPayload.sanctionsList]) stampAdded(l, stampNow);
+  merged.updatedAt = stampNow;                // le client repart de cette version
   await store.set('family:' + inc.id, famPayload);
   console.log(`[SAVEFAMILY-WRITE-STORE-${saveId}] store.set() returned successfully`);
 

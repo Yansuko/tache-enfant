@@ -127,3 +127,34 @@ test('session enfant non mémorisée: après rechargement, retour à la connexio
   await expect(page.locator('#ec-pin')).toBeVisible();                                 // et l'espace enfant est accessible
 });
 
+
+test('ajout depuis un modèle déjà validé: l\'enfant, connecté avant, garde la nouvelle quête et rien d\'autre ne change', async ({ browser, request }) => {
+  const validated = (name, xp, gold) => task(name, xp, gold, { done: true, completedAt: Date.now() - 3600000 });
+  const f = await newFamily(request, fam => {
+    fam.questList = [{ id: 'q1', icon: '🧹', name: 'Ranger sa chambre', xp: 20, gold: 10, frequency: 'daily' }];
+    fam.children[0].tasks = [validated('Ranger sa chambre', 20, 10), validated('Faire ses devoirs', 30, 15), validated('Mettre la table', 10, 5)];
+  });
+  const C = await mkPage(browser), P = await mkPage(browser);
+  await childLogin(C.page, f);                                   // l'enfant charge ses quêtes avant l'ajout
+  await parentLogin(P.page, f);
+  await tab(P.page, 'Quêtes');
+  await P.page.locator('.card:has([data-action="del-quest-def"])', { hasText: 'Ranger sa chambre' }).getByRole('button', { name: /Assigner à/ }).click();
+  await settle(P.page);
+  const names = async () => emma(await me(request, f)).tasks.map(t => `${t.name}${t.done ? '✓' : '·'}`);
+  const expected = ['Ranger sa chambre✓', 'Faire ses devoirs✓', 'Mettre la table✓', 'Ranger sa chambre·'];
+  expect(await names()).toEqual(expected);
+
+  await syncCycle(C.page);                                       // la synchro de l'enfant ne doit pas supprimer la nouvelle quête
+  expect(await names()).toEqual(expected);
+  await expect(taskCard(C.page, 'Ranger sa chambre')).toHaveCount(2);
+  await expect(taskCard(C.page, 'Ranger sa chambre').nth(1).locator('[data-action="toggle-task"]')).not.toHaveClass(/done/);
+
+  await syncCycle(P.page);                                       // ni celle du parent
+  expect(await names()).toEqual(expected);
+  await P.page.reload();                                         // reconnexion du parent: l'état est conservé
+  await P.page.getByPlaceholder('••••••').fill(f.password);
+  await P.page.getByRole('button', { name: 'Déverrouiller' }).click();
+  await tab(P.page, 'Quêtes');
+  await expect(taskCard(P.page, 'Ranger sa chambre')).toHaveCount(2);
+  await C.ctx.close(); await P.ctx.close();
+});

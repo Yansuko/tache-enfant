@@ -3103,6 +3103,7 @@ setInterval(async () => {
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
           lastSyncedSig = stateSig();
+          rolloverDay(state, today());   // idempotent: la référence ci-dessus reste celle du serveur, un changement sera envoyé à la prochaine synchro
 
           // Saisie en cours dans un formulaire: ne pas redessiner (render() effacerait les champs non focalisés).
           // Les données sont déjà à jour; le prochain render (action de l'utilisateur) les affichera.
