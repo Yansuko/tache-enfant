@@ -113,6 +113,7 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/rollover.js"></script>
 <script>
 // ── Auth sans Firebase — utilise l'API backend et localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -595,21 +596,18 @@ function normalizeFamilyData(f) {
 // reset des quêtes quotidiennes au chargement d'un nouveau jour (persisté)
 function rolloverDay(f, day) {
   normalizeFamilyData(f);
-  if (f.day === day) return false;
+  const dayChanged = f.day !== day;
   f.day = day;
+  let changed = dayChanged;
+  const now = Date.now();
   f.children.forEach(c => {
-    if (!c.tasks) c.tasks = [];
-    // Ensure tasks is an array
-    if (c.tasks && typeof c.tasks === 'object' && !Array.isArray(c.tasks)) {
-      c.tasks = Object.values(c.tasks).filter(v => v != null);
-    }
-    c.tasks = (c.tasks || []).filter(t => {
-      if ((t.frequency || 'daily') === 'unique' && t.done) return false;
-      if ((t.frequency || 'daily') === 'daily') t.done = false;
-      return true;
-    });
+    if (c.tasks && typeof c.tasks === 'object' && !Array.isArray(c.tasks)) c.tasks = Object.values(c.tasks).filter(v => v != null);
+    const before = c.tasks || [];
+    // idempotent: s'applique aussi hors changement de jour (rattrape les tâches restées "faites" d'une période passée)
+    c.tasks = Rollover.rolloverTasks(before, day, now);
+    if (c.tasks.length !== before.length || c.tasks.some((t, i) => t !== before[i])) changed = true;
   });
-  return true;
+  return changed;
 }
 
 // persistance de la famille active vers le serveur — coalescée (dernier gagne)
@@ -1915,7 +1913,7 @@ function childAuth(c) {
 /* ── actions ── */
 
 const val = id => document.getElementById(id).value.trim();
-function addQuestTo(c, t) { if (c && t) c.tasks.push({ icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
+function addQuestTo(c, t) { if (c && t) c.tasks.push({ id: 'task-' + Math.random().toString(36).substring(2, 10), icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
 function replaceFamily(f) {
   const i = families.findIndex(x => x.id === f.id);
   if (i < 0) return;
@@ -1997,7 +1995,7 @@ const ACTIONS = {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
     const frequency = document.getElementById('new-task-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    child().tasks.push({ icon: '⭐', name, xp, gold, done: false, completedAt: null, frequency });
+    child().tasks.push({ id: 'task-' + Math.random().toString(36).substring(2, 10), icon: '⭐', name, xp, gold, done: false, completedAt: null, frequency });
     document.getElementById('new-task-name').value = '';
     document.getElementById('new-task-xp').value = '';
     document.getElementById('new-task-gold').value = '';
@@ -3171,24 +3169,17 @@ setInterval(async () => {
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
 
-          // Smart render: preserve scroll position and focused input values
-          const savedScroll = window.scrollY;
-          const focusedEl = document.activeElement;
-          const inputState = {};
-          if (focusedEl && focusedEl.tagName === 'INPUT' && focusedEl.id) {
-            inputState[focusedEl.id] = focusedEl.value;
-          }
-
-          render();
-
-          // Restore scroll and focused input
-          window.scrollTo(0, savedScroll);
-          if (focusedEl && focusedEl.id && focusedEl.tagName === 'INPUT' && inputState[focusedEl.id] !== undefined) {
-            const restored = document.getElementById(focusedEl.id);
-            if (restored) {
-              restored.value = inputState[focusedEl.id];
-              restored.focus();
-            }
+          // Saisie en cours dans un formulaire: ne pas redessiner (render() effacerait les champs non focalisés).
+          // Les données sont déjà à jour; le prochain render (action de l'utilisateur) les affichera.
+          const formEl = e => e && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.tagName) && document.getElementById('main')?.contains(e);
+          const editing = formEl(document.activeElement) ||
+            [...document.querySelectorAll('#main input:not([type=checkbox]):not([type=radio]), #main textarea')].some(e => e.value !== '' && e.value !== e.defaultValue);
+          if (editing) {
+            console.log(`[SYNC-${syncId}] Form in progress - render skipped`);
+          } else {
+            const savedScroll = window.scrollY;
+            render();
+            window.scrollTo(0, savedScroll);
           }
         }
       }

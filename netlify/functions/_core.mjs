@@ -590,25 +590,26 @@ async function saveFamily(store, email, b) {
       return incChild; // No merge needed, return incoming as-is
     }
 
-    // Merge tasks by name+xp, preserving server completion status if incoming is stale
-    const serverTasksByKey = new Map();
+    // Fusion par id (les tâches d'avant les ids retombent sur nom|xp). Le serveur garde une validation plus récente
+    // que la dernière réinitialisation (resetAt) vue par l'appareil: protège des appareils périmés sans
+    // ressusciter une tâche remise à faire au changement de jour ni une tâche réassignée.
+    const serverById = new Map();
+    const serverByKey = new Map();
     (serverChild.tasks || []).forEach(t => {
-      const key = `${t.name}|${t.xp}`;
-      serverTasksByKey.set(key, t);
+      if (t.id) serverById.set(t.id, t);
+      serverByKey.set(`${t.name}|${t.xp}`, t);
     });
 
     const mergedTasks = (incChild.tasks || []).map(incTask => {
-      const key = `${incTask.name}|${incTask.xp}`;
-      const serverTask = serverTasksByKey.get(key);
-
-      // Preserve server's completion if server has done=true and incoming has done=false/null
+      const serverTask = incTask.id ? serverById.get(incTask.id) : serverByKey.get(`${incTask.name}|${incTask.xp}`);
+      let out = incTask;
       if (serverTask && serverTask.done === true && serverTask.completedAt &&
-          (!incTask.done || !incTask.completedAt)) {
-        console.log(`[MERGE-TASK-PRESERVE] ${incChild.name}: '${incTask.name}' — keeping server completion (${new Date(serverTask.completedAt).toISOString()})`);
-        return { ...incTask, done: serverTask.done, completedAt: serverTask.completedAt };
+          (!incTask.done || !incTask.completedAt) &&
+          Number(serverTask.completedAt) > Number(incTask.resetAt || 0)) {
+        console.log(`[MERGE-TASK-PRESERVE] ${incChild.name}: '${incTask.name}' — keeping server completion (${new Date(Number(serverTask.completedAt)).toISOString()})`);
+        out = { ...incTask, done: serverTask.done, completedAt: serverTask.completedAt };
       }
-
-      return incTask;
+      return out.id ? out : { ...out, id: serverTask?.id || 'task-' + crypto.randomBytes(4).toString('hex') };
     });
 
     return { ...incChild, tasks: mergedTasks };
@@ -655,7 +656,9 @@ async function saveFamily(store, email, b) {
   if (inc.proposals?.length > 0) {
     console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] inc.proposals:`, JSON.stringify(inc.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
   }
-  for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals', 'questList']) merged[k] = mergeById(cur[k], inc[k]);
+  for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals']) merged[k] = mergeById(cur[k], inc[k]);
+  // ponytail: questList = dernier parent écrit gagne (une union avec le serveur ressuscitait les modèles supprimés); un enfant ne la modifie pas
+  merged.questList = isParent && Array.isArray(inc.questList) ? inc.questList : (cur.questList || []);
   console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] After merge - merged.proposals count:`, merged.proposals?.length || 0);
   if (merged.proposals?.length > 0) {
     console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] merged.proposals:`, JSON.stringify(merged.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
