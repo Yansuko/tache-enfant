@@ -2956,9 +2956,13 @@ async function boot() {
         } catch (err) {
           console.error('[BOOT-ERROR] Error during auth:', err.message || err);
           console.log('[BOOT-ERROR] Token state before clearing: window.firebaseToken=${!!window.firebaseToken}, local=${!!token}');
+          // Only clear token on network errors (TypeError), NOT on auth errors (401)
+          // 401 means token exists but is invalid - should be fixed, not deleted
+          if (err instanceof TypeError) {
+            localStorage.removeItem(TOKEN_KEY);
+          }
           window.firebaseToken = null;
           token = null;
-          if (!(err instanceof TypeError)) localStorage.removeItem(TOKEN_KEY); // server rejected it; keep it on network failure
           me = null; families = []; state = null;
           render();
           resolve();
