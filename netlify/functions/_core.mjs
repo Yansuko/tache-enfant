@@ -83,30 +83,12 @@ function normalizeFamilyData(f) {
   if (!f || typeof f !== 'object') return f;
   const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog'];
 
-  // Helper to generate ID if missing (matching saveFamily behavior)
-  const generateIdIfMissing = (item, prefix) => {
-    if (item && !item.id) {
-      item.id = `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
-    }
-    return item;
-  };
-
   for (const field of arrayFields) {
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
       const arr = Object.values(f[field]).filter(v => v !== null && v !== undefined);
       f[field] = arr;
     }
     if (!f[field] || !Array.isArray(f[field])) f[field] = [];
-
-    // Generate missing IDs for fields that use ID-based deduplication
-    const idPrefixes = { questList: 'quest', proposals: 'proposal', requests: 'request', gradeRequests: 'grade', taskRequests: 'task', children: 'child' };
-    if (idPrefixes[field] && f[field].length > 0) {
-      const before = f[field].filter(item => !item.id).length;
-      f[field] = f[field].map(item => generateIdIfMissing(item, idPrefixes[field]));
-      if (before > 0) {
-        console.log(`[ID-GEN] ${field}: generated ${before} missing IDs`, f[field].map(x => ({ id: x?.id, name: x?.name })));
-      }
-    }
 
     // Deduplicate gradeRequests by ID
     if (field === 'gradeRequests' && f[field].length > 0) {
@@ -130,14 +112,31 @@ function normalizeFamilyData(f) {
       });
     }
 
-    // Deduplicate questList, proposals, requests, taskRequests by ID (fix for duplicates from Firebase object conversion)
+    // Deduplicate questList, proposals, requests, taskRequests by ID or content (for items without IDs)
+    // ponytail: content-based dedup for missing IDs — prevents triplication from repeated normalization
     if (['questList', 'proposals', 'requests', 'taskRequests'].includes(field) && f[field].length > 0) {
       const seen = new Set();
+      const seenByContent = new Set(); // Track items without IDs by content hash
       const before = f[field].length;
       f[field] = f[field].filter(item => {
-        if (!item || !item.id) return true;
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
+        if (!item) return false;
+
+        // If item has ID, deduplicate by ID
+        if (item.id) {
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        }
+
+        // If no ID, deduplicate by content hash (name+xp+gold for quests/requests, etc)
+        const contentKey = field === 'questList' || field === 'requests'
+          ? `${item.name}|${item.xp}|${item.gold}`
+          : field === 'taskRequests'
+          ? `${item.taskIndex}|${item.child}`
+          : `${item.name}|${JSON.stringify(item)}`;
+
+        if (seenByContent.has(contentKey)) return false;
+        seenByContent.add(contentKey);
         return true;
       });
       if (before !== f[field].length) {

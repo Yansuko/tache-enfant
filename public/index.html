@@ -1980,7 +1980,9 @@ const ACTIONS = {
     const name = val('qd-name'), xp = parseInt(val('qd-xp'), 10), gold = parseInt(val('qd-gold') || '0', 10);
     const frequency = document.getElementById('qd-freq').value || 'daily';
     if (!name || !(xp > 0) || !(gold >= 0)) return alert('Nom et XP (> 0) requis.');
-    state.questList.push({ icon: '⭐', name, xp, gold, frequency });
+    // ponytail: generate ID immediately to prevent triplication on syncs (each sync was generating a new random ID)
+    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
+    state.questList.push({ id, icon: '⭐', name, xp, gold, frequency });
     document.getElementById('qd-name').value = '';
     document.getElementById('qd-xp').value = '';
     document.getElementById('qd-gold').value = '';
@@ -2216,7 +2218,8 @@ const ACTIONS = {
     if (!(xp > 0) || !(gold >= 0)) return alert('XP (> 0) et Or (≥ 0) requis.');
     state.proposals.splice(i, 1);
     state.questList = state.questList || [];
-    state.questList.push({ icon: p.icon, name: p.name, xp, gold, frequency: 'unique', child: p.child });
+    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
+    state.questList.push({ id, icon: p.icon, name: p.name, xp, gold, frequency: 'unique', child: p.child });
     logAction('quest_approved', p.name, { child: p.child, xp, gold, approver: me?.name });
     save(); render();
   },
@@ -2225,7 +2228,8 @@ const ACTIONS = {
     if (!p) return;
     // Add approved quest to questList
     state.questList = state.questList || [];
-    state.questList.push({ icon: p.icon, name: p.name, xp: p.xp, gold: p.gold, frequency: p.frequency });
+    const id = 'quest-' + Math.random().toString(36).substring(2, 10);
+    state.questList.push({ id, icon: p.icon, name: p.name, xp: p.xp, gold: p.gold, frequency: p.frequency });
     // Remove any pending task requests for this quest (they're now a quest, not a task validation request)
     state.taskRequests = (state.taskRequests || []).filter(req =>
       !(req.child === p.child && req.taskName === p.name && req.status === 'pending')
