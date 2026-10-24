@@ -330,35 +330,28 @@ async function withNames(store, fam) {
   for (const m of fam.members) { const a = await store.get('account:' + m); memberInfo[m] = a ? a.name : null; }
   return { ...fam, memberInfo };
 }
+// Identité d'un jeton enfant: « Prénom@<idFamille>.enfant.local » (deux familles peuvent avoir une « Emma »).
+const childEmail = (name, familyId) => `${name}@${familyId}.enfant.local`;
+function parseChildEmail(email) {
+  const m = /^(.+)@([^@]+)\.enfant\.local$/.exec(email || '');
+  return m ? { name: m[1], familyId: m[2] } : null;
+}
+const isChildOf = (email, fam) => {
+  const c = parseChildEmail(email);
+  return !!c && c.familyId === fam?.id && !!fam.children?.some(x => x.name === c.name);
+};
+
 async function stateFor(store, email) {
-  // Check if this is a child email (ends with @enfant.local)
-  if (email && email.endsWith('@enfant.local')) {
-    // For child, find their family by looking through all families
-    const childName = email.replace('@enfant.local', '');
-    const families = [];
-
-    // ponytail: linear scan of all families; create child-name-index if throughput matters
-    if (store.list) {
-      const keys = await store.list();
-      for (const key of keys) {
-        if (key.startsWith('family:')) {
-          try {
-            const f = await store.get(key);
-            if (f && f.children && f.children.some(c => c.name === childName)) {
-              // Ensure family ID is set from the store key
-              if (!f.id) f.id = key.substring('family:'.length);
-              normalizeFamilyData(f);
-              families.push(await withNames(store, f));
-            }
-          } catch (err) {
-            console.error(`[STATEFOR-CHILD] Error reading family ${key}:`, err.message);
-          }
-        }
-      }
+  // Jeton enfant: uniquement la famille dont il est issu
+  const child = parseChildEmail(email);
+  if (child) {
+    const f = await store.get('family:' + child.familyId);
+    if (!f || !(Array.isArray(f.children) ? f.children : Object.values(f.children || {})).some(c => c?.name === child.name)) {
+      return { me: { email, name: child.name }, families: [] };
     }
-
-    console.log(`[STATEFOR-CHILD] Looking up child: ${childName}, found in ${families.length} family(ies)`);
-    return { me: { email, name: childName }, families };
+    if (!f.id) f.id = child.familyId;
+    normalizeFamilyData(f);
+    return { me: { email, name: child.name }, families: [await withNames(store, f)] };
   }
 
   // Parent account lookup
@@ -513,10 +506,19 @@ export function stampRewardPurchases(oldRequests, newRequests) {
 }
 // A stale client only knows the requests it loaded: keep server records (by id) it didn't send,
 // so a submission made meanwhile isn't erased. Id-less legacy records still follow the client.
+// Union par id, l'entrant gagne, sauf qu'un statut final (approuvé, refusé, annulé...) posé côté serveur ne
+// repasse jamais en "pending" à cause d'une copie périmée d'un autre appareil.
 function mergeById(cur, inc) {
   const list = Array.isArray(inc) ? inc : [];
+  const curList = Array.isArray(cur) ? cur : [];
+  const curById = new Map(curList.filter(r => r?.id != null).map(r => [r.id, r]));
+  const settled = r => r.status && r.status !== 'pending';
+  const merged = list.map(r => {
+    const old = r?.id != null ? curById.get(r.id) : null;
+    return old && settled(old) && r.status === 'pending' ? old : r;
+  });
   const ids = new Set(list.map(r => r?.id).filter(id => id != null));
-  return [...list, ...(Array.isArray(cur) ? cur : []).filter(r => r?.id != null && !ids.has(r.id))];
+  return [...merged, ...curList.filter(r => r?.id != null && !ids.has(r.id))];
 }
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
@@ -555,8 +557,22 @@ async function saveFamily(store, email, b) {
   normalizeFamilyData(cur);
   // Check if user is a parent member or a child of this family
   const isParent = cur.members?.includes(email);
-  const isChild = email?.endsWith('@enfant.local') && cur.children?.some(c => c.name === email.replace('@enfant.local', ''));
+  const isChild = isChildOf(email, cur);
   if (!isParent && !isChild) return err(403, 'Accès refusé.');
+  // Un appareil enfant n'écrit que: ses propres quêtes, ses demandes, ses propositions, le jour. Tout le reste
+  // (xp, or, PIN, boutique, sanctions, modèles, autres enfants) vient du serveur: sa copie est souvent périmée
+  // et il ne doit pas pouvoir se créditer lui-même.
+  if (!isParent) {
+    const childName = parseChildEmail(email).name;
+    const safe = structuredClone(cur);
+    safe.id = inc.id;
+    if (inc.day) safe.day = inc.day;
+    for (const k of ['taskRequests', 'requests', 'proposals', 'gradeRequests', 'actionLog']) if (inc[k] !== undefined) safe[k] = inc[k];
+    const own = (inc.children || []).find(c => c.name === childName);
+    const target = safe.children.find(c => c.name === childName);
+    if (own && target && Array.isArray(own.tasks)) target.tasks = own.tasks;
+    inc = safe;
+  }
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
@@ -573,6 +589,17 @@ async function saveFamily(store, email, b) {
       (incChild.id && sc.id === incChild.id) ||
       (incChild.name && !incChild.id && sc.name === incChild.name)
     );
+
+    // xp / or: variation de l'appareil (valeur - valeur reçue) appliquée à la valeur du serveur; sans base, valeur envoyée
+    if (serverChild) {
+      for (const f of ['xp', 'gold']) {
+        const base = incChild[f + 'Base'];
+        if (typeof base === 'number' && typeof incChild[f] === 'number' && typeof serverChild[f] === 'number') {
+          incChild[f] = serverChild[f] + (incChild[f] - base);
+        }
+      }
+    }
+    delete incChild.xpBase; delete incChild.goldBase;
 
     if (!serverChild || !serverChild.tasks || !incChild.tasks) {
       return incChild; // No merge needed, return incoming as-is
@@ -826,22 +853,26 @@ async function saveFamily(store, email, b) {
   // Detect proposals and notify parents
   if (inc.proposals && Array.isArray(inc.proposals)) {
     const oldProposals = cur.proposals || [];
-    const oldProposalsSet = new Set(oldProposals.map(p => `${p.type}_${p.name}`));
+    // Les propositions de l'application enfant n'ont pas toujours de type: sans type, c'est une récompense.
+    const typeOf = p => p.type || 'reward';
+    const keyOf = p => `${typeOf(p)}_${p.child || p.proposedBy || ''}_${p.name}`;
+    const oldProposalsSet = new Set(oldProposals.map(keyOf));
     for (const proposal of inc.proposals) {
-      const key = `${proposal.type}_${proposal.name}`;
+      const key = keyOf(proposal);
       if (!oldProposalsSet.has(key)) {
+        const who = proposal.proposedBy || proposal.child;
         // New proposal
-        if (proposal.type === 'task') {
-          await notifyParents(store, inc.id, `💡 ${proposal.proposedBy} propose: '${proposal.name}'`, `+${proposal.xp || 0} XP, +${proposal.gold || 0} or`, '💡', 'proposal')
+        if (typeOf(proposal) === 'task') {
+          await notifyParents(store, inc.id, `💡 ${who} propose: '${proposal.name}'`, `+${proposal.xp || 0} XP, +${proposal.gold || 0} or`, '💡', 'proposal')
             .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
-        } else if (proposal.type === 'quest') {
-          await notifyParents(store, inc.id, `💡 ${proposal.proposedBy} propose une quête: '${proposal.name}'`, 'À valider avec XP/Or', '💡', 'proposal')
+        } else if (typeOf(proposal) === 'quest') {
+          await notifyParents(store, inc.id, `💡 ${who} propose une quête: '${proposal.name}'`, 'À valider avec XP/Or', '💡', 'proposal')
             .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
-        } else if (proposal.type === 'reward') {
-          await notifyParents(store, inc.id, `🛍️ ${proposal.proposedBy} propose: '${proposal.name}'`, `Coût: ${proposal.cost || 0} or`, '🛍️', 'proposal')
+        } else {
+          await notifyParents(store, inc.id, `🛍️ ${who} propose: '${proposal.name}'`, `Coût: ${proposal.cost || 0} or`, '🛍️', 'proposal')
             .catch(e => console.error('[NOTIFY-PROPOSAL] Error:', e.message));
         }
-        await logActivity(store, 'propose', proposal.proposedBy || 'unknown', inc.id, `${proposal.type}: ${proposal.name}`);
+        await logActivity(store, 'propose', who || 'unknown', inc.id, `${typeOf(proposal)}: ${proposal.name}`);
       }
     }
   }
@@ -1022,9 +1053,7 @@ async function unlockChildDirect(store, b, secret) {
     normalizeFamilyData(fam);
     const child = fam.children.find(c => c.name === childName);
     if (!child || !child.pin || child.pin !== pin) continue;
-    // Generate token for child using same format as frontend (name@enfant.local)
-    const childEmail = childName + '@enfant.local';
-    const token = signToken(childEmail, secret);
+    const token = signToken(childEmail(childName, fam.id), secret);
     return { status: 200, body: { families: [await withNames(store, fam)], token } };
   }
   return err(401, 'Famille ou enfant introuvable, ou PIN incorrect.');
@@ -1122,7 +1151,7 @@ async function approveGrade(store, email, b) {
   await notifyChild(store, familyId, req.child, `📝 Ta note en ${req.subject} (${req.grade}) a été validée!`, `+${goldAmount} or`, '✅', 'grade')
     .catch(e => console.error('[NOTIFY-GRADE] Error:', e.message));
 
-  return { status: 200, body: { ok: true } };
+  return { status: 200, body: { ok: true, child: child ? { name: child.name, gold: child.gold } : null } };
 }
 
 // ADMIN_KEY est obligatoire: sans elle (ou avec une clé vide/différente) toute action admin est refusée.
@@ -1444,7 +1473,7 @@ async function subscribePush(store, email, b) {
   // Allow both parents (fam.members) and children (email@enfant.local)
   normalizeFamilyData(fam);
   const isParent = fam.members?.includes(email);
-  const isChild = email?.endsWith('@enfant.local') && fam.children.some(c => c.name === email.replace('@enfant.local', ''));
+  const isChild = isChildOf(email, fam);
   if (!isParent && !isChild) return err(403, 'Accès refusé.');
   const s = b.subscription;
   if (!s || !/^https:\/\//.test(s.endpoint || '') || typeof s.keys?.p256dh !== 'string' || typeof s.keys?.auth !== 'string') return err(400, 'Abonnement invalide.');
@@ -1470,7 +1499,7 @@ async function notify(store, email, b) {
   const fam = await store.get('family:' + b.familyId);
   if (!fam) return err(404, 'Famille introuvable.');
   normalizeFamilyData(fam);
-  const isChild = email?.endsWith('@enfant.local') && fam.children.some(c => c.name === email.replace('@enfant.local', ''));
+  const isChild = isChildOf(email, fam);
   if (!fam.members?.includes(email) && !isChild) return err(403, 'Accès refusé.');
   const title = str(b.title, 100);
   if (!title) return err(400, 'title requis.');
@@ -1707,6 +1736,7 @@ export async function handleApi({ action, token, body = {} }, store) {
   if (!PUBLIC.has(action)) {
     console.log('[HANDLEAPI] action:', action, 'token exists:', !!token, 'token length:', token?.length);
     if (token) email = verifyToken(token, secret);
+    if (email && email.endsWith('@enfant.local')) email = null;   // ancien jeton enfant (sans famille): reconnexion par PIN
     if (!email) {
       console.log('[HANDLEAPI] Authentication failed for action:', action);
       return err(401, 'Non authentifié.');

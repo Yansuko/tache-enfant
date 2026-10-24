@@ -12,6 +12,6 @@ export default defineConfig({
     url: 'http://localhost:3100/health',
     reuseExistingServer: false,
     timeout: 30000,
-    env: { PORT: '3100', DATABASE_URL: 'sqlite://:memory:', JWT_SECRET: 'e2e-secret', NODE_ENV: 'test' },
+    env: { PORT: '3100', DATABASE_URL: 'sqlite://:memory:', JWT_SECRET: 'e2e-secret', ADMIN_KEY: 'e2e-admin', NODE_ENV: 'test' },
   },
 });

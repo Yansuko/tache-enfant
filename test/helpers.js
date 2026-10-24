@@ -22,7 +22,8 @@ export async function api(action, body = {}, token) {
 export async function newParent(prefix = 'flow') {
   const email = `${prefix}${++n}@test.com`;
   const password = 'test123';
-  const res = await api('signup', { email, password, name: 'Parent', familyName: 'Fam' });
+  const familyName = `Fam${n}x${Date.now() % 100000}`;
+  const res = await api('signup', { email, password, name: 'Parent', familyName });
   expectOk(res);
   const token = res.body.token;
   const save = async (family) => {
@@ -31,7 +32,7 @@ export async function newParent(prefix = 'flow') {
     return r.body.family;
   };
   const me = async () => (await api('me', {}, token)).body.families;
-  return { email, password, token, family: res.body.families[0], save, me };
+  return { email, password, token, familyName, family: res.body.families[0], save, me };
 }
 
 function expectOk(res) {

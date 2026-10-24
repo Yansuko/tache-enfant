@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, settle, instrument } from './helpers.js';
 
 // Base vierge à chaque démarrage: le compte de démo (parent@demo.fr / demo) est semé au premier appel API.
 const login = async (page, password = 'demo') => {
@@ -7,12 +7,12 @@ const login = async (page, password = 'demo') => {
   await page.getByPlaceholder('••••••').fill(password);
   await page.getByRole('button', { name: 'Se connecter' }).click();
 };
-const tab = async (page, name) => { await page.locator('nav button', { hasText: name }).click(); await page.waitForLoadState('networkidle'); };
-const syncCycle = async (page) => { await page.clock.runFor(31000); await page.waitForLoadState('networkidle'); };
+const tab = async (page, name) => { await page.locator('nav button', { hasText: name }).click(); await settle(page); };
+const syncCycle = async (page) => { for (let i = 0; i < 2; i++) { await page.clock.runFor(31000); await page.waitForTimeout(100); await settle(page); } };
 const templateCards = (page, name) => page.locator('.card:has([data-action="del-quest-def"])', { hasText: name });
 const taskChecks = (page, name) => page.locator('.card:has([data-action="toggle-task"])', { hasText: name }).locator('[data-action="toggle-task"]');
 
-test.beforeEach(async ({ page }) => { await page.clock.install(); });
+test.beforeEach(async ({ page }) => { await page.clock.install(); await instrument(page); });
 
 test('connexion: erreur sur mauvais mot de passe, session restaurée au rechargement, déconnexion', async ({ page }) => {
   await login(page, 'mauvais');
@@ -116,7 +116,7 @@ test('proposition de récompense: le parent modifie prix et niveau avant de vali
   await expect(row).toContainText('Niv. 2');
 
   // persisté côté serveur, avec le prix du parent (pas celui de l'enfant); et aucun faux modèle de quête
-  await page.waitForLoadState('networkidle');
+  await settle(page);
   const me = await (await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'me' } })).json();
   const reward = me.families[0].rewards.find(r => r.name === 'Aller à la piscine');
   expect([reward.cost, reward.lvl]).toEqual([45, 2]);
@@ -153,7 +153,7 @@ test('proposition de quête acceptée: XP et or du parent, et elle ne revient pa
   await proposal.getByRole('button', { name: 'Accepter' }).click();
   await expect(proposal).toHaveCount(0);
 
-  await page.waitForLoadState('networkidle');
+  await settle(page);
   await syncCycle(page);
   await expect(proposal).toHaveCount(0);
   const me = await (await request.post('/api', { headers: { Authorization: `Bearer ${lg.token}` }, data: { action: 'me' } })).json();

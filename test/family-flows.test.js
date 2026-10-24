@@ -98,12 +98,12 @@ describe('enfants', () => {
     const p = await newParent();
     p.family.children = [child('Alice', { pin: '1234' })];
     await p.save(p.family);
-    const ok = await api('unlockChildDirect', { familyName: 'fam', childName: 'Alice', pin: '1234' });
+    const ok = await api('unlockChildDirect', { familyName: p.familyName, childName: 'Alice', pin: '1234' });
     expect(ok.status).toBe(200);
     expect(ok.body.token).toBeTruthy();
-    expect((await api('unlockChildDirect', { familyName: 'fam', childName: 'Alice', pin: '0000' })).status).toBe(401);
-    expect((await api('unlockChildDirect', { familyName: 'fam', childName: 'Inconnu', pin: '1234' })).status).toBe(401);
-    expect((await api('unlockChildDirect', { familyName: 'fam', childName: 'Alice' })).status).toBe(400);
+    expect((await api('unlockChildDirect', { familyName: p.familyName, childName: 'Alice', pin: '0000' })).status).toBe(401);
+    expect((await api('unlockChildDirect', { familyName: p.familyName, childName: 'Inconnu', pin: '1234' })).status).toBe(401);
+    expect((await api('unlockChildDirect', { familyName: p.familyName, childName: 'Alice' })).status).toBe(400);
   });
 
   it('une note par enfant reste attachée à cet enfant', async () => {
@@ -193,6 +193,7 @@ describe('notes (scolaires)', () => {
 
     const a = await api('approveGrade', { familyId: p.family.id, gradeId: pending[0].id, gold: 15 }, p.token);
     expect(a.status).toBe(200);
+    expect(a.body.child).toEqual({ name: 'Alice', gold: 15 });   // le client adopte ce solde, il ne l'ajoute pas lui-même
     const fam = (await p.me())[0];
     expect(fam.gradeRequests[0].status).toBe('approved');
     expect(fam.children[0].gold).toBe(15);

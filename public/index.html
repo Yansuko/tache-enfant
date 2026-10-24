@@ -467,7 +467,17 @@ async function api(action, body = {}) {
   try { json = await res.json(); } catch {}
   if (action === 'saveFamily') console.log(`[API] Response status: ${res.status}, ok: ${res.ok}`);
   if (!res.ok) throw (json.error || `Erreur ${res.status}`);
+  stampBases(json);
   return json;
+}
+
+// xp / or tels que reçus du serveur: renvoyés avec chaque enregistrement pour que le serveur fusionne la variation
+// de cet appareil (et non la valeur absolue, souvent périmée quand un autre appareil a crédité entre-temps)
+function stampBases(r) {
+  for (const f of [...(r.families || []), ...(r.family ? [r.family] : [])]) {
+    if (!f || !Array.isArray(f.children)) continue;
+    for (const c of f.children) if (c && typeof c === 'object') { c.xpBase = c.xp; c.goldBase = c.gold; }
+  }
 }
 function toast(on) { document.getElementById('toast').style.display = on ? 'block' : 'none'; }
 
@@ -586,6 +596,11 @@ function rolloverDay(f, day) {
 // persistance de la famille active vers le serveur — coalescée (dernier gagne)
 // ponytail: dernier-écrit-gagne, pas de verrou/etag — suffisant à l'échelle d'une famille ; passer à un merge/etag si conflits multi-appareils
 let saving = false, dirty = false;
+// Signature de l'état tel que le serveur le connaît: une synchro sans changement local n'envoie rien.
+let lastSyncedSig = null;
+function stateSig() {
+  try { const f = stripUi(state); normalizeFamilyData(f); return JSON.stringify(f); } catch { return null; }
+}
 let lastNotificationTime = 0; // Track when we received a push notification
 
 // Listen for messages from Service Worker (e.g., notification received)
@@ -689,6 +704,7 @@ async function persistFamily() {
       console.log(`[PERSIST-MERGE-ACTIONLOG-${persistId}] After merge - actionLog:`, state.actionLog?.length || 0, 'entries');
       console.log(`[PERSIST-MERGE] After merge: requests=${state.requests?.length || 0}, sanctionsList=${state.sanctionsList?.length || 0}`);
       console.log(`[SAVE] Success`);
+      lastSyncedSig = stateSig();
       toast(false);
     }
     catch (e) { console.error(`[SAVE] Error:`, e.message || String(e), e); toast(true); break; }
@@ -1302,8 +1318,8 @@ function renderAuthChild() {
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton nom et le code PIN</p>
     </div>
     ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
-    <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo"></div>
-    <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma"></div>
+    <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo" value="${esc(authDraft.famname || '')}"></div>
+    <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma" value="${esc(authDraft.cname || '')}"></div>
     <div class="field" style="margin:0"><label>Ton code PIN (4 chiffres)</label><input class="input" id="ec-pin" type="password" placeholder="****"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:-4px"><input type="checkbox" id="ec-remember" style="width:18px;height:18px;cursor:pointer"><label style="margin:0;cursor:pointer;font-size:13px" for="ec-remember">Se souvenir de moi</label></div>
     <button class="btn btn-primary btn-block" data-action="unlock-child-direct">Se connecter</button>
@@ -1353,12 +1369,12 @@ function renderAuth() {
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
     </div>
     ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
-    ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa"></div>` : ''}
-    <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr"></div>
+    ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa" value="${esc(authDraft.name || '')}"></div>` : ''}
+    <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr" value="${esc(authDraft.email || '')}"></div>
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
     ${!signup ? '<div style="display:flex;align-items:center;gap:8px;margin-top:-4px"><input type="checkbox" id="au-remember" style="width:18px;height:18px;cursor:pointer"><label style="margin:0;cursor:pointer;font-size:13px" for="au-remember">Se souvenir de moi</label></div>' : ''}
     ${!signup ? '<div style="text-align:right"><button class="btn btn-ghost" style="font-size:12px;padding:0;margin-top:-8px" data-action="show-reset-password">Mot de passe oublié?</button></div>' : ''}
-    ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin"></div>` : ''}
+    ${signup ? `<div class="field" style="margin:0"><label>Nom de la famille</label><input class="input" id="au-fam" placeholder="Ex : Famille Martin" value="${esc(authDraft.fam || '')}"></div>` : ''}
     <button class="btn btn-primary btn-block" data-action="${signup ? 'signup' : 'login'}">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
     <button class="btn btn-ghost btn-block" data-action="auth-toggle">${signup ? "J'ai déjà un compte" : "Créer un nouveau compte"}</button>
     ${signup ? '' : '<p class="text-muted" style="font-size:11px;text-align:center;margin:0">Démo : parent@demo.fr / demo</p>'}
@@ -1851,6 +1867,9 @@ function childAuth(c) {
 /* ── actions ── */
 
 const val = id => document.getElementById(id).value.trim();
+// Champs de connexion conservés après une erreur (jamais le mot de passe ni le PIN)
+let authDraft = {};
+const field = id => document.getElementById(id)?.value.trim() || '';
 function addQuestTo(c, t) { if (c && t) c.tasks.push({ id: 'task-' + Math.random().toString(36).substring(2, 10), icon: t.icon, name: t.name, xp: t.xp, gold: t.gold, done: false, completedAt: null, frequency: t.frequency || 'daily' }); }
 function replaceFamily(f) {
   const i = families.findIndex(x => x.id === f.id);
@@ -2002,6 +2021,7 @@ const ACTIONS = {
             c.gold = (c.gold || 0) + req.gold;
           }
           console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
+          maybeAwardDailyBonus(c);
           found = true;
           childIndex = i;
           logAction('task_approved', req.taskName, { child: req.child, xp: req.xp, gold: req.gold, approver: me?.name });
@@ -2173,7 +2193,7 @@ const ACTIONS = {
   'propose-reward': () => {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
     if (!name || !(cost > 0)) return alert('Idée et points (> 0) requis.');
-    state.proposals.push({ child: child().name, name, cost, status: 'pending' });
+    state.proposals.push({ child: child().name, name, cost, type: 'reward', status: 'pending' });
   },
   'del-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'withdrawn'; },
   'approve-quest-proposal': el => {
@@ -2217,12 +2237,13 @@ const ACTIONS = {
     if (i < pending.length) {
       const grade = pending[i];
       const newGold = parseInt(document.getElementById(`grade-gold-${i}`).value, 10) || 0;
-      await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold });
+      const r = await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold });
       grade.status = 'approved';
       grade.approvedAt = Date.now();
       grade.gold = newGold;
+      // le serveur a déjà crédité l'or: on adopte son solde (et on le prend comme base, sans variation à renvoyer)
       const child = state.children.find(c => c.name === grade.child);
-      if (child) child.gold = (child.gold || 0) + newGold;
+      if (child && r.child) { child.gold = r.child.gold; child.goldBase = r.child.gold; }
       render();
     }
   },
@@ -2295,7 +2316,7 @@ const ACTIONS = {
     token = r.token; // Store token for child authentication
     localStorage.setItem(TOKEN_KEY, token);
     families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
-    state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
+    setActiveFamily(0); state.role = 'enfant'; state.tab = 'accueil'; // setActiveFamily applique aussi la remise à zéro du jour
     // Find the correct child by name and set activeChild to their index
     state.activeChild = state.children.findIndex(c => c.name === name);
     if (state.activeChild < 0) state.activeChild = 0; // fallback if not found
@@ -2422,6 +2443,7 @@ const ACTIONS = {
     render();
   },
   logout: async () => {
+    authDraft = {};
     try {
       const userName = me?.name || 'Unknown';
       if (state) logAction('user_logout', userName, { role: authRole });
@@ -2515,12 +2537,12 @@ function celebrate(text) {
   setTimeout(() => o.remove(), 1900);
 }
 
-// bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant actif sont faites
-function maybeAwardDailyBonus() {
-  const c = state && state.children[state.activeChild];
+// bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant sont VALIDÉES par un parent
+// (cochée par l'enfant = done sans date: pas encore validée)
+function maybeAwardDailyBonus(c = state && state.children[state.activeChild]) {
   if (!c) return;
   const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
-  if (daily.length && daily.every(t => t.done) && c.dailyBonusDay !== state.day) {
+  if (daily.length && daily.every(t => t.done && t.completedAt) && c.dailyBonusDay !== state.day) {
     const bonus = state.dailyBonus || { xp: 30, gold: 15 };
     c.dailyBonusDay = state.day;
     c.xp += bonus.xp;
@@ -2533,6 +2555,7 @@ document.body.addEventListener('click', async e => {
   if (!el) return;
   const act = el.dataset.action, fn = ACTIONS[act];
   if (!fn) return;
+  if (act === 'login' || act === 'signup' || act === 'unlock-child-direct') authDraft = { name: field('au-name'), email: field('au-email'), fam: field('au-fam'), famname: field('ec-famname'), cname: field('ec-name') };
   if (SERVER_ACTIONS.has(act)) {
     try { await fn(el); } catch (err) { authMsg = String(err); }
     render();
@@ -2625,7 +2648,7 @@ console.assert(gradeReward('25') === null && gradeReward('abc') === null, 'grade
 console.assert(level(0) === 1 && level(99) === 1 && level(230) === 3, 'level');
 console.assert(nextReward(128, [{ cost: 50 }, { cost: 80 }, { cost: 150 }]).cost === 150, 'nextReward');
 console.assert(esc('<b>&"') === '&lt;b&gt;&amp;&quot;', 'esc');
-console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true }, { daily: true, done: true }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
+console.assert((() => { const saved = state; const c = { tasks: [{ daily: true, done: true, completedAt: 1 }, { daily: true, done: true, completedAt: 1 }], xp: 0, gold: 0 }; state = { children: [c], activeChild: 0, day: 'D', dailyBonus: { xp: 30, gold: 15 } }; maybeAwardDailyBonus(); const first = c.dailyBonusDay === 'D' && c.xp === 30 && c.gold === 15; maybeAwardDailyBonus(); const once = c.xp === 30; state = saved; return first && once; })(), 'bonus mission une fois par jour');
 // ponytail: sanctions handler test with normalization
 console.assert((() => {
   const saved = state;
@@ -2752,6 +2775,9 @@ async function boot() {
           const r = await api('me');
           if (!r.me) throw 'session invalide';
           me = r.me;
+          // Jeton d'enfant: restauré seulement si « Se souvenir de moi » avait été coché, sinon retour à la connexion par PIN
+          const childSession = /@[^@]+\.enfant\.local$/.test(me.email || '');
+          if (childSession) { const sess = SessionManager.load(); if (!(sess && sess.role === 'enfant')) throw 'session enfant non mémorisée'; }
 
       // Save ALL currently approved tasks BEFORE loading new families
       const approvedTasks = {};
@@ -2851,8 +2877,15 @@ async function boot() {
       }
 
       parentUnlocked = false;
-      // Restored session = the parent's: land on the (locked) parent space, not a child's PIN screen
-      if (families.length) { setActiveFamily(0); state.role = 'parent'; }
+      if (childSession) {
+        // session enfant mémorisée: retour direct sur sa page (le PIN a déjà été saisi)
+        setActiveFamily(0); state.role = 'enfant'; state.tab = 'accueil';
+        state.activeChild = Math.max(0, state.children.findIndex(c => c.name === me.name));
+        unlocked.add(me.name);
+      } else if (families.length) {
+        // Restored session = the parent's: land on the (locked) parent space, not a child's PIN screen
+        setActiveFamily(0); state.role = 'parent';
+      }
       if (localStorage.getItem('statsChildIndex')) {
         statsChildIndex = +localStorage.getItem('statsChildIndex');
       }
@@ -2954,7 +2987,7 @@ async function boot() {
               if (!r || !r.families || !r.families.length) throw 'Family or child not found';
               me = { email: persistentSession.childName + '@enfant.local', name: persistentSession.childName };
               families = (r.families || []).map(f => { normalizeFamilyData(f); return f; });
-              state = families[0]; state.role = 'enfant'; state.tab = 'accueil'; activeFamily = 0;
+              setActiveFamily(0); state.role = 'enfant'; state.tab = 'accueil';
               state.activeChild = state.children.findIndex(c => c.name === persistentSession.childName);
               if (state.activeChild < 0) state.activeChild = 0;
               unlocked.add(persistentSession.childName);
@@ -3025,7 +3058,8 @@ setInterval(async () => {
         console.log(`[SYNC-${syncId}] PUSH: Skipped (received notification ${timeSinceNotif}ms ago, debouncing)`);
       } else {
         console.log(`[SYNC-${syncId}] PUSH: Sending local changes to server`);
-        await persistFamily();
+        if (stateSig() === lastSyncedSig) console.log(`[SYNC-${syncId}] PUSH: Skipped (no local change)`);
+        else await persistFamily();
         console.log(`[SYNC-${syncId}] PUSH: Complete`);
       }
     } catch (e) {
@@ -3068,6 +3102,7 @@ setInterval(async () => {
           state.questList = serverFamily.questList || state.questList;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
+          lastSyncedSig = stateSig();
 
           // Saisie en cours dans un formulaire: ne pas redessiner (render() effacerait les champs non focalisés).
           // Les données sont déjà à jour; le prochain render (action de l'utilisateur) les affichera.
