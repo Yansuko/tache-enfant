@@ -330,6 +330,27 @@ async function withNames(store, fam) {
   for (const m of fam.members) { const a = await store.get('account:' + m); memberInfo[m] = a ? a.name : null; }
   return { ...fam, memberInfo };
 }
+// Limitation des tentatives (anti force brute): après AUTH_MAX_ATTEMPTS échecs (8 par défaut) sur un même identifiant
+// (e-mail, famille+enfant), il est bloqué AUTH_LOCK_MS (15 min par défaut). Une réussite remet le compteur à zéro.
+// Par identifiant et non par IP: derrière un reverse proxy toutes les IP se ressemblent.
+const failures = new Map();
+const maxAttempts = () => Number(process.env.AUTH_MAX_ATTEMPTS) || 8;
+const lockMs = () => Number(process.env.AUTH_LOCK_MS) || 15 * 60 * 1000;
+function lockedFor(key) {
+  const f = failures.get(key);
+  if (!f?.lockedUntil) return 0;
+  if (Date.now() >= f.lockedUntil) { failures.delete(key); return 0; }
+  return f.lockedUntil - Date.now();
+}
+function recordFailure(key) {
+  if (failures.size > 10000) { for (const [k, f] of failures) if (!f.lockedUntil || Date.now() >= f.lockedUntil) failures.delete(k); if (failures.size > 10000) failures.clear(); }
+  const f = failures.get(key) || { count: 0 };
+  if (++f.count >= maxAttempts()) f.lockedUntil = Date.now() + lockMs();
+  failures.set(key, f);
+}
+const clearFailures = key => failures.delete(key);
+const tooMany = ms => err(429, `Trop de tentatives. Réessaie dans ${Math.max(1, Math.ceil(ms / 60000))} minute(s).`);
+
 // Identité d'un jeton enfant: « Prénom@<idFamille>.enfant.local » (deux familles peuvent avoir une « Emma »).
 const childEmail = (name, familyId) => `${name}@${familyId}.enfant.local`;
 function parseChildEmail(email) {
@@ -426,11 +447,14 @@ async function signup(store, secret, b) {
 }
 async function login(store, secret, b) {
   const email = String(b.email || '').toLowerCase();
+  const key = 'pw|' + email;
+  if (lockedFor(key)) return tooMany(lockedFor(key));
   const acc = await store.get('account:' + email);
   const pwCheck = acc && checkPassword(b.password, acc.salt, acc.hash);
   if (!acc) console.log(`[LOGIN] Account not found for ${email}`);
   if (acc && !pwCheck) console.log(`[LOGIN] Password mismatch for ${email}`);
-  if (!acc || !pwCheck) return err(401, 'Email ou mot de passe incorrect.');
+  if (!acc || !pwCheck) { recordFailure(key); return err(401, 'Email ou mot de passe incorrect.'); }
+  clearFailures(key);
 
   // Log activity
   await logActivity(store, 'login', email, acc.name, 'Parent login');
@@ -448,17 +472,23 @@ async function resetPassword(store, secret, b) {
   if (b.step === 1) {
     // Générer et envoyer code
     const email = String(b.email || '').toLowerCase();
+    const inProduction = process.env.NODE_ENV === 'production';
+    // En production le code ne part que par e-mail: sans service d'e-mail il n'existe aucun moyen sûr de le transmettre
+    if (inProduction && !emailSender) return err(503, "L'envoi d'e-mails n'est pas configuré sur ce serveur. Demande à l'administrateur de réinitialiser ton mot de passe.");
+    const reqKey = 'resetreq|' + email;
+    if (lockedFor(reqKey)) return tooMany(lockedFor(reqKey));
+    recordFailure(reqKey);                                   // au plus AUTH_MAX_ATTEMPTS demandes de code par période
     const acc = await store.get('account:' + email);
     if (!acc) return err(404, 'Email non trouvé.');
-    const code = Math.random().toString().slice(2, 8).padStart(6, '0');
+    const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
     resetCodes[email] = { code, expiresAt: Date.now() + 15 * 60 * 1000 };
-    const isDevMode = !process.env.BREVO_API_KEY;
+    const isDevMode = !inProduction;
     if (emailSender) await emailSender({
       to: email,
       subject: 'Code de réinitialisation - DailyKids Quest',
       body: `Ton code de réinitialisation: ${code}\nValide 15 minutes.`
     });
-    // ponytail: retourner le code en dev (sans BREVO_API_KEY), utile pour tests
+    // le code n'est renvoyé que hors production (développement, tests automatiques)
     const body = { message: 'Code envoyé' };
     if (isDevMode) body.devCode = code;
     return { status: 200, body };
@@ -468,9 +498,12 @@ async function resetPassword(store, secret, b) {
     // Valider code et changer password
     const email = String(b.email || '').toLowerCase();
     const data = resetCodes[email];
+    const codeKey = 'reset|' + email;
+    if (lockedFor(codeKey)) return tooMany(lockedFor(codeKey));
     if (!data) return err(400, 'Pas de demande en cours.');
     if (data.expiresAt < now) return err(400, 'Code expiré.');
-    if (data.code !== String(b.code)) return err(400, 'Code incorrect.');
+    if (data.code !== String(b.code)) { recordFailure(codeKey); return err(400, 'Code incorrect.'); }
+    clearFailures(codeKey);
     const acc = await store.get('account:' + email);
     if (!acc) return err(404, 'Compte non trouvé.');
     if (checkPassword(b.password, acc.salt, acc.hash)) return err(400, 'Nouveau password identique à l\'ancien.');
@@ -1020,6 +1053,8 @@ async function unlockChildDirect(store, b, secret) {
   const childName = (b.childName || '').trim();
   const pin = String(b.pin || '').trim();
   if (!famname || !childName || !pin) return err(400, 'Tous les parametres requis.');
+  const pinKey = `pin|${famname}|${childName.toLowerCase()}`;
+  if (lockedFor(pinKey)) return tooMany(lockedFor(pinKey));
   const idx = (await store.get('family-names-index')) || {};
   const famIds = idx[famname] || [];
   for (const fid of famIds) {
@@ -1030,8 +1065,10 @@ async function unlockChildDirect(store, b, secret) {
     const child = fam.children.find(c => c.name === childName);
     if (!child || !child.pin || child.pin !== pin) continue;
     const token = signToken(childEmail(childName, fam.id), secret);
+    clearFailures(pinKey);
     return { status: 200, body: { families: [await withNames(store, fam)], token } };
   }
+  recordFailure(pinKey);
   return err(401, 'Famille ou enfant introuvable, ou PIN incorrect.');
 }
 async function submitGrade(store, famId, b) {
@@ -1813,8 +1850,11 @@ export async function handleApi({ action, token, body = {} }, store) {
         console.log('[VERIFY-PASSWORD] Missing email or password');
         return { status: 200, body: { ok: false } };
       }
+      const pwKey = 'pw|' + verifyEmail;
+      if (lockedFor(pwKey)) return tooMany(lockedFor(pwKey));
       const acc = await store.get('account:' + verifyEmail);
       const ok = !!(acc && checkPassword(body.password, acc.salt, acc.hash));
+      if (ok) clearFailures(pwKey); else recordFailure(pwKey);
       console.log('[VERIFY-PASSWORD] Result: ok=', ok, 'account found:', !!acc, 'email:', verifyEmail);
       return { status: 200, body: { ok } };
     }

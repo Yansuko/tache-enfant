@@ -88,6 +88,7 @@ npm run dev:docker   # Run with Docker Compose
 npm run test         # Run all tests
 npm run test:watch   # Watch mode
 npm run test:e2e     # E2E UI (Playwright; CHROMIUM_PATH=<chemin> pour utiliser un Chromium déjà installé)
+npm run test:e2e:image  # the same scenarios against a running container (see playwright.container.config.js)
 ```
 
 ## Deployment
@@ -116,7 +117,9 @@ DATABASE_URL          # postgresql://... or sqlite://...
 ADMIN_KEY             # Required for /admin.html and admin actions (refused when unset)
 VAPID_SUBJECT        # mailto:you@real-address (required by Apple for iPhone push; default is a placeholder)
 JWT_SECRET            # Auto-generated if not set
-BREVO_API_KEY         # Optional: for email features
+BREVO_API_KEY         # E-mail provider. Required in production for "mot de passe oublié" (the reset code is only ever sent by e-mail; without it the endpoint answers 503)
+AUTH_MAX_ATTEMPTS     # Failed logins / PIN / reset codes before an identifier is locked (default 8)
+AUTH_LOCK_MS          # Lock duration in ms (default 900000 = 15 min)
 LOG_LEVEL             # debug|info|warn|error
 ```
 
