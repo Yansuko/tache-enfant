@@ -1594,10 +1594,8 @@ function screenStats() {
 
   ${(() => {
     const dateToISO = t => new Date(t).toLocaleDateString('fr-CA'); // converts timestamp to YYYY-MM-DD
-    const completedTasks = (c.tasks || [])
-      .filter(t => t && t.completedAt)
-      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
-      .slice(0, 20);
+    // une ligne par validation (historique tenu par le serveur, sur la période choisie), pas une par quête
+    const completedTasks = (statsData?.history || []).map(h => ({ name: h.name, completedAt: h.at })).slice(0, 20);
     return completedTasks.length > 0 ? `
   <div style="padding:14px 20px 4px" class="kicker">Historique des tâches</div>
   <div style="padding:0 20px 10px">
