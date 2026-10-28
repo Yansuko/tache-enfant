@@ -283,3 +283,33 @@ test('création de code PIN annulée: l\'appareil parent revient à l\'écran pr
   await expect(page.locator('#pin-input-1')).toHaveCount(0);
   expect((await me(request, f)).children[0].pin ?? null).toBeNull();
 });
+
+test('statistiques: une quête quotidienne validée plusieurs fois compte à chaque fois (semaine, mois, année) et figure dans l\'historique', async ({ browser, request }) => {
+  const f = await newFamily(request, fam => { fam.children[0].tasks = [task('Ranger sa chambre', 20, 10)]; });
+  // validation précédente (quelques minutes plus tôt), puis la quête est remise à faire comme au changement de jour
+  const fam = await me(request, f);
+  Object.assign(fam.children[0].tasks[0], { done: true, completedAt: Date.now() - 10 * 60000 });
+  expect((await api(request, 'saveFamily', { family: fam }, f.token)).status).toBe(200);
+  const again = await me(request, f);
+  Object.assign(again.children[0].tasks[0], { done: false, resetAt: Date.now() });
+  expect((await api(request, 'saveFamily', { family: again }, f.token)).status).toBe(200);
+
+  const C = await mkPage(browser), P = await mkPage(browser);
+  await childLogin(C.page, f);
+  await taskCard(C.page, 'Ranger sa chambre').locator('[data-action="toggle-task"]').click();     // l'enfant coche
+  await settle(C.page);
+  await parentLogin(P.page, f);
+  await tab(P.page, 'Quêtes');
+  await P.page.getByRole('button', { name: 'Valider' }).click();                                // le parent valide une 2e fois
+  await settle(P.page);
+
+  await tab(P.page, 'Statistiques');
+  const count = async () => Number(await P.page.locator('.kicker', { hasText: 'Tâches complétées' }).locator('xpath=following-sibling::div[1]').innerText());
+  for (const period of ['week', 'month', 'year']) {
+    await P.page.locator(`[data-action="set-stats-period"][data-period="${period}"]`).click();
+    await settle(P.page);
+    expect(await count(), `période ${period}`).toBe(2);
+  }
+  await expect(P.page.locator('table tbody tr', { hasText: 'Ranger sa chambre' })).toHaveCount(2);   // une ligne par validation
+  await C.ctx.close(); await P.ctx.close();
+});

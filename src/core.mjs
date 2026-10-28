@@ -806,6 +806,7 @@ async function saveFamily(store, email, b) {
   for (const c of famPayload.children) stampAdded(c.tasks, stampNow);
   for (const l of [famPayload.children, famPayload.questList, famPayload.rewards, famPayload.sanctionsList]) stampAdded(l, stampNow);
   merged.updatedAt = stampNow;                // le client repart de cette version
+  await recordCompletions(store, famPayload);
   await store.set('family:' + inc.id, famPayload);
   console.log(`[SAVEFAMILY-WRITE-STORE-${saveId}] store.set() returned successfully`);
 
@@ -987,6 +988,7 @@ async function deleteFamily(store, email, b) {
 
   // Delete from store
   await store.del('family:' + familyId);
+  await store.del('completions:' + familyId);
   await store.del('levelConfig:' + familyId);
 
   // Update admin metadata
@@ -1293,30 +1295,22 @@ async function resetLevelConfig(store, b) {
 
 /* ── Task statistics aggregation ── */
 
+// Décalage de l'heure de Paris: UTC+2 de la fin mars à la fin octobre (heure d'été), UTC+1 sinon.
+function franceOffsetMs(dateMs) {
+  const year = new Date(dateMs).getUTCFullYear();
+  const march = new Date(Date.UTC(year, 2, 31, 1, 0, 0));
+  const lastSunMarch = march - march.getUTCDay() * 86400000;            // dernier dimanche de mars, 01:00 UTC
+  const october = new Date(Date.UTC(year, 9, 31, 1, 0, 0));
+  const lastSunOct = october - october.getUTCDay() * 86400000;          // dernier dimanche d'octobre, 01:00 UTC
+  return (dateMs >= lastSunMarch && dateMs < lastSunOct) ? 7200000 : 3600000;
+}
+// Jour (AAAA-MM-JJ) à l'heure de Paris: une validation à 00:30 appartient au nouveau jour, pas à la veille (UTC)
 function dateToISO(ms) {
-  return new Date(ms).toISOString().split('T')[0];  // "YYYY-MM-DD"
+  return new Date(ms + franceOffsetMs(ms)).toISOString().split('T')[0];
 }
 
-function getDateRange(period, endDate = Date.now()) {
-  // Dynamic France timezone offset: UTC+2 (CEST) or UTC+1 (CET)
-  // CEST: late March to late October
-  // CET: late October to late March
-  function getFranceOffset(dateMs) {
-    const d = new Date(dateMs);
-    const year = d.getUTCFullYear();
-    // Last Sunday of March at 02:00 UTC = start of CEST
-    const march = new Date(Date.UTC(year, 2, 31, 2, 0, 0));
-    const lastSunMarch = new Date(march - (march.getUTCDay() * 86400000));
-    // Last Sunday of October at 03:00 UTC = end of CEST (return to CET)
-    const october = new Date(Date.UTC(year, 9, 31, 3, 0, 0));
-    const lastSunOct = new Date(october - (october.getUTCDay() * 86400000));
-
-    // If date is between last Sunday March (02:00) and last Sunday October (03:00), use UTC+2 (CEST)
-    // Otherwise use UTC+1 (CET)
-    return (dateMs >= lastSunMarch && dateMs < lastSunOct) ? 7200000 : 3600000;  // 2h or 1h in ms
-  }
-
-  const FRANCE_OFFSET_MS = getFranceOffset(endDate);
+export function getDateRange(period, endDate = Date.now()) {
+  const FRANCE_OFFSET_MS = franceOffsetMs(endDate);
 
   // Convert current time to France timezone to get the correct calendar date
   const timeInFrance = endDate + FRANCE_OFFSET_MS;
@@ -1335,9 +1329,9 @@ function getDateRange(period, endDate = Date.now()) {
     startDateUTC = Date.UTC(y, m, d, 0, 0, 0, 0);
     endDateUTC = Date.UTC(y, m, d, 23, 59, 59, 999);
   } else if (period === 'week') {
-    // Sunday to Saturday of current week (France timezone)
-    const daysToSubtract = dayOfWeek;  // dayOfWeek: 0=Sun, 1=Mon, etc.
-    const daysToAdd = 6 - dayOfWeek;   // days until Saturday
+    // Lundi au dimanche de la semaine en cours (heure de Paris), comme le renouvellement des quêtes hebdomadaires
+    const daysToSubtract = (dayOfWeek + 6) % 7;  // dayOfWeek: 0=dimanche, 1=lundi...
+    const daysToAdd = 6 - daysToSubtract;        // jusqu'au dimanche
     startDateUTC = Date.UTC(y, m, d - daysToSubtract, 0, 0, 0, 0);
     endDateUTC = Date.UTC(y, m, d + daysToAdd, 23, 59, 59, 999);
   } else if (period === 'month') {
@@ -1358,7 +1352,44 @@ function getDateRange(period, endDate = Date.now()) {
   return { start, end };
 }
 
-function aggregateTaskStats(child, period = 'week') {
+// ── Historique des validations ──
+// Une quête ne garde que sa dernière date de validation: pour compter chaque validation (semaine, mois, année) il faut un
+// journal. Il est tenu côté serveur (`completions:<famille>`), jamais envoyé aux appareils (trop lourd pour une synchro
+// toutes les 10 s). completionsOf = journal conservé + quêtes validées + journal d'actions `task_approved` (anciennes données).
+const SAME_EVENT_MS = 5000;
+const MAX_COMPLETIONS_PER_CHILD = 5000;
+export function completionsOf(child, actionLog = [], stored = []) {
+  const out = [];
+  const push = (e) => {
+    const at = Number(e.at);
+    if (!e.name || !Number.isFinite(at) || at <= 0) return;
+    if (out.some(x => x.name === e.name && Math.abs(x.at - at) <= SAME_EVENT_MS)) return;   // même validation vue dans deux sources
+    out.push({ name: e.name, icon: e.icon || '⭐', xp: Number(e.xp) || 0, gold: Number(e.gold) || 0, at });
+  };
+  for (const e of stored || []) push(e);
+  let tasks = child?.tasks || [];
+  if (tasks && typeof tasks === 'object' && !Array.isArray(tasks)) tasks = Object.values(tasks);
+  for (const t of tasks) if (t && t.completedAt) push({ name: t.name, icon: t.icon, xp: t.xp, gold: t.gold, at: Number(t.completedAt) || new Date(t.completedAt).getTime() });
+  for (const l of Array.isArray(actionLog) ? actionLog : []) {
+    if (l?.actionType === 'task_approved' && l.status === 'success' && l.details?.child === child?.name) push({ name: l.target, xp: l.details.xp, gold: l.details.gold, at: l.timestamp });
+  }
+  return out.sort((a, b) => a.at - b.at).slice(-MAX_COMPLETIONS_PER_CHILD);
+}
+
+async function recordCompletions(store, fam) {
+  const key = 'completions:' + fam.id;
+  const ledger = (await store.get(key)) || {};
+  let changed = false;
+  for (const child of fam.children || []) {
+    if (!child?.id) continue;
+    const before = ledger[child.id] || [];
+    const after = completionsOf(child, fam.actionLog, before);
+    if (after.length !== before.length) { ledger[child.id] = after; changed = true; }
+  }
+  if (changed) await store.set(key, ledger);
+}
+
+function aggregateTaskStats(child, period = 'week', entries = null) {
   const { start, end } = getDateRange(period);
   console.log('[AGGREGATE-STATS] Period:', period, 'Range:', { start: new Date(start).toISOString(), end: new Date(end).toISOString() });
 
@@ -1395,8 +1426,10 @@ function aggregateTaskStats(child, period = 'week') {
   const taskNameCounts = {};  // { "Ranger sa chambre": 3, ... }
   let bestDay = { date: '', tasksCount: 0, xp: 0, gold: 0 };
 
-  for (const task of tasks) {
-    // A task is considered completed if it has a completedAt timestamp in range (regardless of done flag)
+  const events = (entries ?? completionsOf(child)).map(e => ({ ...e, completedAt: e.at }));
+  const history = [];
+  for (const task of events) {
+    // une validation compte si sa date est dans la période
     const inRange = task.completedAt && task.completedAt >= start && task.completedAt <= end;
     if (inRange) {
       const iso = dateToISO(task.completedAt);
@@ -1420,6 +1453,7 @@ function aggregateTaskStats(child, period = 'week') {
         bestDay = { date: iso, ...dailyBreakdown[iso] };
       }
 
+      history.push({ name: task.name, icon: task.icon || '⭐', xp: task.xp || 0, gold: task.gold || 0, at: task.completedAt });
       // Count task occurrences
       const key = task.name || 'Sans nom';
       taskNameCounts[key] = (taskNameCounts[key] || 0) + 1;
@@ -1434,7 +1468,7 @@ function aggregateTaskStats(child, period = 'week') {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([name, count]) => {
-      const task = tasks.find(t => t.name === name);
+      const task = events.find(t => t.name === name) || tasks.find(t => t.name === name);
       return { name, count, icon: task?.icon || '⭐' };
     });
 
@@ -1448,6 +1482,7 @@ function aggregateTaskStats(child, period = 'week') {
     goldGained,
     dailyBreakdown,
     topTasks,
+    history: history.sort((a, b) => b.at - a.at).slice(0, 100),
     bestDay: bestDay.tasksCount > 0 ? bestDay : null
   };
 }
@@ -1817,7 +1852,9 @@ export async function handleApi({ action, token, body = {} }, store) {
       }
 
       console.log('[GET-TASK-STATS] Found child:', child.name, 'tasks:', child.tasks?.length || 0);
-      const stats = aggregateTaskStats(child, period);
+      const ledger = (await store.get('completions:' + familyId)) || {};
+      const entriesOf = c => completionsOf(c, family.actionLog, ledger[c.id]);
+      const stats = aggregateTaskStats(child, period, entriesOf(child));
       console.log('[GET-TASK-STATS] Stats result:', { tasksCount: stats.tasksCount, xpGained: stats.xpGained, period });
 
       // Get stats for all children in family
@@ -1825,7 +1862,7 @@ export async function handleApi({ action, token, body = {} }, store) {
       try {
         if (family && family.children) {
           childrenStats = family.children.map(c => {
-            const childStats = aggregateTaskStats(c, period);
+            const childStats = aggregateTaskStats(c, period, entriesOf(c));
             return {
               tasks: childStats.tasksCount || 0,
               xp: childStats.xpGained || 0,
@@ -2091,6 +2128,7 @@ export async function handleApi({ action, token, body = {} }, store) {
       // Delete families owned by this account
       for (const famId of acc.familyIds || []) {
         await store.del('family:' + famId);
+        await store.del('completions:' + famId);
         await store.del('levelConfig:' + famId);
       }
 
@@ -2155,6 +2193,7 @@ export async function handleApi({ action, token, body = {} }, store) {
 
       // Delete from store
       await store.del('family:' + famId);
+      await store.del('completions:' + famId);
       await store.del('levelConfig:' + famId);
 
       // Remove from metadata
