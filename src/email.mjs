@@ -23,3 +23,10 @@ export function makeBrevoSender({ apiKey, from, name = 'DailyKids', fetchImpl = 
     }
   };
 }
+
+// Une clé SMTP (xsmtpsib-) est refusée par l'API REST (401 « Key not found »).
+export function apiKeyWarning(apiKey) {
+  return String(apiKey).startsWith('xsmtpsib-')
+    ? 'BREVO_API_KEY est une clé SMTP (xsmtpsib-…): l\'API REST de Brevo la refuse (401). Créez une clé API (xkeysib-…) dans Brevo > SMTP & API > Clés API.'
+    : null;
+}

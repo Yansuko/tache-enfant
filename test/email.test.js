@@ -64,3 +64,12 @@ describe('testEmail action', () => {
     expect(r.body).toMatchObject({ ok: true, status: 201 });
   });
 });
+
+describe('apiKeyWarning', () => {
+  it('signale une clé SMTP (xsmtpsib-) car l\'API REST exige une clé xkeysib-', async () => {
+    const { apiKeyWarning } = await import('../src/email.mjs');
+    expect(apiKeyWarning('xsmtpsib-abc')).toMatch(/xkeysib-/);
+    expect(apiKeyWarning('xkeysib-abc')).toBeNull();
+    expect(apiKeyWarning('autre')).toBeNull();
+  });
+});

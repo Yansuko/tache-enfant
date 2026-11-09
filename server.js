@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import morgan from 'morgan';
 import { handleApi, setEmailSender, runReminders } from './src/core.mjs';
-import { makeBrevoSender } from './src/email.mjs';
+import { makeBrevoSender, apiKeyWarning } from './src/email.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,8 @@ function setupEmailSender() {
   if (!apiKey) return console.log('[EMAIL] BREVO_API_KEY absent: e-mails désactivés');
   const from = process.env.EMAIL_FROM;
   if (!from) return console.log('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
+  const warning = apiKeyWarning(apiKey);
+  if (warning) console.warn('[EMAIL] ' + warning);
   setEmailSender(makeBrevoSender({ apiKey, from, name: process.env.EMAIL_FROM_NAME || 'DailyKids' }));
   console.log(`[EMAIL] Brevo configuré (expéditeur: ${from})`);
 }
