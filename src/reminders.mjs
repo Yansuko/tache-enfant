@@ -1,6 +1,13 @@
 import { parisClock } from './paris-time.mjs';
 
-export const pendingTasks = (child) => (child?.tasks || []).filter(t => !t.done);
+import '../public/rollover.js';   // globalThis.Rollover (même règle que le navigateur)
+
+// Quêtes à faire aujourd'hui (Paris). Le rollover n'est fait que par le navigateur: on l'applique ici sans sauvegarder.
+// Il raisonne dans le fuseau du processus: on lui passe les validations à midi « heure locale » de leur jour de Paris.
+const parisNoon = ms => { const [y, m, d] = parisClock(ms).day.split('-').map(Number); return new Date(y, m - 1, d, 12).getTime(); };
+export const pendingTasks = (child, now = Date.now()) => globalThis.Rollover.rolloverTasks(
+  (child?.tasks || []).map(t => (t && Number.isFinite(Number(t.completedAt)) && t.completedAt ? { ...t, completedAt: parisNoon(Number(t.completedAt)) } : t)),
+  parisClock(now).day, now).filter(t => t && !t.done);
 
 export function reminderPayload(childName, tasks) {
   const body = tasks.length === 1 ? tasks[0].name : `${tasks.length} quêtes à faire : ${tasks.map(t => t.name).join(', ')}`;

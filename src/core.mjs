@@ -633,12 +633,17 @@ async function saveFamily(store, email, b) {
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
-  // Rappels: seul un parent les modifie (fusion par id); `lastSent` reste celui du serveur
+  // Rappels: seul un parent les modifie, fusion par id; `lastSent` reste celui du serveur.
+  // Un id absent de la liste reçue n'est PAS supprimé (client périmé): seule `remindersDeleted: [ids]` supprime.
   merged.reminders = cur.reminders || [];
+  delete merged.remindersDeleted;
   if (isParent && inc.reminders !== undefined) {
     const r = cleanReminders(inc.reminders, cur.reminders);
     if (!r) return err(400, 'Rappels invalides.');
-    merged.reminders = r;
+    const gone = new Set(Array.isArray(inc.remindersDeleted) ? inc.remindersDeleted : []);
+    const all = [...r, ...merged.reminders.filter(c => !r.some(x => x.id === c.id))].filter(x => !gone.has(x.id));
+    if (!cleanReminders(all)) return err(400, 'Rappels invalides.');   // plafond de 50 sur la liste fusionnée
+    merged.reminders = all;
   }
 
   // Merge children: preserve existing tasks not in incoming data
@@ -1594,12 +1599,15 @@ async function remindQuest(store, email, b) {
   const child = fam.children?.find(c => c.id === b.childId);
   const t = child?.tasks?.find(x => x.id === b.taskId);
   if (!t) return err(404, 'Quête introuvable.');
-  if (t.done) return err(409, 'Quête déjà validée.');
-  const key = `${fam.id}:${child.id}:${t.id}`, now = Date.now();
-  if (now - (remindedAt.get(key) || 0) < 60_000) return err(429, 'Rappel déjà envoyé, patientez une minute.');
-  remindedAt.set(key, now);
+  const now = Date.now();
+  if (!pendingTasks(child, now).some(x => x.id === t.id)) return err(409, 'Quête déjà validée.');
+  const key = `${fam.id}:${child.id}:${t.id}`;
+  for (const [k, at] of remindedAt) if (now - at >= 60_000) remindedAt.delete(k);
+  if (remindedAt.has(key)) return err(429, 'Rappel déjà envoyé, patientez une minute.');
   const r = await sendPush(store, fam.id, reminderPayload(child.name, [t]), { only: s => parseChildEmail(s.email)?.name === child.name });
-  return { status: 200, body: { ok: true, sent: r?.sent ?? 0 } };
+  const sent = r?.sent ?? 0;
+  if (sent) remindedAt.set(key, now);   // rien d'envoyé (aucun appareil, ou erreur): pas de blocage de 60 s
+  return { status: 200, body: { ok: true, sent } };
 }
 
 // Rappels planifiés (minuteur de server.js): envoie les rappels dus et pose `lastSent` (heure de Paris).
@@ -1622,7 +1630,7 @@ async function remindFamily(store, key, now) {
   let sent = 0;
   for (const r of due) {
     const child = fam.children?.find(c => c.id === r.childId);
-    const tasks = pendingTasks(child).filter(t => !r.questName || t.name === r.questName);
+    const tasks = pendingTasks(child, now).filter(t => !r.questName || t.name === r.questName);
     if (!tasks.length) continue;
     try {
       sent += (await sendPush(store, fam.id, reminderPayload(child.name, tasks), { only: s => parseChildEmail(s.email)?.name === child.name })).sent;

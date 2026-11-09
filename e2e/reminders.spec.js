@@ -1,4 +1,4 @@
-import { test, expect, settle, newFamily, me, emma, parentLogin, childLogin, tab, syncCycle, task, taskCard } from './helpers.js';
+import { test, expect, api, settle, newFamily, me, emma, parentLogin, childLogin, tab, syncCycle, task, taskCard } from './helpers.js';
 
 test.beforeEach(async ({ page }) => { await page.clock.install(); });
 
@@ -19,10 +19,62 @@ test('bouton 🔔: rappelle une quête non validée, absent sur une quête valid
   await btn.click();
   const body = JSON.parse((await req).postData());
   expect(body).toMatchObject({ familyId: f.family.id, childId: emma(f.family).id, taskId: 't-Ranger-la-chambre' });
-  await expect(page.locator('#flash')).toContainText('Rappel envoyé');
+  // aucun appareil d'Emma abonné: le serveur répond sent:0, pas de « Rappel envoyé » ni de blocage
+  await expect(page.locator('#flash')).toContainText("Emma n'a pas activé les notifications");
+  await expect(page.locator('#flash')).not.toContainText('Rappel envoyé');
 
+  // appareil abonné (réponses simulées: le serveur de test ne peut pas joindre un vrai service push)
+  const replies = [{ status: 200, body: { ok: true, sent: 1 } }, { status: 429, body: { error: 'Rappel déjà envoyé, patientez une minute.' } }];
+  await page.route('**/api', route => (route.request().postData() || '').includes('"action":"remindQuest"')
+    ? route.fulfill({ status: replies[0].status, contentType: 'application/json', body: JSON.stringify(replies.shift().body) })
+    : route.continue());
+  await remindBtn(page, 'Ranger la chambre').click();
+  await expect(page.locator('#flash')).toContainText('Rappel envoyé à Emma');
   await remindBtn(page, 'Ranger la chambre').click();
   await expect(page.locator('#flash')).toContainText('déjà envoyé');
+});
+
+test('formulaire de rappel: la liste des quêtes suit l\'enfant choisi', async ({ page, request }) => {
+  const f = await newFamily(request, fam => {
+    fam.children.find(c => c.name === 'Emma').tasks = [task('Ranger la chambre', 10, 5)];
+    fam.children.find(c => c.name === 'Lucas').tasks = [task('Nourrir le chat', 10, 5)];
+  });
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  const opts = () => page.locator('#rem-quest option').allTextContents();
+  await page.locator('#rem-child').selectOption({ label: 'Emma' });
+  expect(await opts()).toEqual(['Toutes les quêtes', 'Ranger la chambre']);
+  await page.locator('#rem-child').selectOption({ label: 'Lucas' });
+  expect(await opts()).toEqual(['Toutes les quêtes', 'Nourrir le chat']);
+  await page.locator('#rem-quest').selectOption({ label: 'Nourrir le chat' });
+  await page.locator('input[name="rem-day"][value="1"]').check();
+  await page.getByRole('button', { name: 'Ajouter le rappel' }).click();
+  await settle(page);
+  const saved = (await me(request, f)).reminders;
+  expect(saved[0]).toMatchObject({ childId: f.family.children.find(c => c.name === 'Lucas').id, questName: 'Nourrir le chat' });
+});
+
+test('rappels: un appareil périmé ne fait pas disparaître le rappel ajouté par un autre parent', async ({ page, request }) => {
+  const f = await newFamily(request);
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  // un autre parent ajoute un rappel pendant que cette page est ouverte
+  const fam = await me(request, f);
+  await api(request, 'saveFamily', { family: { ...fam, reminders: [{ id: 'rem-other', childId: emma(f.family).id, days: [2], time: '08:00', enabled: true }] } }, f.token);
+  await page.locator('input[name="rem-day"][value="0"]').check();
+  await page.getByRole('button', { name: 'Ajouter le rappel' }).click();
+  await settle(page);
+  let saved = (await me(request, f)).reminders;
+  expect(saved.map(r => r.id)).toContain('rem-other');
+  expect(saved).toHaveLength(2);
+  // la suppression explicite fonctionne toujours
+  await syncCycle(page);
+  await expect(page.locator('.reminder-row')).toHaveCount(2);
+  await page.locator('.reminder-row', { hasText: '08:00' }).locator('[data-action="del-reminder"]').click();
+  await settle(page);
+  saved = (await me(request, f)).reminders;
+  expect(saved.map(r => r.id)).not.toContain('rem-other');
+  expect(saved).toHaveLength(1);
 });
 
 test('bouton 🔔 absent côté enfant', async ({ page, request }) => {

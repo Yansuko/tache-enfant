@@ -728,6 +728,8 @@ async function persistFamily() {
         dailyBonus: res.family.dailyBonus
       };
       Object.assign(state, serverFields);
+      const sentDel = payload.family.remindersDeleted || [];   // suppressions de rappels prises en compte par le serveur
+      if (sentDel.length) state.remindersDeleted = (state.remindersDeleted || []).filter(id => !sentDel.includes(id));
       console.log(`[PERSIST-MERGE-${persistId}] After merge - requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-MERGE-${persistId}] After merge - sanctionsList:`, JSON.stringify(state.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
       console.log(`[PERSIST-MERGE-ACTIONLOG-${persistId}] After merge - actionLog:`, state.actionLog?.length || 0, 'entries');
@@ -965,9 +967,10 @@ function childSeg() {
 }
 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];   // 0 = lundi
+// options « Quête » du formulaire de rappel: les quêtes de l'enfant choisi
+const remQuestOptions = childId => `<option value="">Toutes les quêtes</option>${[...new Set((state.children.find(k => k.id === childId)?.tasks || []).map(t => t.name))].map(q => `<option value="${esc(q)}">${esc(q)}</option>`).join('')}`;
 function remindersBlock() {
   const kids = state.children || [];
-  const quests = [...new Set(kids.flatMap(k => (k.tasks || []).map(t => t.name)))];
   return `
     <div style="padding:8px 0 0" class="kicker">🔔 Rappels</div>
     ${(state.reminders || []).map((r, i) => `
@@ -983,7 +986,7 @@ function remindersBlock() {
       <div class="card-title" style="font-size:14px">+ Nouveau rappel</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <div class="field" style="margin:0;flex:1;min-width:120px"><label for="rem-child">Enfant</label><select class="input" id="rem-child" style="width:100%">${kids.map((k, i) => `<option value="${esc(k.id)}"${i === state.activeChild ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
-        <div class="field" style="margin:0;flex:1;min-width:120px"><label for="rem-quest">Quête</label><select class="input" id="rem-quest" style="width:100%"><option value="">Toutes les quêtes</option>${quests.map(q => `<option value="${esc(q)}">${esc(q)}</option>`).join('')}</select></div>
+        <div class="field" style="margin:0;flex:1;min-width:120px"><label for="rem-quest">Quête</label><select class="input" id="rem-quest" style="width:100%">${remQuestOptions((kids[state.activeChild] || kids[0])?.id)}</select></div>
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">${DAYS.map((d, i) => `<label style="display:flex;align-items:center;gap:3px;font-size:13px"><input type="checkbox" name="rem-day" value="${i}">${d}</label>`).join('')}</div>
       <div class="field" style="margin:0"><label for="rem-time">Heure</label><input class="input" id="rem-time" type="time" value="17:00"></div>
@@ -2002,7 +2005,10 @@ const ACTIONS = {
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
   'remind-task': async el => {
     const c = child(), t = c.tasks[+el.dataset.i];
-    try { await api('remindQuest', { familyId: state.id, childId: c.id, taskId: t.id }); flash(`🔔 Rappel envoyé à ${c.name}`); }
+    try {
+      const r = await api('remindQuest', { familyId: state.id, childId: c.id, taskId: t.id });
+      flash(r.sent ? `🔔 Rappel envoyé à ${c.name}` : `🔕 ${c.name} n'a pas activé les notifications`);
+    }
     catch (e) { flash('⚠️ ' + e); }
   },
   'add-reminder': () => {
@@ -2010,11 +2016,14 @@ const ACTIONS = {
     const time = val('rem-time');
     if (!days.length || !time) return alert('Choisis au moins un jour et une heure.');
     const r = { id: `rem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, childId: val('rem-child'), days, time, enabled: true };
-    if (val('rem-quest')) r.questName = val('rem-quest');
+    const q = val('rem-quest');
+    if (q && !state.children.find(k => k.id === r.childId)?.tasks?.some(t => t.name === q)) return alert('Cette quête n\'appartient pas à cet enfant.');
+    if (q) r.questName = q;
     (state.reminders ||= []).push(r);
   },
   'toggle-reminder': el => { const r = state.reminders[+el.dataset.i]; if (r) r.enabled = el.checked; },
-  'del-reminder': el => { state.reminders.splice(+el.dataset.i, 1); },
+  // suppression explicite: le serveur fusionne par id et ne retire que les ids listés ici
+  'del-reminder': el => { const [r] = state.reminders.splice(+el.dataset.i, 1); if (r) (state.remindersDeleted ||= []).push(r.id); },
   'add-task': () => {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
     const frequency = document.getElementById('new-task-freq').value || 'daily';
@@ -2671,6 +2680,7 @@ document.getElementById('role-seg').addEventListener('change', e => {
   render();
 });
 document.body.addEventListener('change', e => {
+  if (e.target.id === 'rem-child') { document.getElementById('rem-quest').innerHTML = remQuestOptions(e.target.value); return; }
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
   if (e.target.id === 'email-notif-enabled') {
     if (state) {

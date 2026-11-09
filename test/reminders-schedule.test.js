@@ -162,8 +162,19 @@ describe('saveFamily: reminders', () => {
     let saved = await A.save({ ...f, reminders: [rem(), rem({ id: 'r2', questName: 'Faire son lit', days: [1, 3], time: '08:15' })] });
     expect(saved.reminders.map(r => r.id)).toEqual(['r1', 'r2']);
     expect((await A.me())[0].reminders.length).toBe(2);
-    saved = await A.save({ ...saved, reminders: [rem({ time: '18:30', enabled: false })] });
+    saved = await A.save({ ...saved, reminders: [rem({ time: '18:30', enabled: false })], remindersDeleted: ['r2'] });
     expect(saved.reminders).toEqual([rem({ time: '18:30', enabled: false })]);
+  });
+
+  it('client périmé: un rappel ajouté par un autre parent n\'est pas perdu; suppression explicite via remindersDeleted', async () => {
+    const { A, f } = await family();
+    const stale = await A.save({ ...f, reminders: [rem()] });                 // appareil 1 synchronisé avec [r1]
+    await A.save({ ...stale, reminders: [rem(), rem({ id: 'r2' })] });        // appareil 2 ajoute r2
+    let saved = await A.save({ ...stale, reminders: [rem({ time: '18:00' })] }); // appareil 1 (périmé) modifie r1
+    expect(saved.reminders.map(r => [r.id, r.time])).toEqual([['r1', '18:00'], ['r2', '17:00']]);
+    saved = await A.save({ ...stale, reminders: [rem()], remindersDeleted: ['r2'] });
+    expect(saved.reminders.map(r => r.id)).toEqual(['r1']);
+    expect(saved.remindersDeleted).toBeUndefined();
   });
 
   it('rejette days hors 0-6 et heure invalide', async () => {
@@ -174,7 +185,7 @@ describe('saveFamily: reminders', () => {
     const many = Array.from({ length: 51 }, (_, i) => rem({ id: 'r' + i }));
     expect((await api('saveFamily', { family: { ...f, reminders: many } }, A.token)).status).toBe(400);
     expect((await api('saveFamily', { family: { ...f, reminders: many.slice(0, 50) } }, A.token)).status).toBe(200);
-    await A.save({ ...f, reminders: [] });
+    await A.save({ ...f, reminders: [], remindersDeleted: many.map(r => r.id) });
     expect((await A.me())[0].reminders || []).toEqual([]);
   });
 
@@ -204,5 +215,30 @@ describe('saveFamily: reminders', () => {
     expect(again.reminders[0]).toMatchObject({ time: '17:05', lastSent: '2026-11-09' });
     again = await A.save({ ...again, reminders: [rem({ lastSent: '2026-01-01' })] });
     expect(again.reminders[0].lastSent).toBe('2026-11-09');
+  });
+});
+
+// C1: le serveur ne fait pas le rollover; le rappel doit voir les quêtes à refaire aujourd'hui (Paris), quel que soit TZ.
+describe.each(['UTC', 'Europe/Paris'])('runReminders: période en cours (TZ=%s)', (tz) => {
+  let prevTz;
+  beforeEach(() => { prevTz = process.env.TZ; process.env.TZ = tz; return () => { process.env.TZ = prevTz; }; });
+  const tue = rem({ days: [1] });
+  const at = iso => new Date(iso).getTime();
+
+  it('quotidienne validée hier, enfant pas revenu dans l\'app -> push', async () => {
+    const s = await setup({ reminders: [tue], emmaTasks: [task('t1', 'Faire son lit', { done: true, completedAt: at('2026-11-09T18:00:00Z') })] });
+    expect(await runReminders(s.store, TUE_1730)).toEqual({ sent: 1 });
+    expect(sent[0].body).toBe('Faire son lit');
+    expect((await s.fam()).children[0].tasks[0].done).toBe(true);   // rien n'est sauvegardé
+  });
+
+  it('hebdomadaire validée cette semaine -> pas de push', async () => {
+    const s = await setup({ reminders: [tue], emmaTasks: [task('t1', 'Ménage', { frequency: 'weekly', done: true, completedAt: at('2026-11-09T08:00:00Z') })] });
+    expect(await runReminders(s.store, TUE_1730)).toEqual({ sent: 0 });
+  });
+
+  it('quotidienne validée aujourd\'hui (même à 00:30 Paris = 23:30 UTC la veille) -> pas de push', async () => {
+    const s = await setup({ reminders: [tue], emmaTasks: [task('t1', 'Faire son lit', { done: true, completedAt: at('2026-11-09T23:30:00Z') })] });
+    expect(await runReminders(s.store, TUE_1730)).toEqual({ sent: 0 });
   });
 });

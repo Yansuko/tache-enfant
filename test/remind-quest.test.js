@@ -94,4 +94,24 @@ describe('action remindQuest', () => {
     vi.setSystemTime(Date.now() + 31_000);
     expect((await call()).status).toBe(200);
   });
+
+  it('aucun appareil de l\'enfant abonné -> 200 sent:0, sans bloquer un nouvel essai', async () => {
+    const { A, fam } = await setup();
+    const { store } = await import('../server.js');
+    await store.set('push:' + fam, ((await store.get('push:' + fam)) || []).filter(s => !s.email.startsWith('Emma@')));
+    const call = () => api('remindQuest', { familyId: fam, childId: 'c-emma', taskId: 't1' }, A.token);
+    expect((await call()).body).toEqual({ ok: true, sent: 0 });
+    expect((await call()).body).toEqual({ ok: true, sent: 0 });   // pas de 429: rien n'a été envoyé
+  });
+
+  it('quête quotidienne validée hier (rollover pas encore fait côté serveur) -> 200', async () => {
+    const { A, fam } = await setup();
+    const { store } = await import('../server.js');
+    const f = await store.get('family:' + fam);
+    Object.assign(f.children[0].tasks[1], { done: true, completedAt: Date.now() - 2 * 86400000 });
+    await store.set('family:' + fam, f);
+    const r = await api('remindQuest', { familyId: fam, childId: 'c-emma', taskId: 't2' }, A.token);
+    expect(r.status).toBe(200);
+    expect(r.body.sent).toBe(1);
+  });
 });
