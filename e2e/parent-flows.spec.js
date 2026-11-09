@@ -123,7 +123,7 @@ test('second parent invité: il voit la famille, valide, et le propriétaire le 
 });
 
 test('statistiques: l\'historique des tâches validées s\'affiche', async ({ page, request }) => {
-  const f = await newFamily(request, fam => { fam.children[0].tasks = [task('Faire son lit', 10, 5, { done: true, completedAt: Date.now() }), task('Ranger', 20, 10, { done: true, completedAt: Date.now() - 2 * DAY })]; });
+  const f = await newFamily(request, fam => { fam.children[0].tasks = [task('Faire son lit', 10, 5, { done: true, completedAt: Date.now() }), task('Ranger', 20, 10, { done: true, completedAt: Date.now() - 60 * 1000 })]; });
   await parentLogin(page, f);
   await tab(page, 'Statistiques');
   await expect(page.locator('#main')).toContainText('Historique des tâches');
