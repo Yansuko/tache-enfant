@@ -125,6 +125,29 @@ describe('runReminders', () => {
   });
 });
 
+describe('runReminders: robustesse', () => {
+  it('deux passages concurrents -> un seul push', async () => {
+    const s = await setup();
+    let t = MON_1730;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (t += 120000));   // neutralise l'anti-doublon de 60 s de sendPush
+    try {
+      const [a, b] = await Promise.all([runReminders(s.store, MON_1730), runReminders(s.store, MON_1730)]);
+      expect(a.sent + b.sent).toBe(1);
+      expect(sent.length).toBe(1);
+    } finally { clock.mockRestore(); }
+  });
+
+  it('une famille en erreur n\'empêche pas les suivantes', async () => {
+    const s = await setup();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const broken = { ...s.store, list: async () => ['family:bad', ...(await s.store.list())],
+      get: async k => { if (k === 'family:bad') throw new Error('boom'); return s.store.get(k); } };
+    expect(await runReminders(broken, MON_1730)).toEqual({ sent: 1 });
+    expect(err.mock.calls.some(c => String(c[0]).includes('[REMINDERS]'))).toBe(true);
+    err.mockRestore();
+  });
+});
+
 describe('saveFamily: reminders', () => {
   async function family() {
     const A = await newParent('remS');
@@ -148,6 +171,10 @@ describe('saveFamily: reminders', () => {
     expect((await api('saveFamily', { family: { ...f, reminders: [rem({ days: [9] })] } }, A.token)).status).toBe(400);
     expect((await api('saveFamily', { family: { ...f, reminders: [rem({ time: '25:99' })] } }, A.token)).status).toBe(400);
     expect((await api('saveFamily', { family: { ...f, reminders: [rem({ id: '' })] } }, A.token)).status).toBe(400);
+    const many = Array.from({ length: 51 }, (_, i) => rem({ id: 'r' + i }));
+    expect((await api('saveFamily', { family: { ...f, reminders: many } }, A.token)).status).toBe(400);
+    expect((await api('saveFamily', { family: { ...f, reminders: many.slice(0, 50) } }, A.token)).status).toBe(200);
+    await A.save({ ...f, reminders: [] });
     expect((await A.me())[0].reminders || []).toEqual([]);
   });
 

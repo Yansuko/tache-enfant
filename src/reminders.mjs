@@ -13,11 +13,12 @@ export function dueReminders(fam, now = Date.now()) {
   return (fam?.reminders || []).filter(r => r?.enabled && r.days?.includes(dow) && hhmm >= r.time && r.lastSent !== day);
 }
 
+const MAX_REMINDERS = 50;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const str = v => typeof v === 'string' && v.trim() !== '' && v.length <= 200;
 // Liste envoyée par un parent -> liste propre, ou null si invalide. `lastSent` reste celui du serveur (par id).
 export function cleanReminders(list, current = []) {
-  if (!Array.isArray(list)) return null;
+  if (!Array.isArray(list) || list.length > MAX_REMINDERS) return null;
   const prev = new Map((current || []).map(r => [r?.id, r]));
   const out = [];
   for (const r of list) {

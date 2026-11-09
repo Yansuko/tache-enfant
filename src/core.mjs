@@ -1603,28 +1603,38 @@ async function remindQuest(store, email, b) {
 }
 
 // Rappels planifiés (minuteur de server.js): envoie les rappels dus et pose `lastSent` (heure de Paris).
+let remindersRunning = false;   // un seul passage à la fois: deux passages concurrents liraient le même lastSent
 export async function runReminders(store, now = Date.now()) {
+  if (remindersRunning) return { sent: 0 };
+  remindersRunning = true;
   let sent = 0;
-  for (const key of (await store.list()).filter(k => k.startsWith('family:'))) {
-    const fam = await store.get(key);
-    const due = dueReminders(fam, now);
-    if (!due.length) continue;
-    for (const r of due) {
-      const child = fam.children?.find(c => c.id === r.childId);
-      const tasks = pendingTasks(child).filter(t => !r.questName || t.name === r.questName);
-      if (!tasks.length) continue;
-      try {
-        sent += (await sendPush(store, fam.id, reminderPayload(child.name, tasks), { only: s => parseChildEmail(s.email)?.name === child.name })).sent;
-      } catch (e) { console.error('[REMINDERS]', e.message); }
+  try {
+    for (const key of (await store.list()).filter(k => k.startsWith('family:'))) {
+      try { sent += await remindFamily(store, key, now); } catch (e) { console.error(`[REMINDERS] ${key}:`, e.message); }
     }
-    // relu juste avant d'écrire: une sauvegarde parent pendant l'envoi n'est pas écrasée
-    const fresh = await store.get(key);
-    const ids = new Set(due.map(r => r.id));
-    const day = parisClock(now).day;
-    for (const r of fresh?.reminders || []) if (ids.has(r.id)) r.lastSent = day;
-    if (fresh) await store.set(key, fresh);
-  }
+  } finally { remindersRunning = false; }
   return { sent };
+}
+async function remindFamily(store, key, now) {
+  const fam = await store.get(key);
+  const due = dueReminders(fam, now);
+  if (!due.length) return 0;
+  let sent = 0;
+  for (const r of due) {
+    const child = fam.children?.find(c => c.id === r.childId);
+    const tasks = pendingTasks(child).filter(t => !r.questName || t.name === r.questName);
+    if (!tasks.length) continue;
+    try {
+      sent += (await sendPush(store, fam.id, reminderPayload(child.name, tasks), { only: s => parseChildEmail(s.email)?.name === child.name })).sent;
+    } catch (e) { console.error('[REMINDERS]', e.message); }
+  }
+  // relu juste avant d'écrire: une sauvegarde parent pendant l'envoi n'est pas écrasée
+  const fresh = await store.get(key);
+  const ids = new Set(due.map(r => r.id));
+  const day = parisClock(now).day;
+  for (const r of fresh?.reminders || []) if (ids.has(r.id)) r.lastSent = day;
+  if (fresh) await store.set(key, fresh);
+  return sent;
 }
 
 const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'testEmail', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
