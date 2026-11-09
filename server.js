@@ -5,7 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import morgan from 'morgan';
-import { handleApi, setEmailSender } from './src/core.mjs';
+import { handleApi, setEmailSender, runReminders } from './src/core.mjs';
+import { makeBrevoSender, apiKeyWarning } from './src/email.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,36 +68,13 @@ async function initializeDatabase() {
 // ============ Email configuration ============
 function setupEmailSender() {
   const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) {
-    console.log('[EMAIL] BREVO_API_KEY not configured - emails disabled');
-    return;
-  }
-
-  setEmailSender(async ({ to, subject, body }) => {
-    try {
-      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'api-key': apiKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          to: [{ email: to }],
-          sender: { name: 'DailyKids', email: 'noreply@dailykids.local' },
-          subject,
-          htmlContent: `<p>${body.replace(/\n/g, '<br>')}</p>`
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Brevo error: ${response.status}`);
-      }
-      console.log(`[EMAIL] Sent to ${to}: ${subject}`);
-    } catch (e) {
-      console.error('[EMAIL] Failed to send to', to, ':', e.message);
-    }
-  });
-  console.log('[EMAIL] Email sender configured with Brevo');
+  if (!apiKey) return console.log('[EMAIL] BREVO_API_KEY absent: e-mails désactivés');
+  const from = process.env.EMAIL_FROM;
+  if (!from) return console.log('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
+  const warning = apiKeyWarning(apiKey);
+  if (warning) console.warn('[EMAIL] ' + warning);
+  setEmailSender(makeBrevoSender({ apiKey, from, name: process.env.EMAIL_FROM_NAME || 'DailyKids' }));
+  console.log(`[EMAIL] Brevo configuré (expéditeur: ${from})`);
 }
 
 // ============ Health check endpoint ============
@@ -155,9 +133,14 @@ async function start() {
       console.log(`[SERVER] DailyKids Quest running on http://localhost:${PORT}`);
       console.log(`[SERVER] Node ${process.version}, ${NODE_ENV} mode`);
     });
+    // Rappels planifiés: un passage par minute (désactivé en test sauf REMINDER_TICK_MS défini)
+    const reminderTimer = (NODE_ENV !== 'test' || process.env.REMINDER_TICK_MS)
+      ? setInterval(() => runReminders(store).catch(e => console.error('[REMINDERS]', e.message)), Number(process.env.REMINDER_TICK_MS) || 60000)
+      : null;
     // Arrêt propre (docker stop envoie SIGTERM; sans gestionnaire, un processus PID 1 l'ignore puis est tué après 10 s)
     const shutdown = (signal) => {
       console.log(`[SERVER] ${signal} reçu: arrêt en cours`);
+      clearInterval(reminderTimer);
       server.close(() => {
         try { if (db instanceof Pool) db.end(); else db?.close(); } catch (e) { console.error('[SHUTDOWN]', e.message); }
         process.exit(0);
@@ -175,4 +158,4 @@ async function start() {
 
 start();
 
-export { app, db };
+export { app, db, store };

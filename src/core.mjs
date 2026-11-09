@@ -1,6 +1,8 @@
 // Cœur de l'API: logique pure, tout passe par le store clé/valeur passé en paramètre (SQLite ou PostgreSQL via database.js).
 import crypto from 'node:crypto';
 import webpush from 'web-push';
+import { reminderPayload, pendingTasks, dueReminders, cleanReminders } from './reminders.mjs';
+import { franceOffsetMs, dateToISO, parisClock } from './paris-time.mjs';
 
 let emailSender = null;
 export function setEmailSender(fn) { emailSender = fn; }
@@ -631,6 +633,18 @@ async function saveFamily(store, email, b) {
   // owner / members / id restent maîtrisés par le serveur : un membre ne peut pas s'auto-promouvoir
   const merged = { ...inc, id: cur.id, owner: cur.owner, members: cur.members };
   delete merged.memberInfo; delete merged.role; delete merged.tab; delete merged.activeChild;
+  // Rappels: seul un parent les modifie, fusion par id; `lastSent` reste celui du serveur.
+  // Un id absent de la liste reçue n'est PAS supprimé (client périmé): seule `remindersDeleted: [ids]` supprime.
+  merged.reminders = cur.reminders || [];
+  delete merged.remindersDeleted;
+  if (isParent && inc.reminders !== undefined) {
+    const r = cleanReminders(inc.reminders, cur.reminders);
+    if (!r) return err(400, 'Rappels invalides.');
+    const gone = new Set(Array.isArray(inc.remindersDeleted) ? inc.remindersDeleted : []);
+    const all = [...r, ...merged.reminders.filter(c => !r.some(x => x.id === c.id))].filter(x => !gone.has(x.id));
+    if (!cleanReminders(all)) return err(400, 'Rappels invalides.');   // plafond de 50 sur la liste fusionnée
+    merged.reminders = all;
+  }
 
   // Merge children: preserve existing tasks not in incoming data
   const incomingChildIds = new Set(inc.children?.map(c => c.id) || []);
@@ -784,6 +798,7 @@ async function saveFamily(store, email, b) {
     gradeRequests: ensureArray(merged.gradeRequests),
     taskRequests: ensureArray(merged.taskRequests),
     actionLog: ensureArray(merged.actionLog),
+    reminders: ensureArray(merged.reminders),
     updatedAt: Date.now()
   };
 
@@ -1295,20 +1310,6 @@ async function resetLevelConfig(store, b) {
 
 /* ── Task statistics aggregation ── */
 
-// Décalage de l'heure de Paris: UTC+2 de la fin mars à la fin octobre (heure d'été), UTC+1 sinon.
-function franceOffsetMs(dateMs) {
-  const year = new Date(dateMs).getUTCFullYear();
-  const march = new Date(Date.UTC(year, 2, 31, 1, 0, 0));
-  const lastSunMarch = march - march.getUTCDay() * 86400000;            // dernier dimanche de mars, 01:00 UTC
-  const october = new Date(Date.UTC(year, 9, 31, 1, 0, 0));
-  const lastSunOct = october - october.getUTCDay() * 86400000;          // dernier dimanche d'octobre, 01:00 UTC
-  return (dateMs >= lastSunMarch && dateMs < lastSunOct) ? 7200000 : 3600000;
-}
-// Jour (AAAA-MM-JJ) à l'heure de Paris: une validation à 00:30 appartient au nouveau jour, pas à la veille (UTC)
-function dateToISO(ms) {
-  return new Date(ms + franceOffsetMs(ms)).toISOString().split('T')[0];
-}
-
 export function getDateRange(period, endDate = Date.now()) {
   const FRANCE_OFFSET_MS = franceOffsetMs(endDate);
 
@@ -1589,7 +1590,62 @@ async function notifyChild(store, familyId, childName, title, body, icon = '📢
   }
 }
 
-const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
+// Rappel manuel d'une quête par un parent. Anti-spam: 60 s par quête (mémoire du processus).
+const remindedAt = new Map();
+async function remindQuest(store, email, b) {
+  const fam = await store.get('family:' + b.familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  if (!fam.members?.includes(email)) return err(403, 'Accès refusé.');
+  const child = fam.children?.find(c => c.id === b.childId);
+  const t = child?.tasks?.find(x => x.id === b.taskId);
+  if (!t) return err(404, 'Quête introuvable.');
+  const now = Date.now();
+  if (!pendingTasks(child, now).some(x => x.id === t.id)) return err(409, 'Quête déjà validée.');
+  const key = `${fam.id}:${child.id}:${t.id}`;
+  for (const [k, at] of remindedAt) if (now - at >= 60_000) remindedAt.delete(k);
+  if (remindedAt.has(key)) return err(429, 'Rappel déjà envoyé, patientez une minute.');
+  const r = await sendPush(store, fam.id, reminderPayload(child.name, [t]), { only: s => parseChildEmail(s.email)?.name === child.name });
+  const sent = r?.sent ?? 0;
+  if (sent) remindedAt.set(key, now);   // rien d'envoyé (aucun appareil, ou erreur): pas de blocage de 60 s
+  return { status: 200, body: { ok: true, sent } };
+}
+
+// Rappels planifiés (minuteur de server.js): envoie les rappels dus et pose `lastSent` (heure de Paris).
+let remindersRunning = false;   // un seul passage à la fois: deux passages concurrents liraient le même lastSent
+export async function runReminders(store, now = Date.now()) {
+  if (remindersRunning) return { sent: 0 };
+  remindersRunning = true;
+  let sent = 0;
+  try {
+    for (const key of (await store.list()).filter(k => k.startsWith('family:'))) {
+      try { sent += await remindFamily(store, key, now); } catch (e) { console.error(`[REMINDERS] ${key}:`, e.message); }
+    }
+  } finally { remindersRunning = false; }
+  return { sent };
+}
+async function remindFamily(store, key, now) {
+  const fam = await store.get(key);
+  const due = dueReminders(fam, now);
+  if (!due.length) return 0;
+  let sent = 0;
+  for (const r of due) {
+    const child = fam.children?.find(c => c.id === r.childId);
+    const tasks = pendingTasks(child, now).filter(t => !r.questName || t.name === r.questName);
+    if (!tasks.length) continue;
+    try {
+      sent += (await sendPush(store, fam.id, reminderPayload(child.name, tasks), { only: s => parseChildEmail(s.email)?.name === child.name })).sent;
+    } catch (e) { console.error('[REMINDERS]', e.message); }
+  }
+  // relu juste avant d'écrire: une sauvegarde parent pendant l'envoi n'est pas écrasée
+  const fresh = await store.get(key);
+  const ids = new Set(due.map(r => r.id));
+  const day = parisClock(now).day;
+  for (const r of fresh?.reminders || []) if (ids.has(r.id)) r.lastSent = day;
+  if (fresh) await store.set(key, fresh);
+  return sent;
+}
+
+const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'testEmail', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
 
 // point d'entrée unique. payload = { action, token, body }
 async function logActivity(store, type, subject, target, details) {
@@ -1922,6 +1978,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'subscribePush': return subscribePush(store, email, body);
     case 'unsubscribePush': return unsubscribePush(store, email, body);
     case 'notify': return notify(store, email, body);
+    case 'remindQuest': return remindQuest(store, email, body);
     case 'saveFamily': return saveFamily(store, email, body);
     case 'createFamily': return createFamily(store, email, body);
     case 'deleteFamily': return deleteFamily(store, email, body);
@@ -2144,6 +2201,13 @@ export async function handleApi({ action, token, body = {} }, store) {
       await logAdminAction(store, 'deleteAccount', targetEmail, `Supprimer ${acc.familyIds?.length || 0} familles`);
 
       return { status: 200, body: { message: `Compte ${targetEmail} et ses familles supprimés` } };
+    }
+    case 'testEmail': {
+      if (!isAdminKey(body.adminKey)) return err(403, 'Clé admin invalide.');
+      if (typeof body.to !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.to)) return err(400, 'Adresse e-mail destinataire invalide.');
+      if (!emailSender) return err(503, "Aucun expéditeur e-mail configuré (BREVO_API_KEY / EMAIL_FROM).");
+      const r = await emailSender({ to: body.to, subject: 'Test DailyKids', body: 'E-mail de test DailyKids Quest.' });
+      return { status: 200, body: { ok: !!r?.ok, status: r?.status, detail: r?.detail } };
     }
     case 'adminResetPin': {
       // Verify admin key
