@@ -111,6 +111,11 @@
     background: var(--color-accent-800); color: #fff; padding: 10px 16px;
     border-radius: 999px; font-size: 13px; display: none; z-index: 60;
   }
+  #flash {
+    position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: calc(100vw - 32px);
+    background: var(--color-neutral-800, #333); color: #fff; padding: 10px 16px;
+    border-radius: 999px; font-size: 13px; z-index: 61; text-align: center;
+  }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/rollover.js"></script>
@@ -219,6 +224,7 @@ initAuth();
   <main id="main"></main>
   <nav class="bottom-nav" id="nav"></nav>
 </div>
+<div id="flash" role="status" hidden></div>
 <div id="toast" style="display:none">⚠️ Synchronisation échouée — vérifie ta connexion</div>
 
 <script>
@@ -493,6 +499,14 @@ function toast(on, detail = '') {
   el.style.display = on ? 'block' : 'none';
 }
 
+// Message bref (succès / erreur d'une action ponctuelle)
+let flashTimer;
+function flash(msg) {
+  const el = document.getElementById('flash');
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(flashTimer); flashTimer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
 // Log action to audit trail
 function logAction(actionType, target, details = {}, status = 'success') {
   if (!state || !state.id) return;
@@ -534,7 +548,7 @@ function setActiveFamily(i) {
 function normalizeFamilyData(f) {
   if (!f) return f;
   // Convert all OBJECT-stored arrays to actual arrays
-  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog'];
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog', 'reminders'];
   for (const field of arrayFields) {
     const before = f[field];
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
@@ -708,6 +722,7 @@ async function persistFamily() {
         questList: res.family.questList !== undefined ? res.family.questList : state.questList,
         taskRequests: res.family.taskRequests !== undefined ? res.family.taskRequests : state.taskRequests,
         actionLog: res.family.actionLog !== undefined ? res.family.actionLog : state.actionLog,
+        reminders: res.family.reminders !== undefined ? res.family.reminders : state.reminders,
         updatedAt: res.family.updatedAt,
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
@@ -748,6 +763,7 @@ function taskRow(t, i, small) {
       <div class="card-title" style="font-size:${small ? 14 : 15}px${t.done ? ';text-decoration:line-through' : ''}">${esc(t.name)}</div>
       ${loot(t.xp, t.gold)}${t.frequency ? ` <span class="tag tag-neutral" style="margin-top:4px">${freqLabel}</span>` : ''}
     </div>
+    ${small && !t.done && t.id ? `<button class="btn btn-icon btn-ghost" data-action="remind-task" data-i="${i}" aria-label="Envoyer un rappel" title="Envoyer un rappel">🔔</button>` : ''}
     ${small ? `<button class="btn btn-icon btn-ghost" data-action="del-task" data-i="${i}" aria-label="Supprimer">✕</button>` : ''}
   </div>`;
 }
@@ -948,6 +964,33 @@ function childSeg() {
     `<label class="seg-opt"><input type="radio" name="child" value="${i}"${i === state.activeChild ? ' checked' : ''}><span>${esc(c.name)}</span></label>`).join('')}</div>`;
 }
 
+const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];   // 0 = lundi
+function remindersBlock() {
+  const kids = state.children || [];
+  const quests = [...new Set(kids.flatMap(k => (k.tasks || []).map(t => t.name)))];
+  return `
+    <div style="padding:8px 0 0" class="kicker">🔔 Rappels</div>
+    ${(state.reminders || []).map((r, i) => `
+    <div class="card elev-sm reminder-row" style="flex-direction:row;align-items:center;gap:10px;padding:12px">
+      <div style="flex:1;min-width:0">
+        <div class="card-title" style="font-size:14px">${esc(kids.find(k => k.id === r.childId)?.name || '?')} · ${esc(r.questName || 'Toutes les quêtes')}</div>
+        <div style="font-size:12px;color:var(--color-neutral-600)">${r.days.map(d => DAYS[d]).join(', ')} à ${esc(r.time)}</div>
+      </div>
+      <input type="checkbox" data-action="toggle-reminder" data-i="${i}"${r.enabled ? ' checked' : ''} aria-label="Rappel actif" style="width:22px;height:22px">
+      <button class="btn btn-icon btn-ghost" data-action="del-reminder" data-i="${i}" aria-label="Supprimer le rappel">✕</button>
+    </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucun rappel planifié.</p>'}
+    <div class="card elev-sm" style="gap:8px">
+      <div class="card-title" style="font-size:14px">+ Nouveau rappel</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="field" style="margin:0;flex:1;min-width:120px"><label for="rem-child">Enfant</label><select class="input" id="rem-child" style="width:100%">${kids.map((k, i) => `<option value="${esc(k.id)}"${i === state.activeChild ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></div>
+        <div class="field" style="margin:0;flex:1;min-width:120px"><label for="rem-quest">Quête</label><select class="input" id="rem-quest" style="width:100%"><option value="">Toutes les quêtes</option>${quests.map(q => `<option value="${esc(q)}">${esc(q)}</option>`).join('')}</select></div>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${DAYS.map((d, i) => `<label style="display:flex;align-items:center;gap:3px;font-size:13px"><input type="checkbox" name="rem-day" value="${i}">${d}</label>`).join('')}</div>
+      <div class="field" style="margin:0"><label for="rem-time">Heure</label><input class="input" id="rem-time" type="time" value="17:00"></div>
+      <button class="btn btn-secondary btn-block" data-action="add-reminder">Ajouter le rappel</button>
+    </div>`;
+}
+
 function screenTaches() {
   if (state) {
     console.log('[SCREEN-TACHES-BEFORE-NORM] questList:', state.questList?.length, state.questList?.map(q => ({ id: q?.id, name: q?.name })));
@@ -999,6 +1042,8 @@ function screenTaches() {
       <div style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-primary btn-block" data-action="add-task">Ajouter la quête</button>
     </div>
+
+    ${remindersBlock()}
 
     <div style="padding:8px 0 0" class="kicker">Modèles réutilisables</div>
     ${state.questList.map((t, i) => `
@@ -1955,6 +2000,21 @@ const ACTIONS = {
     console.log(`[TOGGLE-END-${toggleId}] ${toggleTime} toggle-task completed`);
   },
   'del-task': el => { child().tasks.splice(+el.dataset.i, 1); },
+  'remind-task': async el => {
+    const c = child(), t = c.tasks[+el.dataset.i];
+    try { await api('remindQuest', { familyId: state.id, childId: c.id, taskId: t.id }); flash(`🔔 Rappel envoyé à ${c.name}`); }
+    catch (e) { flash('⚠️ ' + e); }
+  },
+  'add-reminder': () => {
+    const days = [...document.querySelectorAll('input[name="rem-day"]:checked')].map(e => +e.value);
+    const time = val('rem-time');
+    if (!days.length || !time) return alert('Choisis au moins un jour et une heure.');
+    const r = { id: `rem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, childId: val('rem-child'), days, time, enabled: true };
+    if (val('rem-quest')) r.questName = val('rem-quest');
+    (state.reminders ||= []).push(r);
+  },
+  'toggle-reminder': el => { const r = state.reminders[+el.dataset.i]; if (r) r.enabled = el.checked; },
+  'del-reminder': el => { state.reminders.splice(+el.dataset.i, 1); },
   'add-task': () => {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
     const frequency = document.getElementById('new-task-freq').value || 'daily';
@@ -2534,7 +2594,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'enable-push', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
+const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'remind-task', 'enable-push', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -3114,6 +3174,7 @@ setInterval(async () => {
           state.sanctionsList = serverFamily.sanctionsList || state.sanctionsList;
           state.proposals = serverFamily.proposals || state.proposals;
           state.questList = serverFamily.questList || state.questList;
+          state.reminders = serverFamily.reminders || state.reminders;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
           lastSyncedSig = stateSig();
