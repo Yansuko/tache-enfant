@@ -120,6 +120,9 @@ JWT_SECRET            # Signs login sessions. Use a long random value (openssl r
                       # If unset, a random one is generated and stored in the database (needs a persistent /app/data volume).
                       # The sample value that was once in the Dockerfile is public and is ignored. Changing it logs everyone out.
 BREVO_API_KEY         # E-mail provider. Required in production for "mot de passe oublié" (the reset code is only ever sent by e-mail; without it the endpoint answers 503)
+EMAIL_FROM            # Required with BREVO_API_KEY: sender address, must be a sender validated in Brevo (otherwise Brevo rejects the mails; errors are logged as "[EMAIL] Brevo <status> ...")
+EMAIL_FROM_NAME       # Optional sender name (default DailyKids)
+                      # Check the setup: POST /api {"action":"testEmail","adminKey":"<ADMIN_KEY>","to":"you@example.com"} -> {ok,status,detail}
 AUTH_MAX_ATTEMPTS     # Failed logins / PIN / reset codes before an identifier is locked (default 8)
 AUTH_LOCK_MS          # Lock duration in ms (default 900000 = 15 min)
 LOG_LEVEL             # debug|info|warn|error

@@ -1589,7 +1589,7 @@ async function notifyChild(store, familyId, childName, title, body, icon = '📢
   }
 }
 
-const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
+const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'testEmail', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
 
 // point d'entrée unique. payload = { action, token, body }
 async function logActivity(store, type, subject, target, details) {
@@ -2144,6 +2144,13 @@ export async function handleApi({ action, token, body = {} }, store) {
       await logAdminAction(store, 'deleteAccount', targetEmail, `Supprimer ${acc.familyIds?.length || 0} familles`);
 
       return { status: 200, body: { message: `Compte ${targetEmail} et ses familles supprimés` } };
+    }
+    case 'testEmail': {
+      if (!isAdminKey(body.adminKey)) return err(403, 'Clé admin invalide.');
+      if (typeof body.to !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.to)) return err(400, 'Adresse e-mail destinataire invalide.');
+      if (!emailSender) return err(503, "Aucun expéditeur e-mail configuré (BREVO_API_KEY / EMAIL_FROM).");
+      const r = await emailSender({ to: body.to, subject: 'Test DailyKids', body: 'E-mail de test DailyKids Quest.' });
+      return { status: 200, body: { ok: !!r?.ok, status: r?.status, detail: r?.detail } };
     }
     case 'adminResetPin': {
       // Verify admin key

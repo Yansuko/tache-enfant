@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import morgan from 'morgan';
 import { handleApi, setEmailSender } from './src/core.mjs';
+import { makeBrevoSender } from './src/email.mjs';
 import { createDatabaseAdapter } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,36 +68,11 @@ async function initializeDatabase() {
 // ============ Email configuration ============
 function setupEmailSender() {
   const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) {
-    console.log('[EMAIL] BREVO_API_KEY not configured - emails disabled');
-    return;
-  }
-
-  setEmailSender(async ({ to, subject, body }) => {
-    try {
-      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'api-key': apiKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          to: [{ email: to }],
-          sender: { name: 'DailyKids', email: 'noreply@dailykids.local' },
-          subject,
-          htmlContent: `<p>${body.replace(/\n/g, '<br>')}</p>`
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Brevo error: ${response.status}`);
-      }
-      console.log(`[EMAIL] Sent to ${to}: ${subject}`);
-    } catch (e) {
-      console.error('[EMAIL] Failed to send to', to, ':', e.message);
-    }
-  });
-  console.log('[EMAIL] Email sender configured with Brevo');
+  if (!apiKey) return console.log('[EMAIL] BREVO_API_KEY absent: e-mails désactivés');
+  const from = process.env.EMAIL_FROM;
+  if (!from) return console.log('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
+  setEmailSender(makeBrevoSender({ apiKey, from, name: process.env.EMAIL_FROM_NAME || 'DailyKids' }));
+  console.log(`[EMAIL] Brevo configuré (expéditeur: ${from})`);
 }
 
 // ============ Health check endpoint ============
