@@ -1,6 +1,7 @@
 // Cœur de l'API: logique pure, tout passe par le store clé/valeur passé en paramètre (SQLite ou PostgreSQL via database.js).
 import crypto from 'node:crypto';
 import webpush from 'web-push';
+import { reminderPayload } from './reminders.mjs';
 
 let emailSender = null;
 export function setEmailSender(fn) { emailSender = fn; }
@@ -1589,6 +1590,23 @@ async function notifyChild(store, familyId, childName, title, body, icon = '📢
   }
 }
 
+// Rappel manuel d'une quête par un parent. Anti-spam: 60 s par quête (mémoire du processus).
+const remindedAt = new Map();
+async function remindQuest(store, email, b) {
+  const fam = await store.get('family:' + b.familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  if (!fam.members?.includes(email)) return err(403, 'Accès refusé.');
+  const child = fam.children?.find(c => c.id === b.childId);
+  const t = child?.tasks?.find(x => x.id === b.taskId);
+  if (!t) return err(404, 'Quête introuvable.');
+  if (t.done) return err(409, 'Quête déjà validée.');
+  const key = `${fam.id}:${child.id}:${t.id}`, now = Date.now();
+  if (now - (remindedAt.get(key) || 0) < 60_000) return err(429, 'Rappel déjà envoyé, patientez une minute.');
+  remindedAt.set(key, now);
+  const r = await sendPush(store, fam.id, reminderPayload(child.name, [t]), { only: s => parseChildEmail(s.email)?.name === child.name });
+  return { status: 200, body: { ok: true, sent: r?.sent ?? 0 } };
+}
+
 const PUBLIC = new Set(['login', 'signup', 'verifyPassword', 'unlockChildDirect', 'submitGrade', 'reset-password', 'getTaskStats', 'getFamilyData', 'getAdminStats', 'adminResetPassword', 'adminDeleteAccount', 'adminResetPin', 'adminDeleteFamily', 'testEmail', 'getLevelConfig', 'updateLevelConfig', 'resetLevelConfig', 'pushKey']);
 
 // point d'entrée unique. payload = { action, token, body }
@@ -1922,6 +1940,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'subscribePush': return subscribePush(store, email, body);
     case 'unsubscribePush': return unsubscribePush(store, email, body);
     case 'notify': return notify(store, email, body);
+    case 'remindQuest': return remindQuest(store, email, body);
     case 'saveFamily': return saveFamily(store, email, body);
     case 'createFamily': return createFamily(store, email, body);
     case 'deleteFamily': return deleteFamily(store, email, body);
