@@ -790,16 +790,27 @@ async function saveFamily(store, email, b) {
   for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals']) merged[k] = mergeById(cur[k], inc[k]);
   const kidIds = new Set(merged.children.map(c => c.id));
   if (isParent && Array.isArray(merged.rewards) && !merged.rewards.every(r => validShopFields(r, kidIds))) return err(400, 'Articles invalides.');
-  // Demande d'achat: prix fixé par le serveur. Nouvelle demande = prix effectif de l'article pour l'enfant (article
-  // retrouvé par rewardId ou nom; inconnu: prix envoyé); demande déjà enregistrée: son prix ne change plus.
+  // Demande d'achat: le serveur fixe article et prix. Nouvelle demande `pending`: l'article est retrouvé par `rewardId`,
+  // sinon par nom exact, et fait foi (nom, icône, prix effectif pour l'enfant). Un enfant ne demande que pour lui, un
+  // article existant et visible pour lui; sinon la demande est retirée. Un parent peut garder un article hors boutique,
+  // mais tout prix stocké est un entier ≥ 1. Demande déjà enregistrée: article et prix figés; approuvée/refusée: intacte.
   const curReqById = new Map((cur.requests || []).filter(r => r?.id != null).map(r => [r.id, r]));
+  const shopList = Array.isArray(merged.rewards) ? merged.rewards : [];
+  const me = isParent ? null : parseChildEmail(email).name;
+  const dropped = new Set();
   for (const r of merged.requests) {
     if (!r || r.status !== 'pending') continue;
     const old = curReqById.get(r.id);
-    if (old) { r.cost = old.cost; continue; }
-    const reward = (Array.isArray(merged.rewards) ? merged.rewards : []).find(x => x && ((r.rewardId && x.id === r.rewardId) || x.name === r.name));
-    if (reward) r.cost = Shop.effectiveCost(reward, merged.children.find(c => c.name === r.child)?.id);
+    if (old) { for (const k of ['child', 'rewardId', 'name', 'icon', 'cost']) if (old[k] !== undefined) r[k] = old[k]; continue; }
+    const kidId = merged.children.find(c => c.name === r.child)?.id;
+    const reward = r.rewardId != null ? shopList.find(x => x?.id === r.rewardId) : shopList.find(x => x?.name === r.name);
+    if (reward && (isParent || Shop.visibleRewards([reward], kidId).length)) {
+      Object.assign(r, { name: reward.name, icon: reward.icon, cost: Shop.effectiveCost(reward, kidId) });
+      if (reward.id != null) r.rewardId = reward.id;
+    } else if (!isParent) { dropped.add(r); continue; }
+    if ((me !== null && r.child !== me) || !Number.isInteger(r.cost) || r.cost < 1) dropped.add(r);
   }
+  merged.requests = merged.requests.filter(r => !dropped.has(r));
   // ponytail: questList = dernier parent écrit gagne (une union avec le serveur ressuscitait les modèles supprimés); un enfant ne la modifie pas
   merged.questList = isParent && Array.isArray(inc.questList) ? keepConcurrentAdds(cur.questList, inc.questList, basedAt) : (cur.questList || []);
   console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] After merge - merged.proposals count:`, merged.proposals?.length || 0);
@@ -809,7 +820,7 @@ async function saveFamily(store, email, b) {
   stampRewardPurchases(cur.requests, merged.requests);
   // Demandes d'achat: nouvelle demande -> parents (une fois, par id); approbation -> l'enfant concerné
   for (const req of inc.requests || []) {
-    if (!req || typeof req !== 'object') continue;
+    if (!req || typeof req !== 'object' || dropped.has(req)) continue;
     const oldReq = (cur.requests || []).find(r => (req.id && r.id === req.id) || (!req.id && r.child === req.child && r.name === req.name && r.status === 'pending'));
     if (!oldReq && req.status === 'pending') {
       await notifyParents(store, inc.id, `🎁 ${req.child} demande '${req.name}'`, `Coût: ${req.cost} or — à valider`, req.icon || '🎁', 'reward', email);
@@ -906,7 +917,7 @@ async function saveFamily(store, email, b) {
       // validation = une date de validation plus récente que celle connue (une copie périmée la ré-affirme à l'identique)
       if (newTask.done === true && newTask.completedAt && Number(newTask.completedAt) > Number(oldTask?.completedAt || 0)) {
         await logActivity(store, 'completeTask', mergedChild.name, inc.name, `${newTask.name} (${newTask.xp || 0} XP)`);
-        await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche validée: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, '✅', 'task', email);
+        await notifyChild(store, inc.id, mergedChild.name, `✅ Tâche validée: '${newTask.name}'`, `+${newTask.xpEarned ?? newTask.xp ?? 0} XP, +${newTask.goldEarned ?? newTask.gold ?? 0} or`, '✅', 'task', email);
       } else if (isParent && !newTask.done && !oldTask) {
         await notifyChild(store, inc.id, mergedChild.name, `📋 Nouvelle tâche: '${newTask.name}'`, `+${newTask.xp || 0} XP, +${newTask.gold || 0} or`, newTask.icon || '📋', 'task-new', email);
         await logActivity(store, 'addTask', email, inc.id, `${mergedChild.name}: ${newTask.name}`);

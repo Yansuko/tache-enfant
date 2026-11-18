@@ -62,10 +62,62 @@ describe('saveFamily: prix par enfant', () => {
     expect((await childSave(f)).requests[0].cost).toBe(40);
   });
 
-  it('demande pour un article inconnu (supprimé) ou ancienne demande: inchangée', async () => {
+  it('demande d\'un enfant pour un article inconnu (nom inexact, supprimé): retirée', async () => {
+    const { p, fam, childSave } = await setup();
+    const f = await childSave({ ...structuredClone(fam), requests: [
+      { id: 'rq1', child: 'Emma', name: 'Disparu', cost: 33, status: 'pending' },
+      { id: 'rq2', child: 'Emma', name: 'Pizza ', cost: 40, status: 'pending' },                    // espace final
+      { id: 'rq3', child: 'Emma', name: 'Inconnu', cost: '<img src=x onerror=alert(1)>', status: 'pending' },
+    ] });
+    expect(f.requests).toEqual([]);
+    expect((await p.me())[0].requests).toEqual([]);
+  });
+
+  it('article réservé à Emma demandé par Lucas: retiré', async () => {
+    const { p, fam } = await setup([pizza({ childIds: ['c-emma'] })]);
+    const u = await api('unlockChildDirect', { familyName: p.familyName, childName: 'Lucas', pin: '4321' });
+    const r = await api('saveFamily', { family: { ...structuredClone(fam), requests: [{ id: 'rq1', child: 'Lucas', rewardId: 'r-pizza', name: 'Pizza', cost: 60, status: 'pending' }] } }, u.body.token);
+    expect(r.status).toBe(200);
+    expect(r.body.family.requests).toEqual([]);
+  });
+
+  it('un enfant ne demande pas au nom d\'un autre enfant', async () => {
     const { fam, childSave } = await setup();
-    const f = await childSave({ ...structuredClone(fam), requests: [{ id: 'rq1', child: 'Emma', name: 'Disparu', cost: 33, status: 'pending' }] });
-    expect(f.requests[0].cost).toBe(33);
+    const f = await childSave({ ...structuredClone(fam), requests: [{ id: 'rq1', child: 'Lucas', rewardId: 'r-pizza', name: 'Pizza', cost: 60, status: 'pending' }] });
+    expect(f.requests).toEqual([]);
+  });
+
+  it('rewardId et nom différents: l\'article du rewardId fait foi (nom, icône, prix recopiés)', async () => {
+    const { fam, childSave } = await setup([pizza({ prices: { 'c-emma': 40 } }), { id: 'r-glace', icon: '🍦', name: 'Glace', cost: 90, lvl: 1 }]);
+    const f = await childSave({ ...structuredClone(fam), requests: [{ id: 'rq1', child: 'Emma', rewardId: 'r-glace', name: 'Pizza', icon: '🍕', cost: 40, status: 'pending' }] });
+    expect(f.requests).toEqual([expect.objectContaining({ id: 'rq1', rewardId: 'r-glace', name: 'Glace', icon: '🍦', cost: 90 })]);
+  });
+
+  it('demande d\'un enfant sans rewardId: le rewardId de l\'article est ajouté, le prix chaîne remplacé', async () => {
+    const { fam, childSave } = await setup();
+    const f = await childSave({ ...structuredClone(fam), requests: [{ id: 'rq1', child: 'Emma', name: 'Pizza', cost: '<b>', status: 'pending' }] });
+    expect(f.requests).toEqual([expect.objectContaining({ rewardId: 'r-pizza', name: 'Pizza', cost: 40 })]);
+  });
+
+  it('serveur: un prix non entier ≥ 1 n\'est jamais stocké (parent, article inconnu)', async () => {
+    const { p, fam } = await setup();
+    const f = await p.save({ ...fam, requests: [
+      { id: 'rq1', child: 'Emma', name: 'Hors boutique', cost: '<img src=x onerror=alert(1)>', status: 'pending' },
+      { id: 'rq2', child: 'Emma', name: 'Hors boutique', cost: 0, status: 'pending' },
+      { id: 'rq3', child: 'Emma', name: 'Hors boutique', cost: 12, status: 'pending' },
+    ] });
+    expect(f.requests.map(r => r.id)).toEqual(['rq3']);
+  });
+
+  it('demandes déjà approuvées / refusées: jamais modifiées', async () => {
+    const { p, fam, childSave } = await setup();
+    const done = [
+      { id: 'rq1', child: 'Emma', name: 'Disparu', cost: 33, status: 'approved' },
+      { id: 'rq2', child: 'Emma', name: 'Pizza', cost: 60, status: 'refused' },
+    ];
+    await p.save({ ...fam, requests: done });
+    const f = await childSave({ ...structuredClone(fam), requests: done });
+    expect(f.requests).toEqual(done.map(d => expect.objectContaining(d)));
   });
 
   it('un enfant ne peut pas modifier les articles (prix, réservation)', async () => {

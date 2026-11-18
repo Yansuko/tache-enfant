@@ -59,6 +59,15 @@ describe('notifications ciblées, une seule fois', () => {
     expect([forDevice(devices.C).length, forDevice(devices.A).length, forDevice(devices.B).length]).toEqual([1, 0, 0]);
   });
 
+  it('la notification de validation annonce le gain réel (xpEarned / goldEarned, ex. événement ×2)', async () => {
+    const { base, devices, save } = await setup();
+    const f = structuredClone(base);
+    Object.assign(f.children[0].tasks[0], { done: true, completedAt: Date.now(), xpEarned: 20, goldEarned: 10 });
+    await save('A', f);
+    await wait();
+    expect(forDevice(devices.C).map(n => n.body)).toEqual(['+20 XP, +10 or']);
+  });
+
   it('une validation périmée ré-envoyée par un appareil en retard ne notifie pas à nouveau', async () => {
     const { base, devices, save } = await setup();
     const validated = structuredClone(base);
