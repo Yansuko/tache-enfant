@@ -1272,72 +1272,79 @@ function screenSanctions() {
 }
 
 let gradeFix = null;   // {id, grade, err}: correction refusée, affichée sur la carte « À valider »
+let gradeFilter = { child: '', subject: '' };   // filtres de l'onglet Notes: état client, non persisté
+const fmt20 = n => String(Math.round(n * 10) / 10).replace('.', ',');
+const gradeDate = r => { const t = r.approvedAt ?? r.submittedAt; return t ? new Date(t).toLocaleDateString('fr-FR') : ''; };
 function screenGrades() {
-  // Ensure state is fully normalized
   if (state) normalizeFamilyData(state);
-
-  // Defensive: ensure gradeRequests is an array
   let grades = state.gradeRequests;
-  if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
-    grades = Object.values(grades).filter(v => v != null);
-  }
+  if (grades && typeof grades === 'object' && !Array.isArray(grades)) grades = Object.values(grades).filter(v => v != null);
   grades = grades || [];
-
-  const pending = grades.filter(r => r && r.status === 'pending');
-  const approved = grades.filter(r => r && r.status === 'approved');
+  const kids = state.children;
+  if (!kids.some(c => c.name === gradeFilter.child)) gradeFilter.child = '';
+  const subs = Grades.subjects(grades.filter(r => kids.some(c => c.name === r.child)));
+  if (!subs.includes(gradeFilter.subject)) gradeFilter.subject = '';
+  const all = Grades.groupGrades(grades, kids, state.gradeScale);
+  const sections = Grades.groupGrades(grades, kids, state.gradeScale, gradeFilter);
+  const chipBtn = (name, label, n) => `<button class="tag ${gradeFilter.child === name ? 'tag-accent' : 'tag-outline'}" style="cursor:pointer;font-size:14px;padding:6px 12px;max-width:100%;overflow-wrap:anywhere" data-action="grade-filter" data-child="${esc(name)}">${esc(label)}${n ? `<span class="badge" style="margin-left:6px;font-weight:700">${n}</span>` : ''}</button>`;
+  const pendingCard = r => `
+      <div class="card elev-sm" style="gap:10px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="min-width:0">
+            <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}</div>
+          </div>
+          <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+          <label for="grade-note-${esc(r.id)}" style="color:var(--color-neutral-600)">Note:</label>
+          <input id="grade-note-${esc(r.id)}" class="input" inputmode="decimal" value="${esc(gradeFix && gradeFix.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
+          <label for="grade-gold-${esc(r.id)}" style="color:var(--color-neutral-600)">Or à attribuer:</label>
+          <input type="number" id="grade-gold-${esc(r.id)}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
+          <span>🪙</span>
+        </div>
+        ${gradeFix && gradeFix.id === r.id ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeFix.err)}</p>` : ''}
+        <div style="display:flex;gap:8px">
+          ${r.id ? `<button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-id="${esc(r.id)}">Approuver</button>
+          <button class="btn btn-secondary" style="flex:1" data-action="refuse-grade" data-id="${esc(r.id)}">Refuser</button>` : '<span class="text-muted" style="font-size:13px">Synchronisation en cours… (réessaie dans quelques secondes)</span>'}
+        </div>
+      </div>`;
+  const doneCard = (r, cls, mark) => `
+      <div class="card elev-sm ${cls}" style="gap:8px;margin-bottom:10px;opacity:0.7">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="min-width:0">
+            <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
+          </div>
+          <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙 ${mark}</span>
+        </div>
+      </div>`;
+  const section = s => `
+    <section class="grade-section" style="display:flex;flex-direction:column;gap:10px">
+      <div class="grade-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <h3 class="grade-name" style="margin:0;font-size:18px;overflow-wrap:anywhere;min-width:0">${esc(s.child)}</h3>
+        <span style="font-size:13px;color:var(--color-neutral-600)">${s.avg == null ? 'Moyenne —' : `Moyenne ${fmt20(s.avg)}/20`} · ${s.count} note${s.count > 1 ? 's' : ''}${s.pending ? ` · ${s.pending} à valider` : ''}</span>
+      </div>
+      ${s.bySubject.length ? `<div class="grade-subjects" style="font-size:13px;overflow-wrap:anywhere">${s.bySubject.map(b => `${esc(b.subject)} ${b.avg == null ? '—' : fmt20(b.avg)}`).join(' · ')}</div>` : ''}
+      ${s.pendingList.length ? `<div><div class="kicker" style="margin-bottom:10px">À valider (${s.pendingList.length})</div>${s.pendingList.map(pendingCard).join('')}</div>` : ''}
+      ${s.approvedList.length ? `<div><div class="kicker" style="margin-bottom:10px">Approuvées ✅ (${s.approvedList.length})</div>${s.approvedList.map(r => doneCard(r, 'grade-approved', '✓')).join('')}</div>` : ''}
+      ${s.refusedList.length ? `<details class="grade-refused"><summary class="kicker" style="cursor:pointer;margin-bottom:10px">Refusées (${s.refusedList.length})</summary>${s.refusedList.map(r => doneCard(r, '', '✗')).join('')}</details>` : ''}
+      ${!s.pendingList.length && !s.approvedList.length && !s.refusedList.length ? '<p class="text-muted" style="margin:0;font-size:13px">Aucune note</p>' : ''}
+    </section>`;
 
   return `
   <div style="padding:22px 20px 4px">
     <h2 style="margin:0;font-size:22px">Notes 📘</h2>
   </div>
-  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1;overflow:auto">
-    ${pending.length > 0 ? `
-    <div>
-      <div class="kicker" style="margin-bottom:10px">À valider (${pending.length})</div>
-      ${pending.map((r, i) => `
-      <div class="card elev-sm" style="gap:10px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <div style="min-width:0">
-            <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(r.child)} - Note: ${esc(r.grade)}</div>
-          </div>
-          <span class="tag tag-accent">${esc(r.gold)} 🪙</span>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
-          <label for="grade-note-${i}" style="color:var(--color-neutral-600)">Note:</label>
-          <input id="grade-note-${i}" class="input" inputmode="decimal" value="${esc(gradeFix?.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
-          <label for="grade-gold-${i}" style="color:var(--color-neutral-600)">Or à attribuer:</label>
-          <input type="number" id="grade-gold-${i}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
-          <span>🪙</span>
-        </div>
-        ${gradeFix?.id === r.id ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeFix.err)}</p>` : ''}
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-i="${i}">Approuver</button>
-          <button class="btn btn-secondary" style="flex:1" data-action="refuse-grade" data-i="${i}">Refuser</button>
-        </div>
-      </div>`).join('')}
-    </div>` : ''}
-
-    ${approved.length > 0 ? `
-    <div>
-      <div class="kicker" style="margin-bottom:10px">Approuvées ✅ (${approved.length})</div>
-      ${approved.map(r => `
-      <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(r.child)} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
-          </div>
-          <span class="tag tag-accent">${esc(r.gold)} 🪙 ✓</span>
-        </div>
-      </div>`).join('')}
-    </div>` : ''}
-
-    ${pending.length === 0 && approved.length === 0 ? `
+  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:18px;flex:1;overflow:auto">
+    ${kids.length > 1 ? `<div class="grade-chips" style="display:flex;gap:8px;flex-wrap:wrap">${chipBtn('', 'Tous', all.reduce((n, s) => n + s.pending, 0))}${all.map(s => chipBtn(s.child, s.child, s.pending)).join('')}</div>` : ''}
+    <div class="field" style="margin:0"><label for="grade-subject-filter">Matière</label>
+      <select id="grade-subject-filter" class="input" style="font-size:16px"><option value="">Toutes les matières</option>${subs.map(m => `<option value="${esc(m)}"${m === gradeFilter.subject ? ' selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
+    ${grades.length ? sections.map(section).join('') : `
     <div style="padding:40px 20px;text-align:center;color:var(--color-neutral-600)">
       <div style="font-size:32px;margin-bottom:10px">📘</div>
       <p>Aucune note soumise pour le moment</p>
-    </div>` : ''}
+    </div>`}
   </div>`;
 }
 
@@ -2475,50 +2482,30 @@ const ACTIONS = {
     save(); render();
   },
   'refuse-proposal': el => { const p = state.proposals[+el.dataset.i]; if (p) p.status = 'refused'; },
+  'grade-filter': el => { gradeFilter.child = el.dataset.child; },
   'approve-grade': async el => {
-    const i = +el.dataset.i;
-    // Defensive: ensure gradeRequests is an array
-    let grades = state.gradeRequests;
-    if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
-      grades = Object.values(grades).filter(v => v != null);
-      state.gradeRequests = grades;
-    }
-    grades = grades || [];
-    const pending = grades.filter(r => r.status === 'pending');
-    if (i < pending.length) {
-      const grade = pending[i];
-      const newGold = parseInt(document.getElementById(`grade-gold-${i}`).value, 10) || 0;
-      const note = val(`grade-note-${i}`), parsed = Grades.parseGrade(note, state.gradeScale);
-      gradeFix = null;
-      if (!parsed.ok) { gradeFix = { id: grade.id, grade: note, err: gradeHint() }; return; }
-      let r;
-      try { r = await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold, grade: parsed.text }); }
-      catch (e) { gradeFix = { id: grade.id, grade: note, err: String(e) === 'Note invalide.' ? gradeHint() : '⚠️ ' + e }; return; }
-      if (parsed.text !== String(grade.grade ?? '')) { grade.submittedGrade ??= grade.grade; grade.grade = parsed.text; }
-      grade.status = 'approved';
-      grade.approvedAt = Date.now();
-      grade.gold = newGold;
-      // le serveur a déjà crédité l'or: on adopte son solde (et on le prend comme base, sans variation à renvoyer)
-      const child = state.children.find(c => c.name === grade.child);
-      if (child && r.child) { child.gold = r.child.gold; child.goldBase = r.child.gold; }
-      render();
-    }
+    const id = el.dataset.id;
+    const grade = (state.gradeRequests || []).find(r => r && r.id === id && r.status === 'pending');
+    if (!grade) return;
+    const newGold = parseInt(val(`grade-gold-${id}`), 10) || 0;
+    const note = val(`grade-note-${id}`), parsed = Grades.parseGrade(note, state.gradeScale);
+    gradeFix = null;
+    if (!parsed.ok) { gradeFix = { id, grade: note, err: gradeHint() }; return; }
+    let r;
+    try { r = await api('approveGrade', { familyId: state.id, gradeId: id, gold: newGold, grade: parsed.text }); }
+    catch (e) { gradeFix = { id, grade: note, err: String(e) === 'Note invalide.' ? gradeHint() : '⚠️ ' + e }; return; }
+    if (parsed.text !== String(grade.grade ?? '')) { grade.submittedGrade ??= grade.grade; grade.grade = parsed.text; }
+    grade.status = 'approved';
+    grade.approvedAt = Date.now();
+    grade.gold = newGold;
+    // le serveur a déjà crédité l'or: on adopte son solde (et on le prend comme base, sans variation à renvoyer)
+    const child = state.children.find(c => c.name === grade.child);
+    if (child && r.child) { child.gold = r.child.gold; child.goldBase = r.child.gold; }
+    render();
   },
   'refuse-grade': el => {
-    const i = +el.dataset.i;
-    // Defensive: ensure gradeRequests is an array
-    let grades = state.gradeRequests;
-    if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
-      grades = Object.values(grades).filter(v => v != null);
-      state.gradeRequests = grades;
-    }
-    grades = grades || [];
-    const pending = grades.filter(r => r.status === 'pending');
-    if (i < pending.length) {
-      const gi = state.gradeRequests.indexOf(pending[i]);
-      state.gradeRequests[gi].status = 'refused';
-      save();
-    }
+    const grade = (state.gradeRequests || []).find(r => r && r.id === el.dataset.id && r.status === 'pending');
+    if (grade) { grade.status = 'refused'; save(); }
   },
   'add-child': () => {
     const name = val('new-child-name');
@@ -2888,6 +2875,7 @@ document.getElementById('role-seg').addEventListener('change', e => {
 document.body.addEventListener('change', e => {
   if (e.target.id === 'rem-child') { document.getElementById('rem-quest').innerHTML = remQuestOptions(e.target.value); return; }
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
+  if (e.target.id === 'grade-subject-filter') { gradeFilter.subject = e.target.value; render(); return; }
   if (e.target.id === 'email-notif-enabled') {
     if (state) {
       state.emailNotifications = e.target.checked;

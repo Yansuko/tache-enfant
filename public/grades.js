@@ -31,5 +31,31 @@
     return row ? { ok: true, value20: row.value, text } : { ok: false };
   }
 
-  g.Grades = { DEFAULT_SCALE, normLabel, isNumber, parseGrade };
+  const list = a => (Array.isArray(a) ? a : []).filter(r => r && typeof r === 'object');
+  const cmp = (a, b) => String(a).localeCompare(String(b), 'fr');
+
+  // matières distinctes, triées
+  const subjects = requests => [...new Set(list(requests).map(r => r.subject).filter(s => s != null && s !== ''))].sort(cmp);
+
+  // moyenne /20 des notes convertibles (null si aucune) + nombre de notes
+  const stats = (rows, scale) => {
+    const vals = rows.map(r => parseGrade(r.grade, scale)).filter(p => p.ok).map(p => p.value20);
+    return { avg: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null, count: rows.length };
+  };
+
+  // une section par enfant (ordre de `children`); moyennes sur les notes approuvées
+  function groupGrades(requests, children, scale, { child, subject } = {}) {
+    const reqs = list(requests).filter(r => subject == null || subject === '' || r.subject === subject);
+    return list(children).filter(c => child == null || child === '' || c.name === child).map(c => {
+      const mine = reqs.filter(r => r.child === c.name);
+      const pendingList = mine.filter(r => r.status === 'pending');
+      const approvedList = mine.filter(r => r.status === 'approved')
+        .sort((a, b) => (b.approvedAt ?? b.submittedAt ?? 0) - (a.approvedAt ?? a.submittedAt ?? 0));
+      const bySubject = subjects(approvedList).map(s => ({ subject: s, ...stats(approvedList.filter(r => r.subject === s), scale) }));
+      return { child: c.name, ...stats(approvedList, scale), pending: pendingList.length, bySubject,
+        pendingList, approvedList, refusedList: mine.filter(r => r.status === 'refused') };
+    });
+  }
+
+  g.Grades = { DEFAULT_SCALE, normLabel, isNumber, parseGrade, subjects, groupGrades };
 })(globalThis);
