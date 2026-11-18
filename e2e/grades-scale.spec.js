@@ -39,8 +39,8 @@ test('enfant: « abc » et « 15,5€ » refusés avant envoi; « 15,5 » et « 
   await parentLogin(P.page, f);
   await tab(P.page, 'Notes');
   await expect(P.page.locator('#main')).toContainText('À valider (2)');
-  await expect(P.page.locator('#grade-note-0')).toHaveValue('15,5');
-  await expect(P.page.locator('#grade-note-1')).toHaveValue('TB');
+  await expect(P.page.locator('input[id^="grade-note-"]').nth(0)).toHaveValue('15,5');
+  await expect(P.page.locator('input[id^="grade-note-"]').nth(1)).toHaveValue('TB');
   await P.ctx.close();
 });
 
@@ -48,17 +48,17 @@ test('parent: correction invalide refusée, puis « 15,5 » corrigé en « 16 »
   const f = await newFamily(request, fam => { fam.gradeRequests = [pendingGrade('15,5')]; });
   await parentLogin(page, f);
   await tab(page, 'Notes');
-  await page.locator('#grade-note-0').fill('xx');
+  await page.locator('#grade-note-g1').fill('xx');
   await page.getByRole('button', { name: 'Approuver' }).click();
   await settle(page);
   await expect(page.locator('.grade-error')).toContainText('Note invalide');
-  await expect(page.locator('#grade-note-0')).toHaveValue('xx');
+  await expect(page.locator('#grade-note-g1')).toHaveValue('xx');
   let fam = await me(request, f);
   expect(fam.gradeRequests[0]).toMatchObject({ grade: '15,5', status: 'pending' });
   expect(emma(fam).gold).toBe(100);
 
-  await page.locator('#grade-note-0').fill('16');
-  await page.locator('#grade-gold-0').fill('12');
+  await page.locator('#grade-note-g1').fill('16');
+  await page.locator('#grade-gold-g1').fill('12');
   await page.getByRole('button', { name: 'Approuver' }).click();
   await settle(page);
   fam = await me(request, f);
@@ -139,7 +139,7 @@ test('375 px: notes (enfant, parent) et éditeur d\'appréciations sans déborde
   const P = await mkPage(browser, vp);
   await parentLogin(P.page, f);
   await tab(P.page, 'Notes');
-  await expect(P.page.locator('#grade-note-0')).toBeVisible();
+  await expect(P.page.locator('#grade-note-g1')).toBeVisible();
   await check(P.page, 'notes parent');
   await tab(P.page, 'Famille');
   await expect(P.page.locator('.scale-row').first()).toBeVisible();
