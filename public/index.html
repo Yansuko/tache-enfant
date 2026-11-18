@@ -1298,15 +1298,15 @@ function screenGrades() {
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
           <label for="grade-note-${esc(r.id)}" style="color:var(--color-neutral-600)">Note:</label>
-          <input id="grade-note-${esc(r.id)}" class="input" inputmode="decimal" value="${esc(gradeFix?.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
+          <input id="grade-note-${esc(r.id)}" class="input" inputmode="decimal" value="${esc(gradeFix && gradeFix.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
           <label for="grade-gold-${esc(r.id)}" style="color:var(--color-neutral-600)">Or à attribuer:</label>
           <input type="number" id="grade-gold-${esc(r.id)}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
           <span>🪙</span>
         </div>
-        ${gradeFix?.id === r.id ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeFix.err)}</p>` : ''}
+        ${gradeFix && gradeFix.id === r.id ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeFix.err)}</p>` : ''}
         <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-id="${esc(r.id)}">Approuver</button>
-          <button class="btn btn-secondary" style="flex:1" data-action="refuse-grade" data-id="${esc(r.id)}">Refuser</button>
+          ${r.id ? `<button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-id="${esc(r.id)}">Approuver</button>
+          <button class="btn btn-secondary" style="flex:1" data-action="refuse-grade" data-id="${esc(r.id)}">Refuser</button>` : '<span class="text-muted" style="font-size:13px">Synchronisation en cours… (réessaie dans quelques secondes)</span>'}
         </div>
       </div>`;
   const doneCard = (r, cls, mark) => `

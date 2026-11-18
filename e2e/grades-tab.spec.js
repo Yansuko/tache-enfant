@@ -117,3 +117,12 @@ test('375 px: sections lisibles sans débordement horizontal, champs ≥ 16 px',
   await page.screenshot({ path: 'test-results/grades-tab-375.png', fullPage: true });
   await ctx.close();
 });
+
+test('une ancienne note sans identifiant n\'affiche pas de boutons muets', async ({ page, request }) => {
+  const f = await newFamily(request, fam => { fam.gradeRequests = [{ child: fam.children[0].name, subject: 'Dessin', grade: '14', gold: 5, status: 'pending', submittedAt: Date.now() }]; });
+  await parentLogin(page, f);
+  await tab(page, 'Notes');
+  await page.evaluate(() => { state.gradeRequests.forEach(g => { delete g.id; }); render(); });
+  await expect(page.locator('[data-action="approve-grade"]')).toHaveCount(0);
+  await expect(page.locator('#main')).toContainText('Synchronisation en cours');
+});
