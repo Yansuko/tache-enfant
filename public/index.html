@@ -40,6 +40,9 @@
   }
   .bottom-nav button.active { color: var(--color-accent-700); }
   .bottom-nav button .ico { font-size: 19px; }
+  /* 6 onglets parent sur 375 px: largeur partagée */
+  .bottom-nav { padding-inline: 4px; }
+  .bottom-nav button { flex: 1 1 0; min-width: 0; padding-inline: 2px; }
   .deck { display: grid; grid-template-columns: 1fr; gap: 10px; }
 
   /* ── Tablette : cadre plus large, listes de cartes sur 2 colonnes ── */
@@ -65,7 +68,7 @@
       gap: 4px; padding: 16px 14px; border-top: 0; border-right: 1px solid var(--color-divider); overflow: auto;
     }
     .bottom-nav button {
-      flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; font-size: 13px;
+      flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; font-size: 13px;
     }
     .bottom-nav button.active { background: var(--color-accent-100); color: var(--color-accent-800); }
     .deck-2 { grid-template-columns: 1fr 1fr; }
@@ -275,7 +278,7 @@ function nextReward(gold, rewards) {
 const eventMult = c => state?.events?.length ? Events.activeMultipliers(state.events, c?.id, Events.parisDay()) : { xpMult: 1, goldMult: 1, names: [] };
 const multLabel = m => String(m).replace('.', ',');
 const multText = m => [m.xpMult > 1 ? `XP ×${multLabel(m.xpMult)}` : '', m.goldMult > 1 ? `Or ×${multLabel(m.goldMult)}` : ''].filter(Boolean).join(' · ');
-const loot = (xp, gold) => `<span class="tag tag-accent-2" style="margin-top:4px">+${xp} XP</span> <span class="tag tag-accent" style="margin-top:4px">+${gold} 🪙</span>`;
+const loot = (xp, gold) => `<span class="tag tag-accent-2" style="margin-top:4px">+${esc(xp)} XP</span> <span class="tag tag-accent" style="margin-top:4px">+${esc(gold)} 🪙</span>`;
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -884,7 +887,7 @@ function screenNotes() {
       <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <span class="card-title" style="font-size:15px">${esc(r.subject)}</span>
-          <span class="tag tag-accent">${r.gold} 🪙</span>
+          <span class="tag tag-accent">${esc(r.gold)} 🪙</span>
         </div>
         <div class="field" style="margin:0"><label>Note</label>
           <input class="input" value="${esc(r.grade)}" readonly>
@@ -972,7 +975,7 @@ function screenRecompenses() {
   <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
     ${state.proposals.map((p, i) => (p.child !== c.name || p.type === 'quest' || !['pending', 'refused'].includes(p.status)) ? '' : `
     <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
-      <span>💡 ${esc(p.name)} (${p.cost} 🪙)</span>
+      <span>💡 ${esc(p.name)} (${esc(p.cost)} 🪙)</span>
       <div style="display:flex;align-items:center;gap:6px">
         ${p.status === 'refused' ? '<span class="tag tag-accent">Refusée</span>' : '<span class="tag tag-neutral">En attente</span>'}
         <button class="btn btn-icon btn-ghost" data-action="del-proposal" data-i="${i}" aria-label="Retirer">✕</button>
@@ -1161,7 +1164,7 @@ function screenSanctions() {
     return `
     <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-accent-100);display:flex;align-items:center;gap:10px">
       <span style="font-size:18px">🛒</span>
-      <div style="flex:1;font-size:13px;color:var(--color-accent-800)"><strong>${esc(r.child)}</strong> veut acheter : ${esc(r.name)} (${r.cost} 🪙)</div>
+      <div style="flex:1;font-size:13px;color:var(--color-accent-800)"><strong>${esc(r.child)}</strong> veut acheter : ${esc(r.name)} (${esc(r.cost)} 🪙)</div>
     </div>
     <div style="display:flex;gap:8px;padding:8px 20px 4px">
       <button class="btn btn-primary" style="flex:1" data-action="approve" data-i="${qi}">Approuver</button>
@@ -1213,9 +1216,9 @@ function screenSanctions() {
         <button class="btn btn-secondary" style="flex:1" data-action="refuse-proposal" data-i="${i}">Refuser</button>
       </div>
       ` : `
-      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">proposé : ${p.cost} 🪙</span></div>
+      <div style="font-size:13px"><strong>${esc(p.child)}</strong> propose : 💡 ${esc(p.name)} <span class="tag tag-outline">proposé : ${esc(p.cost)} 🪙</span></div>
       <div style="display:flex;gap:8px">
-        <div class="field" style="margin:0;flex:1"><label>Prix 🪙</label><input class="input reward-cost-${i}" type="number" min="1" value="${p.cost}"></div>
+        <div class="field" style="margin:0;flex:1"><label>Prix 🪙</label><input class="input reward-cost-${i}" type="number" min="1" value="${esc(p.cost)}"></div>
         <div class="field" style="margin:0;flex:1"><label>Niveau requis</label><input class="input reward-lvl-${i}" type="number" min="1" value="1"></div>
       </div>
       <div style="display:flex;gap:8px">
@@ -1288,11 +1291,11 @@ function screenGrades() {
             <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
             <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
           </div>
-          <span class="tag tag-accent">${r.gold} 🪙</span>
+          <span class="tag tag-accent">${esc(r.gold)} 🪙</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;font-size:12px">
           <label style="color:var(--color-neutral-600)">Or à attribuer:</label>
-          <input type="number" id="grade-gold-${i}" class="input" value="${r.gold}" min="0" style="width:60px;padding:4px;font-size:16px">
+          <input type="number" id="grade-gold-${i}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
           <span>🪙</span>
         </div>
         <div style="display:flex;gap:8px">
@@ -1312,7 +1315,7 @@ function screenGrades() {
             <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
             <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
           </div>
-          <span class="tag tag-accent">${r.gold} 🪙 ✓</span>
+          <span class="tag tag-accent">${esc(r.gold)} 🪙 ✓</span>
         </div>
       </div>`).join('')}
     </div>` : ''}
@@ -2114,6 +2117,7 @@ const ACTIONS = {
     if (childIds.length) ev.childIds = childIds;
     state.events ||= [];
     const i = state.events.findIndex(x => x.id === ev.id);
+    if (i < 0 && state.events.length >= 20) return alert('20 événements au maximum: supprimez-en un d\'abord.');
     if (i >= 0) state.events[i] = ev; else state.events.push(ev);
     eventEdit = null;
   },
@@ -2456,7 +2460,8 @@ const ACTIONS = {
   },
   'del-child': el => {
     const c = state.children[+el.dataset.i];
-    if (!c || !confirm(`Supprimer ${c.name} et toutes ses données ?`)) return;
+    const reserved = (state.rewards || []).some(r => r.childIds?.length && r.childIds.every(id => id === c?.id));
+    if (!c || !confirm(`Supprimer ${c.name} et toutes ses données${reserved ? ' et les articles qui lui sont réservés' : ''} ?`)) return;
     state.children.splice(+el.dataset.i, 1);
     // Defensive: ensure arrays before filtering
     let requests = state.requests;
@@ -2767,7 +2772,7 @@ document.body.addEventListener('click', async e => {
   if (!el) return;
   const act = el.dataset.action, fn = ACTIONS[act];
   if (!fn) return;
-  if (act === 'login' || act === 'signup' || act === 'unlock-child-direct') authDraft = { name: field('au-name'), email: field('au-email'), fam: field('au-fam'), famname: field('ec-famname'), cname: field('ec-name') };
+  if (act === 'login' || act === 'signup' || act === 'unlock-child-direct' || (act === 'install-app' && !state)) authDraft = { name: field('au-name'), email: field('au-email'), fam: field('au-fam'), famname: field('ec-famname'), cname: field('ec-name') };
   if (SERVER_ACTIONS.has(act)) {
     try { await fn(el); } catch (err) { authMsg = String(err); }
     render();
