@@ -46,7 +46,11 @@
     return (serverTasks || []).map(st => {
       if (!st || (st.done && st.completedAt)) return st;
       const local = st.id ? byId.get(st.id) || (byKey.get(`${st.name}|${st.xp}`)?.id ? null : byKey.get(`${st.name}|${st.xp}`)) : byKey.get(`${st.name}|${st.xp}`);
-      if (local && Number(local.completedAt) > Number(st.resetAt || 0)) return { ...st, done: true, completedAt: Number(local.completedAt) };
+      if (local && Number(local.completedAt) > Number(st.resetAt || 0)) {
+        const out = { ...st, done: true, completedAt: Number(local.completedAt) };
+        for (const k of ['xpEarned', 'goldEarned']) if (local[k] !== undefined) out[k] = local[k];   // gain réel de cette validation
+        return out;
+      }
       return st;
     });
   }

@@ -571,6 +571,26 @@ function mergeById(cur, inc) {
   const ids = new Set(list.map(r => r?.id).filter(id => id != null));
   return [...merged, ...curList.filter(r => r?.id != null && !ids.has(r.id))];
 }
+// Événements de bonus: [{id, name, start, end, xpMult, goldMult, childIds?}]; null si invalide.
+const MAX_EVENTS = 20;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isDay = d => typeof d === 'string' && ISO_DAY.test(d) && new Date(d + 'T12:00:00Z').getUTCDate() === +d.slice(8);   // 2026-02-30 refusé
+const isMult = m => typeof m === 'number' && m >= 1 && m <= 5 && Number.isInteger(m * 2);
+export function cleanEvents(list) {
+  if (!Array.isArray(list) || list.length > MAX_EVENTS) return null;
+  const out = [];
+  for (const e of list) {
+    if (!e || typeof e.id !== 'string' || !e.id || out.some(o => o.id === e.id)) return null;
+    const name = typeof e.name === 'string' ? e.name.trim() : '';
+    if (!name || name.length > 60 || !isDay(e.start) || !isDay(e.end) || e.start > e.end || !isMult(e.xpMult) || !isMult(e.goldMult)) return null;
+    if (e.childIds !== undefined && (!Array.isArray(e.childIds) || !e.childIds.every(id => typeof id === 'string' && id))) return null;
+    const c = { id: e.id, name, start: e.start, end: e.end, xpMult: e.xpMult, goldMult: e.goldMult };
+    if (e.childIds?.length) c.childIds = [...new Set(e.childIds)];
+    out.push(c);
+  }
+  return out;
+}
+
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
   const saveTime = new Date().toISOString();
@@ -645,6 +665,17 @@ async function saveFamily(store, email, b) {
     if (!cleanReminders(all)) return err(400, 'Rappels invalides.');   // plafond de 50 sur la liste fusionnée
     merged.reminders = all;
   }
+  // Événements: même règle que les rappels (parent seulement, fusion par id, suppression via `eventsDeleted`)
+  merged.events = cur.events || [];
+  delete merged.eventsDeleted;
+  if (isParent && inc.events !== undefined) {
+    const r = cleanEvents(inc.events);
+    if (!r) return err(400, 'Événements invalides.');
+    const gone = new Set(Array.isArray(inc.eventsDeleted) ? inc.eventsDeleted : []);
+    const all = [...r, ...merged.events.filter(c => !r.some(x => x.id === c.id))].filter(x => !gone.has(x.id));
+    if (!cleanEvents(all)) return err(400, 'Événements invalides.');   // plafond sur la liste fusionnée
+    merged.events = all;
+  }
 
   // Merge children: preserve existing tasks not in incoming data
   const incomingChildIds = new Set(inc.children?.map(c => c.id) || []);
@@ -692,6 +723,7 @@ async function saveFamily(store, email, b) {
           Number(serverTask.completedAt) > Number(incTask.resetAt || 0)) {
         console.log(`[MERGE-TASK-PRESERVE] ${incChild.name}: '${incTask.name}' — keeping server completion (${new Date(Number(serverTask.completedAt)).toISOString()})`);
         out = { ...incTask, done: serverTask.done, completedAt: serverTask.completedAt };
+        for (const k of ['xpEarned', 'goldEarned']) if (serverTask[k] !== undefined) out[k] = serverTask[k];   // gain réel de cette validation
       }
       return out.id ? out : { ...out, id: serverTask?.id || 'task-' + crypto.randomBytes(4).toString('hex') };
     });
@@ -799,6 +831,7 @@ async function saveFamily(store, email, b) {
     taskRequests: ensureArray(merged.taskRequests),
     actionLog: ensureArray(merged.actionLog),
     reminders: ensureArray(merged.reminders),
+    events: ensureArray(merged.events),
     updatedAt: Date.now()
   };
 
@@ -1370,7 +1403,8 @@ export function completionsOf(child, actionLog = [], stored = []) {
   for (const e of stored || []) push(e);
   let tasks = child?.tasks || [];
   if (tasks && typeof tasks === 'object' && !Array.isArray(tasks)) tasks = Object.values(tasks);
-  for (const t of tasks) if (t && t.completedAt) push({ name: t.name, icon: t.icon, xp: t.xp, gold: t.gold, at: Number(t.completedAt) || new Date(t.completedAt).getTime() });
+  // gain réellement crédité (événement de bonus), repli sur la valeur de la quête
+  for (const t of tasks) if (t && t.completedAt) push({ name: t.name, icon: t.icon, xp: t.xpEarned ?? t.xp, gold: t.goldEarned ?? t.gold, at: Number(t.completedAt) || new Date(t.completedAt).getTime() });
   for (const l of Array.isArray(actionLog) ? actionLog : []) {
     if (l?.actionType === 'task_approved' && l.status === 'success' && l.details?.child === child?.name) push({ name: l.target, xp: l.details.xp, gold: l.details.gold, at: l.timestamp });
   }

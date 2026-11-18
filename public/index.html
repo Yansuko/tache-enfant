@@ -120,6 +120,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/rollover.js"></script>
 <script src="/proposals.js"></script>
+<script src="/events.js"></script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -269,6 +270,10 @@ function gradeReward(note) {
 function nextReward(gold, rewards) {
   return rewards.filter(r => r.cost > gold).sort((a, b) => a.cost - b.cost)[0] || null;
 }
+// Événements de bonus actifs aujourd'hui (jour de Paris) pour un enfant
+const eventMult = c => state?.events?.length ? Events.activeMultipliers(state.events, c?.id, Events.parisDay()) : { xpMult: 1, goldMult: 1, names: [] };
+const multLabel = m => String(m).replace('.', ',');
+const multText = m => [m.xpMult > 1 ? `XP ×${multLabel(m.xpMult)}` : '', m.goldMult > 1 ? `Or ×${multLabel(m.goldMult)}` : ''].filter(Boolean).join(' · ');
 const loot = (xp, gold) => `<span class="tag tag-accent-2" style="margin-top:4px">+${xp} XP</span> <span class="tag tag-accent" style="margin-top:4px">+${gold} 🪙</span>`;
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -559,7 +564,7 @@ function setActiveFamily(i) {
 function normalizeFamilyData(f) {
   if (!f) return f;
   // Convert all OBJECT-stored arrays to actual arrays
-  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog', 'reminders'];
+  const arrayFields = ['children', 'questList', 'proposals', 'rewards', 'requests', 'gradeRequests', 'taskRequests', 'sanctionsList', 'actionLog', 'reminders', 'events'];
   for (const field of arrayFields) {
     const before = f[field];
     if (f[field] && typeof f[field] === 'object' && !Array.isArray(f[field])) {
@@ -734,6 +739,7 @@ async function persistFamily() {
         taskRequests: res.family.taskRequests !== undefined ? res.family.taskRequests : state.taskRequests,
         actionLog: res.family.actionLog !== undefined ? res.family.actionLog : state.actionLog,
         reminders: res.family.reminders !== undefined ? res.family.reminders : state.reminders,
+        events: res.family.events !== undefined ? res.family.events : state.events,
         updatedAt: res.family.updatedAt,
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
@@ -741,6 +747,8 @@ async function persistFamily() {
       Object.assign(state, serverFields);
       const sentDel = payload.family.remindersDeleted || [];   // suppressions de rappels prises en compte par le serveur
       if (sentDel.length) state.remindersDeleted = (state.remindersDeleted || []).filter(id => !sentDel.includes(id));
+      const evDel = payload.family.eventsDeleted || [];
+      if (evDel.length) state.eventsDeleted = (state.eventsDeleted || []).filter(id => !evDel.includes(id));
       console.log(`[PERSIST-MERGE-${persistId}] After merge - requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
       console.log(`[PERSIST-MERGE-${persistId}] After merge - sanctionsList:`, JSON.stringify(state.sanctionsList?.map(s => ({ name: s.name, gold: s.gold }))?.slice(0, 3) || []));
       console.log(`[PERSIST-MERGE-ACTIONLOG-${persistId}] After merge - actionLog:`, state.actionLog?.length || 0, 'entries');
@@ -801,11 +809,15 @@ function screenAccueil() {
     </div>
   </div>
   ${(() => {
+    const m = eventMult(c), txt = multText(m);
+    return m.names.length && txt ? `<div class="event-banner" role="status" style="margin:10px 20px 0;padding:10px 14px;border-radius:var(--radius-lg);background:var(--color-accent-100);color:var(--color-accent-800);font-family:var(--font-heading);font-size:15px;overflow-wrap:anywhere">🎉 ${esc(m.names.join(', '))}: ${txt}</div>` : '';
+  })()}
+  ${(() => {
     const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
     if (!daily.length) return '';
     const doneN = daily.filter(t => t.done).length;
     const got = c.dailyBonusDay === state.day;
-    const dailyBonus = state.dailyBonus || { xp: 30, gold: 15 };
+    const dailyBonus = dailyBonusOf(c);
     return `
     <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px">
       <div style="display:flex;align-items:center;justify-content:space-between">
@@ -1005,6 +1017,40 @@ function remindersBlock() {
     </div>`;
 }
 
+let eventEdit = null;   // id de l'événement en cours de modification
+const MULTS = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+function eventsBlock() {
+  const kids = state.children || [], e = (state.events || []).find(x => x.id === eventEdit) || {};
+  const day = Events.parisDay(), sel = (id, v) => `<select class="input" id="${id}" style="width:100%">${MULTS.map(m => `<option value="${m}"${m === (v || 1) ? ' selected' : ''}>×${multLabel(m)}</option>`).join('')}</select>`;
+  return `
+    <div style="padding:8px 0 0" class="kicker">🎉 Événements</div>
+    ${(state.events || []).map((ev, i) => `
+    <div class="card elev-sm event-row" style="flex-direction:row;align-items:center;gap:10px;padding:12px">
+      <div style="flex:1;min-width:0">
+        <div class="card-title" style="font-size:14px;overflow-wrap:anywhere">${esc(ev.name)} · ${esc(multText(ev) || 'aucun bonus')}</div>
+        <div style="font-size:12px;color:var(--color-neutral-600)">${xsDay(ev.start)} → ${xsDay(ev.end)} · ${ev.childIds?.length ? esc(ev.childIds.map(id => kids.find(k => k.id === id)?.name || '?').join(', ')) : 'Tous les enfants'}</div>
+      </div>
+      <button class="btn btn-icon btn-ghost" data-action="edit-event" data-i="${i}" aria-label="Modifier l'événement">✎</button>
+      <button class="btn btn-icon btn-ghost" data-action="del-event" data-i="${i}" aria-label="Supprimer l'événement">✕</button>
+    </div>`).join('') || '<p class="text-muted" style="font-size:13px">Aucun événement.</p>'}
+    <div class="card elev-sm" style="gap:8px">
+      <div class="card-title" style="font-size:14px">${e.id ? '✎ Modifier l\'événement' : '+ Nouvel événement'}</div>
+      <div class="field" style="margin:0"><label for="ev-name">Nom</label><input class="input" id="ev-name" maxlength="60" placeholder="Ex : Vacances" value="${esc(e.name || '')}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="field" style="margin:0;flex:1;min-width:130px"><label for="ev-start">Du</label><input class="input" id="ev-start" type="date" value="${esc(e.start || day)}" style="width:100%"></div>
+        <div class="field" style="margin:0;flex:1;min-width:130px"><label for="ev-end">Au</label><input class="input" id="ev-end" type="date" value="${esc(e.end || day)}" style="width:100%"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0;flex:1"><label for="ev-xp">XP</label>${sel('ev-xp', e.xpMult)}</div>
+        <div class="field" style="margin:0;flex:1"><label for="ev-gold">Or 🪙</label>${sel('ev-gold', e.goldMult)}</div>
+      </div>
+      <div style="font-size:13px;color:var(--color-neutral-600)">Enfants (aucun coché = tous)</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${kids.map(k => `<label style="display:flex;align-items:center;gap:4px;font-size:14px"><input type="checkbox" name="ev-child" value="${esc(k.id)}"${e.childIds?.includes(k.id) ? ' checked' : ''}>${esc(k.name)}</label>`).join('')}</div>
+      <button class="btn btn-secondary btn-block" data-action="save-event">${e.id ? 'Enregistrer l\'événement' : 'Ajouter l\'événement'}</button>
+      ${e.id ? '<button class="btn btn-ghost btn-block" data-action="cancel-event">Annuler</button>' : ''}
+    </div>`;
+}
+
 function screenTaches() {
   if (state) {
     console.log('[SCREEN-TACHES-BEFORE-NORM] questList:', state.questList?.length, state.questList?.map(q => ({ id: q?.id, name: q?.name })));
@@ -1058,6 +1104,8 @@ function screenTaches() {
     </div>
 
     ${remindersBlock()}
+
+    ${eventsBlock()}
 
     <div style="padding:8px 0 0" class="kicker">Modèles réutilisables</div>
     ${state.questList.map((t, i) => `
@@ -2038,6 +2086,22 @@ const ACTIONS = {
   'toggle-reminder': el => { const r = state.reminders[+el.dataset.i]; if (r) r.enabled = el.checked; },
   // suppression explicite: le serveur fusionne par id et ne retire que les ids listés ici
   'del-reminder': el => { const [r] = state.reminders.splice(+el.dataset.i, 1); if (r) (state.remindersDeleted ||= []).push(r.id); },
+  'save-event': () => {
+    const name = val('ev-name').trim(), start = val('ev-start'), end = val('ev-end');
+    if (!name || !start || !end) return alert('Nom et dates requis.');
+    if (start > end) return alert('La date de fin doit suivre la date de début.');
+    const ev = { id: eventEdit || `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, start, end, xpMult: +val('ev-xp'), goldMult: +val('ev-gold') };
+    const childIds = [...document.querySelectorAll('input[name="ev-child"]:checked')].map(e => e.value);
+    if (childIds.length) ev.childIds = childIds;
+    state.events ||= [];
+    const i = state.events.findIndex(x => x.id === ev.id);
+    if (i >= 0) state.events[i] = ev; else state.events.push(ev);
+    eventEdit = null;
+  },
+  'edit-event': el => { eventEdit = state.events[+el.dataset.i]?.id || null; },
+  'cancel-event': () => { eventEdit = null; },
+  // suppression explicite: le serveur fusionne par id et ne retire que les ids listés ici
+  'del-event': el => { const [ev] = state.events.splice(+el.dataset.i, 1); if (ev) (state.eventsDeleted ||= []).push(ev.id); if (ev?.id === eventEdit) eventEdit = null; },
   'add-task': () => {
     const name = val('new-task-name'), xp = parseInt(val('new-task-xp'), 10), gold = parseInt(val('new-task-gold') || '0', 10);
     const frequency = document.getElementById('new-task-freq').value || 'daily';
@@ -2102,19 +2166,19 @@ const ACTIONS = {
           console.log(`[APPROVE] Before: task.done=${task.done}, completedAt=${task.completedAt}`);
           task.done = true;
           task.completedAt = Date.now();
+          // gain multiplié par un événement actif; le gain réel est gardé sur la quête (statistiques)
+          const m = eventMult(c);
+          task.xpEarned = Events.applyMult(req.xp, m.xpMult);
+          task.goldEarned = Events.applyMult(req.gold, m.goldMult);
           const oldLevel = level(c.xp || 0);
-          c.xp = (c.xp || 0) + req.xp;
+          c.xp = (c.xp || 0) + task.xpEarned;
           const newLevel = level(c.xp);
-          if (newLevel > oldLevel) {
-            c.gold = (c.gold || 0) + req.gold + (newLevel - oldLevel) * 50;
-          } else {
-            c.gold = (c.gold || 0) + req.gold;
-          }
+          c.gold = (c.gold || 0) + task.goldEarned + Math.max(0, newLevel - oldLevel) * 50;
           console.log(`[APPROVE] After: task.done=${task.done}, completedAt=${task.completedAt}`);
           maybeAwardDailyBonus(c);
           found = true;
           childIndex = i;
-          logAction('task_approved', req.taskName, { child: req.child, xp: req.xp, gold: req.gold, approver: me?.name });
+          logAction('task_approved', req.taskName, { child: req.child, xp: task.xpEarned, gold: task.goldEarned, approver: me?.name });
           break;
         }
       }
@@ -2638,11 +2702,16 @@ function celebrate(text) {
 
 // bonus de mission : accordé une fois par jour quand toutes les quêtes quotidiennes de l'enfant sont VALIDÉES par un parent
 // (cochée par l'enfant = done sans date: pas encore validée)
+// bonus du jour, multiplié par un événement actif pour cet enfant
+function dailyBonusOf(c) {
+  const b = state.dailyBonus || { xp: 30, gold: 15 }, m = eventMult(c);
+  return m.names.length ? { xp: Events.applyMult(b.xp, m.xpMult), gold: Events.applyMult(b.gold, m.goldMult) } : { xp: b.xp, gold: b.gold };
+}
 function maybeAwardDailyBonus(c = state && state.children[state.activeChild]) {
   if (!c) return;
   const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
   if (daily.length && daily.every(t => t.done && t.completedAt) && c.dailyBonusDay !== state.day) {
-    const bonus = state.dailyBonus || { xp: 30, gold: 15 };
+    const bonus = dailyBonusOf(c);
     c.dailyBonusDay = state.day;
     c.xp += bonus.xp;
     c.gold += bonus.gold;
@@ -2670,7 +2739,7 @@ document.body.addEventListener('click', async e => {
   maybeAwardDailyBonus();
   const c = state.children[state.activeChild];
   if (state.role === 'enfant' && c) {
-    const bonus = state.dailyBonus || { xp: 30, gold: 15 };
+    const bonus = dailyBonusOf(c);
     if (c.dailyBonusDay === state.day && bonus0 !== state.day) celebrate(`🎯 Mission accomplie ! +${bonus.xp} XP`);
     else if (level(c.xp) > lvl0) celebrate(`⚔️ Niveau ${level(c.xp)} !`);
   }
@@ -3203,6 +3272,7 @@ setInterval(async () => {
           state.proposals = serverFamily.proposals || state.proposals;
           state.questList = serverFamily.questList || state.questList;
           state.reminders = serverFamily.reminders || state.reminders;
+          state.events = serverFamily.events || state.events;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
           lastSyncedSig = stateSig();

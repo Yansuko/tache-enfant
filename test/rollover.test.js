@@ -111,6 +111,11 @@ describe('mergeValidations (PULL: validations locales vs tâches serveur)', () =
     expect(out[0].completedAt).toBe(NOW - 1000);
   });
 
+  it('validation locale conservée: le gain réel (xpEarned/goldEarned) suit', () => {
+    const out = R.mergeValidations([{ ...base, id: 'old', done: false, completedAt: null }], [{ ...local, xpEarned: 20, goldEarned: 10 }]);
+    expect([out[0].xpEarned, out[0].goldEarned]).toEqual([20, 10]);
+  });
+
   it('même id, serveur remis à faire après la validation locale (resetAt): le serveur gagne', () => {
     const out = R.mergeValidations([{ ...base, id: 'old', done: false, completedAt: local.completedAt, resetAt: NOW }], [local]);
     expect(out[0].done).toBe(false);
