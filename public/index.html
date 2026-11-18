@@ -121,6 +121,7 @@
 <script src="/rollover.js"></script>
 <script src="/proposals.js"></script>
 <script src="/events.js"></script>
+<script src="/shop.js"></script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -923,7 +924,9 @@ function screenRecompenses() {
     state.requests = requests;
   }
   requests = requests || [];
-  const next = nextReward(c.gold, state.rewards.filter(r => r.lvl <= lv));
+  // Boutique de cet enfant: articles qui lui sont ouverts, à son prix
+  const mine = Shop.visibleRewards(state.rewards, c.id).map(r => ({ ...r, cost: Shop.effectiveCost(r, c.id), i: state.rewards.indexOf(r) }));
+  const next = nextReward(c.gold, mine.filter(r => r.lvl <= lv));
   const pct = next ? Math.min(100, Math.round(c.gold / next.cost * 100)) : 100;
   const hist = requests.filter(r => r.child === c.name);
   const statusTag = { approved: '<span class="tag tag-accent-2">Achetée ✅</span>', pending: '<span class="tag tag-neutral">En attente</span>', refused: '<span class="tag tag-accent">Refusée</span>' };
@@ -939,12 +942,12 @@ function screenRecompenses() {
     </div>
   </div>
   <div class="deck deck-2" style="padding:0 20px">
-    ${state.rewards.map((r, i) => {
+    ${mine.map(r => {
       const locked = r.lvl > lv;
       const manque = r.cost - c.gold;
       const pending = requests.some(q => q.child === c.name && q.name === r.name && q.status === 'pending');
       return `
-      <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px${locked || manque > 0 ? ';opacity:0.55' : ''}">
+      <div class="card elev-sm shop-item" style="flex-direction:row;align-items:center;gap:12px${locked || manque > 0 ? ';opacity:0.55' : ''}">
         <div style="font-size:24px">${locked ? '🔒' : r.icon}</div>
         <div style="flex:1"><div class="card-title" style="font-size:15px">${esc(r.name)}</div>
           <span class="tag tag-outline">${r.cost} 🪙</span>${r.lvl > 1 ? ` <span class="tag ${locked ? 'tag-accent' : 'tag-accent-2'}">Niv. ${r.lvl}</span>` : ''}</div>
@@ -954,7 +957,7 @@ function screenRecompenses() {
             ? `<button class="btn btn-secondary" disabled>manque ${manque} 🪙</button>`
             : pending
               ? `<button class="btn btn-secondary" disabled>Commandé</button>`
-              : `<button class="btn btn-primary" data-action="request-reward" data-i="${i}">Acheter</button>`}
+              : `<button class="btn btn-primary" data-action="request-reward" data-i="${r.i}">Acheter</button>`}
       </div>`;
     }).join('')}
   </div>
@@ -1225,9 +1228,23 @@ function screenSanctions() {
   <div style="padding:16px 20px 8px" class="kicker">Articles de la boutique</div>
   <div style="padding:0 20px 24px;display:flex;flex-direction:column;gap:8px">
     ${state.rewards.map((r, i) => `
+    <div class="reward-row">
     <div style="display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:14px">${r.icon} ${esc(r.name)}</span>
       <div style="display:flex;align-items:center;gap:6px"><span class="tag tag-outline">${r.cost} 🪙</span><span class="tag tag-neutral">Niv. ${r.lvl}</span><button class="btn btn-icon btn-ghost" data-action="del-reward" data-i="${i}" aria-label="Supprimer">✕</button></div>
+    </div>
+    ${state.children.length ? `<details style="margin:4px 0 6px;font-size:13px"><summary style="cursor:pointer;color:var(--color-neutral-700)">Par enfant${r.childIds?.length ? ` · réservé à ${esc(state.children.filter(k => r.childIds.includes(k.id)).map(k => k.name).join(', '))}` : ''}${Object.keys(r.prices || {}).length ? ' · prix propres' : ''}</summary>
+      <div style="display:flex;flex-direction:column;gap:6px;padding:8px 0">
+        ${state.children.map(k => `
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="flex:1;min-width:70px">${esc(k.name)}</span>
+          <input class="input" style="width:90px" type="number" min="1" inputmode="numeric" data-price-child="${esc(k.id)}" placeholder="${r.cost}" value="${r.prices?.[k.id] ?? ''}" aria-label="Prix pour ${esc(k.name)}">
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-only-child="${esc(k.id)}"${r.childIds?.includes(k.id) ? ' checked' : ''}>Réservé</label>
+        </div>`).join('')}
+        <p class="text-muted" style="margin:0;font-size:12px">Prix vide = prix commun (${r.cost} 🪙). Aucun « Réservé » coché = visible par tous.</p>
+        <button class="btn btn-secondary btn-block" data-action="save-reward-kids" data-i="${i}">Enregistrer</button>
+      </div>
+    </details>` : ''}
     </div>`).join('')}
     <div class="card elev-sm" style="gap:8px;margin-top:6px">
       <div class="field" style="margin:0"><label>Nouvel article</label><input class="input" id="new-reward-name" placeholder="Ex : 🚲 Sortie vélo"></div>
@@ -1235,6 +1252,8 @@ function screenSanctions() {
         <div class="field" style="margin:0;flex:1"><label>Prix en or 🪙</label><input class="input" id="new-reward-cost" type="number" min="1" placeholder="Ex : 60"></div>
         <div class="field" style="margin:0;flex:1"><label>Niveau requis</label><input class="input" id="new-reward-lvl" type="number" min="1" placeholder="Ex : 2"></div>
       </div>
+      ${state.children.length ? `<div style="font-size:13px">Réservé à (aucun = tous) :</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${state.children.map(k => `<label style="display:flex;align-items:center;gap:4px;font-size:14px"><input type="checkbox" name="new-reward-child" value="${esc(k.id)}">${esc(k.name)}</label>`).join('')}</div>` : ''}
       <button class="btn btn-secondary btn-block" data-action="add-reward">+ Ajouter un article</button>
     </div>
   </div>`;
@@ -2237,8 +2256,10 @@ const ACTIONS = {
     const r = state.rewards[+el.dataset.i];
     if (!r) return;
     const c = child();
-    state.requests.push({ id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8), child: c.name, icon: r.icon, name: r.name, cost: r.cost, status: 'pending' });
-    logAction('reward_requested', r.name, { child: c.name, cost: r.cost });
+    if (!Shop.visibleRewards([r], c.id).length) return;
+    const cost = Shop.effectiveCost(r, c.id);   // le serveur fixe aussi ce prix
+    state.requests.push({ id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8), child: c.name, ...(r.id ? { rewardId: r.id } : {}), icon: r.icon, name: r.name, cost, status: 'pending' });
+    logAction('reward_requested', r.name, { child: c.name, cost });
   },
   approve: async el => {
     const q = state.requests[+el.dataset.i];
@@ -2443,6 +2464,12 @@ const ACTIONS = {
       requests = Object.values(requests).filter(v => v != null);
     }
     state.requests = (requests || []).filter(r => r.child !== c.name);
+    // le serveur refuse un prix / une réservation pour un enfant inconnu; un article réservé à cet enfant seul disparaît
+    state.rewards = (state.rewards || []).filter(r => !(r.childIds?.length && r.childIds.every(id => id === c.id)));
+    for (const r of state.rewards) {
+      if (r.prices) { delete r.prices[c.id]; if (!Object.keys(r.prices).length) delete r.prices; }
+      if (r.childIds) r.childIds = r.childIds.filter(id => id !== c.id);
+    }
     let grades = state.gradeRequests;
     if (grades && typeof grades === 'object' && !Array.isArray(grades)) {
       grades = Object.values(grades).filter(v => v != null);
@@ -2498,7 +2525,24 @@ const ACTIONS = {
   'add-reward': () => {
     const name = val('new-reward-name'), cost = parseInt(val('new-reward-cost'), 10), lvl = parseInt(val('new-reward-lvl') || '1', 10);
     if (!name || !(cost > 0) || !(lvl >= 1)) return alert('Nom, prix (> 0) et niveau (≥ 1) requis.');
-    state.rewards.push({ icon: '🎁', name, cost, lvl });
+    const childIds = [...document.querySelectorAll('input[name="new-reward-child"]:checked')].map(e => e.value);
+    state.rewards.push({ id: 'reward-' + Math.random().toString(36).substring(2, 10), icon: '🎁', name, cost, lvl, ...(childIds.length ? { childIds } : {}) });
+  },
+  'save-reward-kids': el => {
+    const r = state.rewards[+el.dataset.i];
+    const box = el.closest('details');
+    if (!r || !box) return;
+    const prices = {};
+    for (const inp of box.querySelectorAll('[data-price-child]')) {
+      if (inp.value.trim() === '') continue;
+      const v = parseInt(inp.value, 10);
+      if (!(v >= 1)) return alert('Prix (≥ 1) requis, ou vide pour le prix commun.');
+      prices[inp.dataset.priceChild] = v;
+    }
+    const childIds = [...box.querySelectorAll('[data-only-child]:checked')].map(e => e.dataset.onlyChild);
+    delete r.prices; delete r.childIds;
+    if (Object.keys(prices).length) r.prices = prices;
+    if (childIds.length) r.childIds = childIds;
   },
   'set-stats-select-child': async el => {
     statsChildIndex = +el.dataset.index;

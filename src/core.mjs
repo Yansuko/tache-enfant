@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import webpush from 'web-push';
 import { reminderPayload, pendingTasks, dueReminders, cleanReminders } from './reminders.mjs';
 import { franceOffsetMs, dateToISO, parisClock } from './paris-time.mjs';
+import '../public/shop.js';   // globalThis.Shop (même prix effectif que le navigateur)
 
 let emailSender = null;
 export function setEmailSender(fn) { emailSender = fn; }
@@ -591,6 +592,15 @@ export function cleanEvents(list) {
   return out;
 }
 
+// Boutique par enfant: `prices` {childId: entier ≥ 1} et `childIds` [childId] ne citent que des enfants existants.
+const isPlainObj = o => !!o && typeof o === 'object' && !Array.isArray(o);
+function validShopFields(r, kidIds) {
+  if (!isPlainObj(r)) return true;
+  if (r.prices !== undefined && !(isPlainObj(r.prices) && Object.entries(r.prices).every(([k, v]) => kidIds.has(k) && Number.isInteger(v) && v >= 1))) return false;
+  if (r.childIds !== undefined && !(Array.isArray(r.childIds) && r.childIds.every(id => kidIds.has(id)))) return false;
+  return true;
+}
+
 async function saveFamily(store, email, b) {
   const saveId = Math.random().toString(36).substring(7);
   const saveTime = new Date().toISOString();
@@ -778,6 +788,18 @@ async function saveFamily(store, email, b) {
     console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] inc.proposals:`, JSON.stringify(inc.proposals.map(p => ({ name: p.name, child: p.child, status: p.status, type: p.type })) || []));
   }
   for (const k of ['requests', 'gradeRequests', 'taskRequests', 'proposals']) merged[k] = mergeById(cur[k], inc[k]);
+  const kidIds = new Set(merged.children.map(c => c.id));
+  if (isParent && Array.isArray(merged.rewards) && !merged.rewards.every(r => validShopFields(r, kidIds))) return err(400, 'Articles invalides.');
+  // Demande d'achat: prix fixé par le serveur. Nouvelle demande = prix effectif de l'article pour l'enfant (article
+  // retrouvé par rewardId ou nom; inconnu: prix envoyé); demande déjà enregistrée: son prix ne change plus.
+  const curReqById = new Map((cur.requests || []).filter(r => r?.id != null).map(r => [r.id, r]));
+  for (const r of merged.requests) {
+    if (!r || r.status !== 'pending') continue;
+    const old = curReqById.get(r.id);
+    if (old) { r.cost = old.cost; continue; }
+    const reward = (Array.isArray(merged.rewards) ? merged.rewards : []).find(x => x && ((r.rewardId && x.id === r.rewardId) || x.name === r.name));
+    if (reward) r.cost = Shop.effectiveCost(reward, merged.children.find(c => c.name === r.child)?.id);
+  }
   // ponytail: questList = dernier parent écrit gagne (une union avec le serveur ressuscitait les modèles supprimés); un enfant ne la modifie pas
   merged.questList = isParent && Array.isArray(inc.questList) ? keepConcurrentAdds(cur.questList, inc.questList, basedAt) : (cur.questList || []);
   console.log(`[SAVEFAMILY-MERGE-PROPOSALS-${saveId}] After merge - merged.proposals count:`, merged.proposals?.length || 0);
