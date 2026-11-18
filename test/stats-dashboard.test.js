@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { readFileSync } from 'node:fs';
+import '../public/grades.js';   // globalThis.Grades, utilisé par on20()
 
 const HTML = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const EMMA = 'child-emma', LUCAS = 'child-lucas';
@@ -105,7 +106,7 @@ beforeEach(async () => {
   vc.on('jsdomError', e => errors.push(String(e.stack || e)));
   dom = new JSDOM(HTML, {
     url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
-    beforeParse(win) { win.fetch = fetchMock; win.Chart = function () {}; },
+    beforeParse(win) { win.fetch = fetchMock; win.Chart = function () {}; win.Grades = globalThis.Grades; },
   });
   w = dom.window;
   await flush();
