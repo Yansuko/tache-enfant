@@ -1416,7 +1416,10 @@ function scaleError(rows) {
   for (const r of rows) {
     if (!r.labels.length || r.labels.length > 4 || r.labels.some(l => l.length > 30)) return 'Chaque ligne: 1 à 4 libellés de 30 caractères au plus, séparés par des virgules.';
     if (!/^\d+(\.\d+)?$/.test(r.value) || +r.value > 20) return `Valeur de « ${r.labels[0]} »: un nombre entre 0 et 20.`;
-    for (const l of r.labels) { const k = Grades.normLabel(l); if (!k || seen.has(k)) return `Libellé en double: « ${l} ».`; seen.add(k); }
+    for (const l of r.labels) {
+      if (Grades.isNumber(l)) return `Libellé « ${l} »: un nombre ne peut pas être une appréciation.`;
+      const k = Grades.normLabel(l); if (!k || seen.has(k)) return `Libellé en double: « ${l} ».`; seen.add(k);
+    }
   }
   return '';
 }
@@ -2401,7 +2404,9 @@ const ACTIONS = {
       console.log(`[GRADE-SUBMIT-RESPONSE] Received:`, JSON.stringify({ status: 200, gradeCount: result.family?.gradeRequests?.length || 0, grades: result.family?.gradeRequests?.map(g => `${g.subject}/${g.grade}`) || [] }));
       if (result.family) {
         // API returns updated family - sync it to state
-        state.gradeRequests = result.family.gradeRequests || [];
+        // le serveur ne renvoie que les demandes de cet enfant: fusion par id, les autres restent
+        const mine = result.family.gradeRequests || [], ids = new Set(mine.map(g => g.id));
+        state.gradeRequests = [...(state.gradeRequests || []).filter(g => !ids.has(g?.id)), ...mine];
         console.log(`[GRADE-STATE-UPDATED] state.gradeRequests NOW has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.id}|${g.subject}/${g.grade}/${g.status}`));
         // Persist the update to backend so other users see it
         console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, JSON.stringify(state.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))));

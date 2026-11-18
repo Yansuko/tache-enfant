@@ -31,6 +31,15 @@ describe('Grades.parseGrade', () => {
       expect(v(s), String(s)).toEqual({ ok: false });
     }
   });
+  it('saisie démesurée refusée (pas d\'Infinity/NaN)', () => {
+    expect(v('9'.repeat(400) + '/' + '9'.repeat(400))).toEqual({ ok: false });
+    expect(v('1/' + '9'.repeat(400))).toEqual({ ok: false });
+    expect(v('0'.repeat(40) + '15')).toEqual({ ok: false });
+  });
+  it('isNumber: forme numérique (même hors échelle)', () => {
+    for (const s of ['15', '15,5', '25/20', ' 8/10 ']) expect(G.isNumber(s), s).toBe(true);
+    for (const s of ['tb', '15€', '', 'a/b']) expect(G.isNumber(s), s).toBe(false);
+  });
   it('échelle personnalisée', () => {
     const scale = [...G.DEFAULT_SCALE, { labels: ['insuffisant'], value: 6 }];
     expect(v('Insuffisant', scale).value20).toBe(6);
@@ -40,6 +49,10 @@ describe('Grades.parseGrade', () => {
   it('normLabel', () => {
     expect(G.normLabel('  T.B. ')).toBe('tb');
     expect(G.normLabel('Très   Bien')).toBe('tres bien');
+    expect(G.normLabel('T. B.')).toBe('tb');
+    expect(G.normLabel('a b c')).toBe('abc');
+    expect(G.normLabel('assez  bien')).toBe('assez bien');
+    for (const s of ['T. B.', 't b', 'très bien', 'tres  bien', 'A. B.']) expect(v(s).ok, s).toBe(true);
   });
 });
 
@@ -60,6 +73,43 @@ describe('submitGrade / approveGrade', () => {
     expect((await submit('15,5')).status).toBe(200);
     expect((await submit(' TB ')).status).toBe(200);
     expect((await p.me())[0].gradeRequests.map(g => g.grade)).toEqual(['15,5', 'TB']);
+  });
+
+  it('submitGrade: réponse minimale (ni pin, ni members, ni autres enfants)', async () => {
+    const { p, fam } = await setup();
+    await p.save({ ...fam, children: [...fam.children, { id: 'c-lucas', name: 'Lucas', xp: 0, gold: 0, pin: '4321', tasks: [], grades: [], sanctions: [] }] });
+    await api('submitGrade', { familyId: fam.id, childName: 'Lucas', subject: 'Maths', grade: '12', gold: 1 });
+    const r = await api('submitGrade', { familyId: fam.id, childName: 'Emma', subject: 'Maths', grade: '15', gold: 5 });
+    expect(r.status).toBe(200);
+    const body = JSON.stringify(r.body);
+    expect(body).not.toContain('pin');
+    expect(body).not.toContain('members');
+    expect(body).not.toContain(p.email);
+    expect(body).not.toContain('Lucas');
+    expect(Object.keys(r.body.family)).toEqual(['gradeRequests']);
+    expect(r.body.family.gradeRequests.map(g => [g.child, g.grade])).toEqual([['Emma', '15']]);
+  });
+
+  it('submitGrade: enfant inconnu, matière trop longue, champs non textuels refusés', async () => {
+    const { p, fam, submit } = await setup();
+    const s = b => api('submitGrade', { familyId: fam.id, childName: 'Emma', subject: 'Maths', grade: '12', gold: 1, ...b });
+    expect((await s({ childName: 'Inconnu' })).status).toBe(404);
+    expect((await s({ childName: ['Emma'] })).status).toBe(400);
+    expect((await s({ subject: 'x'.repeat(61) })).status).toBe(400);
+    expect((await s({ subject: { a: 1 } })).status).toBe(400);
+    expect((await s({ subject: 'x'.repeat(60) })).status).toBe(200);
+    expect((await p.me())[0].gradeRequests).toHaveLength(1);
+  });
+
+  it('approveGrade: or entier entre 0 et 100000, sinon 400', async () => {
+    const { p, fam, submit } = await setup();
+    await submit('12');
+    const id = (await p.me())[0].gradeRequests[0].id;
+    const ap = gold => api('approveGrade', { familyId: fam.id, gradeId: id, gold }, p.token);
+    for (const g of ['100', -1, 2.5, 100001, true, '']) expect((await ap(g)).status, String(g)).toBe(400);
+    const f = (await p.me())[0];
+    expect([f.gradeRequests[0].status, f.children[0].gold]).toEqual(['pending', 0]);
+    expect((await ap(0)).status).toBe(200);
   });
 
   it('submitGrade utilise le tableau de la famille', async () => {
@@ -141,6 +191,8 @@ describe('saveFamily: gradeScale', () => {
     expect(await st([{ labels: [' '], value: 10 }])).toBe(400);
     expect(await st([{ labels: ['x'.repeat(31)], value: 10 }])).toBe(400);
     expect(await st('tb')).toBe(400);
+    expect(await st([{ labels: ['tb', '15'], value: 18 }])).toBe(400);      // libellé numérique: jamais atteint
+    expect(await st([{ labels: ['25/20'], value: 18 }])).toBe(400);
     expect(await st(Array.from({ length: 20 }, (_, i) => ({ labels: ['l' + i], value: 10 })))).toBe(200);
     expect((await p.me())[0].gradeScale).toHaveLength(20);
   });

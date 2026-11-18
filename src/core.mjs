@@ -612,7 +612,7 @@ export function cleanGradeScale(list) {
     const labels = [];
     for (const l of r.labels) {
       const t = typeof l === 'string' ? l.trim() : '', k = Grades.normLabel(t);
-      if (!t || t.length > 30 || !k || seen.has(k)) return null;
+      if (!t || t.length > 30 || !k || seen.has(k) || Grades.isNumber(t)) return null;
       seen.add(k); labels.push(t);
     }
     out.push({ labels, value: r.value });
@@ -1190,26 +1190,17 @@ async function submitGrade(store, famId, b) {
   const { childName, subject, grade, gold } = b;
   if (!childName || !subject || !grade || gold === undefined) return err(400, 'Tous les champs requis.');
   if (isNaN(gold) || gold < 0) return err(400, 'Or invalide.');
+  if (typeof childName !== 'string' || typeof subject !== 'string' || !subject.trim() || subject.length > 60) return err(400, 'Matière invalide (60 caractères au plus).');
 
   // Read from store (single source of truth)
   const fam = await store.get('family:' + famId);
   if (!fam) return err(404, 'Famille introuvable.');
+  normalizeFamilyData(fam);   // anciennes données en objet indexé → tableaux
+  // action publique (sans jeton): l'enfant doit exister, et la réponse ne divulgue rien d'autre que ses demandes
+  if (!fam.children.some(c => c?.name === childName)) return err(404, 'Famille introuvable.');
   const parsed = Grades.parseGrade(grade, fam.gradeScale);
   if (!parsed.ok) return err(400, 'Note invalide.');
-
-  // Ensure gradeRequests is always a clean array
-  let gradeRequests = fam.gradeRequests || [];
-  if (!Array.isArray(gradeRequests)) {
-    // If object, convert to array
-    if (typeof gradeRequests === 'object') {
-      gradeRequests = Object.keys(gradeRequests)
-        .filter(key => /^\d+$/.test(key))
-        .map(key => gradeRequests[key])
-        .filter(v => v != null && typeof v === 'object');
-    } else {
-      gradeRequests = [];
-    }
-  }
+  const gradeRequests = fam.gradeRequests;
 
   // Create new grade
   const gradeRequest = {
@@ -1240,8 +1231,8 @@ async function submitGrade(store, famId, b) {
   // Parents prévenus une fois (push; e-mail seulement si l'option est activée)
   await notifyParents(store, famId, `📝 ${childName} a soumis une note`, `${subject} (${grade}) — or demandé: ${gold}`, '📝', 'grade');
 
-  // Return the updated family so frontend can update state directly
-  return { status: 200, body: { family: fam } };
+  // Réponse minimale: action publique, jamais pin/members/autres enfants
+  return { status: 200, body: { family: { gradeRequests: gradeRequests.filter(g => g?.child === childName) } } };
 }
 async function approveGrade(store, email, b) {
   const { familyId, gradeId, gold, grade } = b;
@@ -1253,6 +1244,8 @@ async function approveGrade(store, email, b) {
   const req = fam.gradeRequests?.find(g => g.id === gradeId);
   if (!req) return err(404, 'Note introuvable.');
   if (req.status !== 'pending') return err(400, 'Seules les notes en attente peuvent être approuvées.');
+  const goldAmount = (gold !== undefined && gold !== null) ? gold : req.gold;
+  if (!Number.isInteger(goldAmount) || goldAmount < 0 || goldAmount > 100000) return err(400, 'Or invalide.');
   // le parent peut corriger la note; l'originale reste dans `submittedGrade`
   if (grade !== undefined && grade !== null) {
     const p = Grades.parseGrade(grade, fam.gradeScale);
@@ -1260,7 +1253,6 @@ async function approveGrade(store, email, b) {
     if (p.text !== String(req.grade ?? '')) { req.submittedGrade ??= req.grade; req.grade = p.text; }
   }
   const child = fam.children.find(c => c.name === req.child);
-  const goldAmount = (gold !== undefined && gold !== null) ? gold : req.gold;
   if (child) { child.gold = (child.gold || 0) + goldAmount; }
   req.status = 'approved';
   req.approvedAt = Date.now();
