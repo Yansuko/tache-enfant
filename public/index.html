@@ -125,6 +125,7 @@
 <script src="/proposals.js"></script>
 <script src="/events.js"></script>
 <script src="/shop.js"></script>
+<script src="/grades.js"></script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -642,7 +643,7 @@ function rolloverDay(f, day) {
 
 // persistance de la famille active vers le serveur — coalescée (dernier gagne)
 // ponytail: dernier-écrit-gagne, pas de verrou/etag — suffisant à l'échelle d'une famille ; passer à un merge/etag si conflits multi-appareils
-let saving = false, dirty = false;
+let saving = false, dirty = false, scaleDirty = false;
 // Signature de l'état tel que le serveur le connaît: une synchro sans changement local n'envoie rien.
 let lastSyncedSig = null;
 function stateSig() {
@@ -674,6 +675,7 @@ async function persistFamily() {
     try {
       const payload = { family: stripUi(state) };
       normalizeFamilyData(payload.family);
+      if (!scaleDirty) delete payload.family.gradeScale;   // remplacé en entier par le serveur: ne pas écraser la version d'un autre appareil
 
       // Log GRADES before sending
       console.log(`[PERSIST-SEND-GRADES-${persistId}] gradeRequests count:`, payload.family.gradeRequests?.length || 0);
@@ -744,6 +746,7 @@ async function persistFamily() {
         actionLog: res.family.actionLog !== undefined ? res.family.actionLog : state.actionLog,
         reminders: res.family.reminders !== undefined ? res.family.reminders : state.reminders,
         events: res.family.events !== undefined ? res.family.events : state.events,
+        gradeScale: res.family.gradeScale !== undefined ? res.family.gradeScale : state.gradeScale,
         updatedAt: res.family.updatedAt,
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
@@ -751,6 +754,7 @@ async function persistFamily() {
       Object.assign(state, serverFields);
       const sentDel = payload.family.remindersDeleted || [];   // suppressions de rappels prises en compte par le serveur
       if (sentDel.length) state.remindersDeleted = (state.remindersDeleted || []).filter(id => !sentDel.includes(id));
+      if (payload.family.gradeScale) scaleDirty = false;
       const evDel = payload.family.eventsDeleted || [];
       if (evDel.length) state.eventsDeleted = (state.eventsDeleted || []).filter(id => !evDel.includes(id));
       console.log(`[PERSIST-MERGE-${persistId}] After merge - requests:`, JSON.stringify(state.requests?.map(r => ({ child: r.child, name: r.name, status: r.status }))?.slice(0, 3) || []));
@@ -847,6 +851,9 @@ function screenAccueil() {
   </div>`;
 }
 
+// formulaire de note de l'enfant: conservé en cas de refus (render() redessine les champs)
+let gradeForm = {};
+const gradeHint = () => `Note invalide: écris un nombre (15,5), une fraction (17/20) ou une appréciation (${(state.gradeScale?.length ? state.gradeScale : Grades.DEFAULT_SCALE).map(r => r.labels[0]).join(', ')}).`;
 function screenNotes() {
   if (state) normalizeFamilyData(state);
   const c = child();
@@ -899,16 +906,18 @@ function screenNotes() {
       <div class="kicker" style="margin-bottom:10px">Soumettre une note</div>
       <div class="card elev-sm" style="gap:12px;padding:16px">
         <div class="field">
-          <label>Matière</label>
-          <input class="input" id="grade-subject" placeholder="Ex : Mathématiques">
+          <label for="grade-subject">Matière</label>
+          <input class="input" id="grade-subject" placeholder="Ex : Mathématiques" value="${esc(gradeForm.subject || '')}">
         </div>
         <div class="field">
-          <label>Note obtenue</label>
-          <input class="input" id="grade-value" placeholder="Ex : 18/20">
+          <label for="grade-value">Note obtenue</label>
+          <input class="input" id="grade-value" inputmode="decimal" placeholder="Ex : 15,5" value="${esc(gradeForm.grade || '')}" aria-describedby="grade-help">
+          <small id="grade-help" style="color:var(--color-neutral-600)">15,5, 17/20 ou TB</small>
+          ${gradeForm.err ? `<p id="grade-error" role="alert" style="margin:4px 0 0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeForm.err)}</p>` : ''}
         </div>
         <div class="field">
-          <label>Or demandé</label>
-          <input class="input" id="grade-gold" type="number" min="0" placeholder="Ex : 20">
+          <label for="grade-gold">Or demandé</label>
+          <input class="input" id="grade-gold" type="number" min="0" placeholder="Ex : 20" value="${esc(gradeForm.gold || '')}">
         </div>
         <button class="btn btn-primary btn-block" data-action="submit-grade">Soumettre</button>
       </div>
@@ -1262,6 +1271,7 @@ function screenSanctions() {
   </div>`;
 }
 
+let gradeFix = null;   // {id, grade, err}: correction refusée, affichée sur la carte « À valider »
 function screenGrades() {
   // Ensure state is fully normalized
   if (state) normalizeFamilyData(state);
@@ -1286,18 +1296,21 @@ function screenGrades() {
       <div class="kicker" style="margin-bottom:10px">À valider (${pending.length})</div>
       ${pending.map((r, i) => `
       <div class="card elev-sm" style="gap:10px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="min-width:0">
+            <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(r.child)} - Note: ${esc(r.grade)}</div>
           </div>
           <span class="tag tag-accent">${esc(r.gold)} 🪙</span>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;font-size:12px">
-          <label style="color:var(--color-neutral-600)">Or à attribuer:</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+          <label for="grade-note-${i}" style="color:var(--color-neutral-600)">Note:</label>
+          <input id="grade-note-${i}" class="input" inputmode="decimal" value="${esc(gradeFix?.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
+          <label for="grade-gold-${i}" style="color:var(--color-neutral-600)">Or à attribuer:</label>
           <input type="number" id="grade-gold-${i}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
           <span>🪙</span>
         </div>
+        ${gradeFix?.id === r.id ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeFix.err)}</p>` : ''}
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" style="flex:1" data-action="approve-grade" data-i="${i}">Approuver</button>
           <button class="btn btn-secondary" style="flex:1" data-action="refuse-grade" data-i="${i}">Refuser</button>
@@ -1312,8 +1325,8 @@ function screenGrades() {
       <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div>
-            <div class="card-title" style="font-size:15px">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600)">${esc(r.child)} - Note: ${esc(r.grade)}</div>
+            <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(r.child)} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
           </div>
           <span class="tag tag-accent">${esc(r.gold)} 🪙 ✓</span>
         </div>
@@ -1388,6 +1401,47 @@ function loadQuickStats() {
   });
 }
 
+// Tableau d'appréciations: brouillon local (lignes ajoutées/supprimées) jusqu'à « Enregistrer »
+let scaleDraft = null, scaleErr = '';
+const scaleRows = () => scaleDraft || (state.gradeScale?.length ? state.gradeScale : Grades.DEFAULT_SCALE);
+// lit les lignes saisies: libellés séparés par des virgules, valeur décimale (virgule acceptée)
+const readScale = () => [...document.querySelectorAll('.scale-row')].map(row => ({
+  labels: row.querySelector('.scale-labels').value.split(',').map(l => l.trim()).filter(Boolean),
+  value: row.querySelector('.scale-value').value.trim().replace(',', '.'),
+}));
+// mêmes règles que le serveur (cleanGradeScale): message d'erreur ou '' si valide
+function scaleError(rows) {
+  if (!rows.length || rows.length > 20) return 'Entre 1 et 20 appréciations.';
+  const seen = new Set();
+  for (const r of rows) {
+    if (!r.labels.length || r.labels.length > 4 || r.labels.some(l => l.length > 30)) return 'Chaque ligne: 1 à 4 libellés de 30 caractères au plus, séparés par des virgules.';
+    if (!/^\d+(\.\d+)?$/.test(r.value) || +r.value > 20) return `Valeur de « ${r.labels[0]} »: un nombre entre 0 et 20.`;
+    for (const l of r.labels) {
+      if (Grades.isNumber(l)) return `Libellé « ${l} »: un nombre ne peut pas être une appréciation.`;
+      const k = Grades.normLabel(l); if (!k || seen.has(k)) return `Libellé en double: « ${l} ».`; seen.add(k);
+    }
+  }
+  return '';
+}
+function scaleBlock() {
+  return `
+  <div style="padding:18px 20px 4px" class="kicker">Appréciations</div>
+  <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
+    <div class="card elev-sm" style="gap:8px">
+      <p class="text-muted" style="font-size:12px;margin:0">Valeur sur 20 de chaque appréciation (moyennes et graphiques). Plusieurs libellés séparés par des virgules.</p>
+      ${scaleRows().map((r, i) => `
+      <div class="scale-row" style="display:flex;gap:6px;align-items:center">
+        <input class="input scale-labels" aria-label="Libellés" value="${esc(r.labels.join(', '))}" placeholder="tb, très bien" style="flex:1;min-width:0">
+        <input class="input scale-value" aria-label="Valeur sur 20" inputmode="decimal" value="${esc(String(r.value).replace('.', ','))}" style="width:64px">
+        <button class="btn btn-icon btn-ghost" data-action="del-scale-row" data-i="${i}" aria-label="Supprimer l'appréciation">✕</button>
+      </div>`).join('')}
+      ${scaleErr ? `<p id="scale-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(scaleErr)}</p>` : ''}
+      <button class="btn btn-ghost btn-block" data-action="add-scale-row">+ Ajouter une appréciation</button>
+      <button class="btn btn-primary btn-block" data-action="save-scale">Enregistrer les appréciations</button>
+      <button class="btn btn-secondary btn-block" data-action="reset-scale">Rétablir les valeurs par défaut</button>
+    </div>
+  </div>`;
+}
 function screenFamille() {
   if (state) normalizeFamilyData(state);
   const owner = state.owner === me.email;
@@ -1441,6 +1495,7 @@ function screenFamille() {
       </div>
     </div>
   </div>
+  ${scaleBlock()}
   <div style="padding:18px 20px 4px" class="kicker">Sécurité</div>
   <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
     <div class="card elev-sm" style="gap:8px">
@@ -1783,13 +1838,8 @@ function screenStats() {
 
 /* ── stats notes / récompenses / sanctions ── */
 const XS_COLORS = ['#c67139', '#7a8a5e', '#3b82f6', '#a855f7', '#0891b2', '#be185d'];
-// "16/20", "16", "8/10" → note sur 20 (même règle que gradeOn20 côté serveur)
-function on20(g) {
-  const m = String(g ?? '').trim().match(/^(\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+(?:[.,]\d+)?))?$/);
-  if (!m) return null;
-  const v = parseFloat(m[1].replace(',', '.')), max = m[2] ? parseFloat(m[2].replace(',', '.')) : 20;
-  return max > 0 ? (v / max) * 20 : null;
-}
+// "16/20", "15,5", "8/10", "TB" → note sur 20 (même règle que le serveur, tableau d'appréciations de la famille); null si illisible
+function on20(g) { const r = Grades.parseGrade(g, state?.gradeScale); return r.ok ? r.value20 : null; }
 const xsDay = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '—';
 const xsBox = (label, value, color = 'var(--color-accent-800)') =>
   `<div class="card elev-sm xs-box"><div class="kicker">${label}</div><div class="xs-num" style="color:${color}">${value}</div></div>`;
@@ -2340,16 +2390,23 @@ const ACTIONS = {
   'cancel-pin': () => { creatingPin = false; render(); },
   'submit-grade': async () => {
     const subject = val('grade-subject').trim(), gradeVal = val('grade-value').trim(), gold = parseInt(val('grade-gold'), 10);
-    if (!subject || !gradeVal || !gold || gold <= 0) { alert('Tous les champs requis.'); return; }
+    gradeForm = { subject, grade: gradeVal, gold: val('grade-gold') };
+    if (!subject || !gradeVal || !gold || gold <= 0) { gradeForm.err = 'Matière, note et or (> 0) requis.'; return; }
+    if (!Grades.parseGrade(gradeVal, state.gradeScale).ok) { gradeForm.err = gradeHint(); return; }
     const c = child();
     console.log(`[GRADE-SUBMIT-START] Submitting: ${subject} ${gradeVal} (${gold}🪙) for child: ${c.name}`);
     console.log(`[GRADE-SUBMIT-TOKEN] Using token:`, token ? `${token.substring(0, 20)}...` : 'NONE');
     try {
-      const result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold });
+      let result;
+      try { result = await api('submitGrade', { familyId: state.id, childName: c.name, subject, grade: gradeVal, gold }); }
+      catch (e) { gradeForm.err = String(e) === 'Note invalide.' ? gradeHint() : '⚠️ ' + e; return; }   // ex: tableau modifié entre-temps
+      gradeForm = {};
       console.log(`[GRADE-SUBMIT-RESPONSE] Received:`, JSON.stringify({ status: 200, gradeCount: result.family?.gradeRequests?.length || 0, grades: result.family?.gradeRequests?.map(g => `${g.subject}/${g.grade}`) || [] }));
       if (result.family) {
         // API returns updated family - sync it to state
-        state.gradeRequests = result.family.gradeRequests || [];
+        // le serveur ne renvoie que les demandes de cet enfant: fusion par id, les autres restent
+        const mine = result.family.gradeRequests || [], ids = new Set(mine.map(g => g.id));
+        state.gradeRequests = [...(state.gradeRequests || []).filter(g => !ids.has(g?.id)), ...mine];
         console.log(`[GRADE-STATE-UPDATED] state.gradeRequests NOW has ${state.gradeRequests.length} grades:`, state.gradeRequests.map(g => `${g.id}|${g.subject}/${g.grade}/${g.status}`));
         // Persist the update to backend so other users see it
         console.log(`[GRADE-SAVE-BEFORE] About to call save(). state.gradeRequests:`, JSON.stringify(state.gradeRequests.map(g => ({ id: g.id, subject: g.subject, status: g.status }))));
@@ -2363,12 +2420,19 @@ const ACTIONS = {
       console.error(`[GRADE-SUBMIT-EXCEPTION] Error during submit:`, e.message);
       throw e;
     }
-    document.getElementById('grade-subject').value = '';
-    document.getElementById('grade-value').value = '';
-    document.getElementById('grade-gold').value = '';
     render();
   },
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
+  'add-scale-row': () => { scaleDraft = [...readScale(), { labels: [], value: '' }]; },
+  'del-scale-row': el => { scaleDraft = readScale(); scaleDraft.splice(+el.dataset.i, 1); },
+  'save-scale': () => {
+    const rows = readScale();
+    scaleErr = scaleError(rows);
+    if (scaleErr) { scaleDraft = rows; return; }
+    state.gradeScale = rows.map(r => ({ labels: r.labels, value: +r.value }));
+    scaleDraft = null; scaleDirty = true;
+  },
+  'reset-scale': () => { state.gradeScale = structuredClone(Grades.DEFAULT_SCALE); scaleDraft = null; scaleErr = ''; scaleDirty = true; },
   'propose-reward': () => {
     const name = val('proposal-name'), cost = parseInt(val('proposal-cost'), 10);
     if (!name || !(cost > 0)) return alert('Idée et points (> 0) requis.');
@@ -2424,7 +2488,13 @@ const ACTIONS = {
     if (i < pending.length) {
       const grade = pending[i];
       const newGold = parseInt(document.getElementById(`grade-gold-${i}`).value, 10) || 0;
-      const r = await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold });
+      const note = val(`grade-note-${i}`), parsed = Grades.parseGrade(note, state.gradeScale);
+      gradeFix = null;
+      if (!parsed.ok) { gradeFix = { id: grade.id, grade: note, err: gradeHint() }; return; }
+      let r;
+      try { r = await api('approveGrade', { familyId: state.id, gradeId: grade.id, gold: newGold, grade: parsed.text }); }
+      catch (e) { gradeFix = { id: grade.id, grade: note, err: String(e) === 'Note invalide.' ? gradeHint() : '⚠️ ' + e }; return; }
+      if (parsed.text !== String(grade.grade ?? '')) { grade.submittedGrade ??= grade.grade; grade.grade = parsed.text; }
       grade.status = 'approved';
       grade.approvedAt = Date.now();
       grade.gold = newGold;
@@ -3322,6 +3392,7 @@ setInterval(async () => {
           state.questList = serverFamily.questList || state.questList;
           state.reminders = serverFamily.reminders || state.reminders;
           state.events = serverFamily.events || state.events;
+          if (!scaleDirty) state.gradeScale = serverFamily.gradeScale || state.gradeScale;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
           lastSyncedSig = stateSig();

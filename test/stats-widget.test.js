@@ -2,6 +2,7 @@
 // out of public/index.html and run them against a tiny fake document + stubbed api().
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import '../public/grades.js';   // globalThis.Grades, utilisé par on20()
 
 const SRC = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
