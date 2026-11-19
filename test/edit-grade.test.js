@@ -93,4 +93,32 @@ describe('saveFamily enfant: une note validée est intouchable', () => {
     expect((await api('saveFamily', { family: forged }, childToken)).status).toBe(200);
     expect(await get(approved)).toMatchObject({ grade: '12', gold: 5, status: 'approved' });
   });
+
+  it('une nouvelle note envoyée par l\'enfant est forcée en attente, sans champs de validation', async () => {
+    const { p, childToken, get } = await setup();
+    const fam = structuredClone((await p.me())[0]);
+    fam.gradeRequests.push({ id: 'forged', child: 'Emma', subject: 'Maths', grade: '20', gold: 50, status: 'approved', approvedAt: 1, editedAt: 2, submittedGrade: '3' });
+    expect((await api('saveFamily', { family: fam }, childToken)).status).toBe(200);
+    const g = await get('forged');
+    expect(g.status).toBe('pending');
+    expect([g.approvedAt, g.editedAt, g.submittedGrade]).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('l\'enfant ne fait pas passer une note en attente à approuvée ou refusée', async () => {
+    const { p, pending, childToken, get } = await setup();
+    for (const status of ['approved', 'refused']) {
+      const fam = structuredClone((await p.me())[0]);
+      Object.assign(fam.gradeRequests.find(g => g.id === pending), { status, approvedAt: Date.now() });
+      expect((await api('saveFamily', { family: fam }, childToken)).status).toBe(200);
+      expect((await get(pending)).status).toBe('pending');
+    }
+    expect((await p.me())[0].children[0].gold).toBe(5);
+  });
+
+  it('le parent, lui, peut toujours enregistrer une note validée par saveFamily', async () => {
+    const { p, get } = await setup();
+    const fam = (await p.me())[0];
+    await p.save({ ...fam, gradeRequests: [...fam.gradeRequests, { id: 'par', child: 'Emma', subject: 'SVT', grade: '13', gold: 1, status: 'approved', approvedAt: 5 }] });
+    expect(await get('par')).toMatchObject({ status: 'approved', approvedAt: 5 });
+  });
 });

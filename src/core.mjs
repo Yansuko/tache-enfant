@@ -670,9 +670,14 @@ async function saveFamily(store, email, b) {
     safe.id = inc.id;
     if (inc.day) safe.day = inc.day;
     for (const k of ['taskRequests', 'requests', 'proposals', 'gradeRequests', 'actionLog']) if (inc[k] !== undefined) safe[k] = inc[k];
-    // une note déjà validée/refusée ne se modifie pas depuis l'appareil de l'enfant
-    const settledGrades = new Map((cur.gradeRequests || []).filter(g => g?.id != null && g.status && g.status !== 'pending').map(g => [g.id, g]));
-    if (Array.isArray(safe.gradeRequests)) safe.gradeRequests = safe.gradeRequests.map(g => settledGrades.get(g?.id) || g);
+    // l'enfant ne modifie pas une note connue du serveur (ni note, ni or, ni statut) et une nouvelle note reste en attente
+    const curGrades = new Map((cur.gradeRequests || []).filter(g => g?.id != null).map(g => [g.id, g]));
+    // (une copie sans id, ancienne donnée, est ignorée: la version du serveur est conservée par la fusion)
+    if (Array.isArray(safe.gradeRequests)) safe.gradeRequests = safe.gradeRequests.filter(g => g?.id != null).map(g => {
+      if (curGrades.has(g.id)) return curGrades.get(g.id);
+      const { approvedAt, editedAt, submittedGrade, ...rest } = g;
+      return { ...rest, status: 'pending' };
+    });
     const own = (inc.children || []).find(c => c.name === childName);
     const target = safe.children.find(c => c.name === childName);
     if (own && target && Array.isArray(own.tasks)) {
