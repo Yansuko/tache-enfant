@@ -68,14 +68,20 @@ describe('messages e-mail au démarrage', () => {
     expect(out).not.toContain('Brevo configuré');
   }, 20000);
 
-  it('clé sans EMAIL_FROM: e-mails désactivés (même clé SMTP, sans avertissement)', async () => {
-    for (const key of [FAKE_REST, FAKE_SMTP]) {
-      const { out } = await runServer({ BREVO_API_KEY: key });
-      expect(out).toContain('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
-      expect(out).not.toContain('clé SMTP');
-      expect(out).not.toContain('Brevo configuré');
-    }
-  }, 30000);
+  it('clé API sans EMAIL_FROM: e-mails désactivés, sans avertissement', async () => {
+    const { out } = await runServer({ BREVO_API_KEY: FAKE_REST });
+    expect(out).toContain('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
+    expect(out).not.toContain('clé SMTP');
+    expect(out).not.toContain('Brevo configuré');
+  }, 20000);
+
+  it('clé SMTP sans EMAIL_FROM: l\'avertissement clé SMTP s\'affiche aussi, e-mails désactivés', async () => {
+    const { out } = await runServer({ BREVO_API_KEY: FAKE_SMTP });
+    expect(out).toContain('[EMAIL] BREVO_API_KEY est une clé SMTP (xsmtpsib-…)');
+    expect(out).toContain('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
+    expect(out).not.toContain('Brevo configuré');
+    expect(out).not.toContain(FAKE_SMTP);
+  }, 20000);
 
   it('clé SMTP xsmtpsib- avec EMAIL_FROM: avertissement puis Brevo configuré', async () => {
     const { out } = await runServer({ BREVO_API_KEY: FAKE_SMTP, EMAIL_FROM: 'test@example.invalid' });

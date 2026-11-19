@@ -69,10 +69,10 @@ async function initializeDatabase() {
 function setupEmailSender() {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) return console.log('[EMAIL] BREVO_API_KEY absent: e-mails désactivés');
-  const from = process.env.EMAIL_FROM;
-  if (!from) return console.log('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
   const warning = apiKeyWarning(apiKey);
   if (warning) console.warn('[EMAIL] ' + warning);
+  const from = process.env.EMAIL_FROM;
+  if (!from) return console.log('[EMAIL] EMAIL_FROM non défini: e-mails désactivés');
   setEmailSender(makeBrevoSender({ apiKey, from, name: process.env.EMAIL_FROM_NAME || 'DailyKids' }));
   console.log(`[EMAIL] Brevo configuré (expéditeur: ${from})`);
 }
