@@ -568,7 +568,8 @@ function mergeById(cur, inc) {
   const settled = r => r.status && r.status !== 'pending';
   const merged = list.map(r => {
     const old = r?.id != null ? curById.get(r.id) : null;
-    return old && settled(old) && r.status === 'pending' ? old : r;
+    if (old && settled(old) && r.status === 'pending') return old;
+    return old?.editedAt > (r?.editedAt || 0) ? old : r;   // une copie antérieure à une correction ne la défait pas
   });
   const ids = new Set(list.map(r => r?.id).filter(id => id != null));
   return [...merged, ...curList.filter(r => r?.id != null && !ids.has(r.id))];
@@ -669,6 +670,14 @@ async function saveFamily(store, email, b) {
     safe.id = inc.id;
     if (inc.day) safe.day = inc.day;
     for (const k of ['taskRequests', 'requests', 'proposals', 'gradeRequests', 'actionLog']) if (inc[k] !== undefined) safe[k] = inc[k];
+    // l'enfant ne modifie pas une note connue du serveur (ni note, ni or, ni statut) et une nouvelle note reste en attente
+    const curGrades = new Map((cur.gradeRequests || []).filter(g => g?.id != null).map(g => [g.id, g]));
+    // (une copie sans id, ancienne donnée, est ignorée: la version du serveur est conservée par la fusion)
+    if (Array.isArray(safe.gradeRequests)) safe.gradeRequests = safe.gradeRequests.filter(g => g?.id != null).map(g => {
+      if (curGrades.has(g.id)) return curGrades.get(g.id);
+      const { approvedAt, editedAt, submittedGrade, ...rest } = g;
+      return { ...rest, status: 'pending' };
+    });
     const own = (inc.children || []).find(c => c.name === childName);
     const target = safe.children.find(c => c.name === childName);
     if (own && target && Array.isArray(own.tasks)) {
@@ -1268,6 +1277,26 @@ async function approveGrade(store, email, b) {
     .catch(e => console.error('[NOTIFY-GRADE] Error:', e.message));
 
   return { status: 200, body: { ok: true, child: child ? { name: child.name, gold: child.gold } : null } };
+}
+
+// Le parent corrige une note déjà validée; l'or crédité ne change pas, l'originale reste dans `submittedGrade`.
+async function editGrade(store, email, b) {
+  const { familyId, gradeId, grade } = b;
+  const fam = await store.get('family:' + familyId);
+  if (!fam) return err(404, 'Famille introuvable.');
+  if (!fam.members?.includes(email)) return err(403, 'Accès refusé.');
+  normalizeFamilyData(fam);
+  const req = fam.gradeRequests?.find(g => g.id === gradeId);
+  if (!req) return err(404, 'Note introuvable.');
+  if (req.status !== 'approved') return err(400, 'Seules les notes validées peuvent être modifiées.');
+  const p = Grades.parseGrade(grade, fam.gradeScale);
+  if (!p.ok) return err(400, 'Note invalide.');
+  const before = req.grade;
+  if (p.text !== String(before ?? '')) { req.submittedGrade ??= before; req.grade = p.text; }
+  req.editedAt = Date.now();
+  await store.set('family:' + familyId, fam);
+  await logActivity(store, 'editGrade', email, familyId, `Note modifiée: ${req.child} - ${req.subject} (${before} → ${req.grade})`);
+  return { status: 200, body: { ok: true, grade: req } };
 }
 
 // ADMIN_KEY est obligatoire: sans elle (ou avec une clé vide/différente) toute action admin est refusée.
@@ -2075,6 +2104,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'removeAdult': return removeAdult(store, email, body);
     case 'submitGrade': return submitGrade(store, body.familyId, body);
     case 'approveGrade': return approveGrade(store, email, body);
+    case 'editGrade': return editGrade(store, email, body);
     case 'getGradeStats': return getGradeStats(store, email, body);
     case 'getRewardStats': return getRewardStats(store, email, body);
     case 'getSanctionStats': return getSanctionStats(store, email, body);

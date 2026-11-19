@@ -99,3 +99,44 @@ test('enfant: swipe vers un enfant verrouillé demande son PIN, puis vers un enf
   await swipe(page, '#main', LEFT);                 // dernier: rien
   await expect(page.locator('#child-select')).toHaveValue('1');
 });
+
+// Espion sur Element.prototype.animate (enregistre durée et décalage de départ des animations de #main).
+const spyAnimate = (page) => page.addInitScript(() => {
+  window.__anims = [];
+  const orig = Element.prototype.animate;
+  Element.prototype.animate = function (frames, opts) {
+    if (this.id === 'main') window.__anims.push({ duration: opts && opts.duration, from: frames[0].transform });
+    return orig.call(this, frames, opts);
+  };
+});
+const anims = (page) => page.evaluate(() => window.__anims);
+
+test('swipe: animation de 150 ms décalée dans le sens du geste', async ({ page, request }) => {
+  await spyAnimate(page);
+  const f = await newFamily(request);
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  await swipe(page, '#main h2', LEFT);              // suivant: entre par la droite
+  await expect(parentKid(page)).toHaveValue('1');
+  await swipe(page, '#main h2', LEFT);              // déjà au dernier: pas d'animation
+  await swipe(page, '#main h2', RIGHT);             // précédent: entre par la gauche
+  await expect(parentKid(page)).toHaveValue('0');
+  expect(await anims(page)).toEqual([
+    { duration: 150, from: 'translateX(40px)' },
+    { duration: 150, from: 'translateX(-40px)' },
+  ]);
+});
+
+test('swipe avec prefers-reduced-motion: l\'enfant change sans animation', async ({ page, request }) => {
+  await spyAnimate(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const f = await newFamily(request);
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  await swipe(page, '#main h2', LEFT);
+  await expect(parentKid(page)).toHaveValue('1');
+  await questsOf(page, 'Lucas');
+  await swipe(page, '#main h2', RIGHT);
+  await expect(parentKid(page)).toHaveValue('0');
+  expect(await anims(page)).toEqual([]);
+});

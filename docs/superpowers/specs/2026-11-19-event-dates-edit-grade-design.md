@@ -1,0 +1,11 @@
+# Champs de date mobiles + modification d'une note validée — conception
+
+## 1. Champs de date (mobile)
+`input[type=date]` (événements `#ev-start`/`#ev-end`, statistiques `#xs-start`/`#xs-end`) garde une largeur minimale native sur iOS et dépasse du cadre. Règle CSS globale (`public/styles.css`): `input[type=date] { min-width:0; max-width:100%; box-sizing:border-box; -webkit-appearance:none; appearance:none; }` (+ `min-width:0` sur les conteneurs flex concernés, retrait du `min-width:130px` bloquant, « Du » / « Au » qui s'empilent sur écran étroit). Police ≥ 16 px conservée. Test e2e à 375 px et 320 px: aucun champ de date (ni son conteneur) ne dépasse de son cadre ni de la fenêtre (`getBoundingClientRect`, `scrollWidth <= innerWidth`).
+
+## 2. Modifier une note validée (parent)
+- Action serveur `editGrade {familyId, gradeId, grade}` (jeton parent membre de la famille, sinon 403; famille/note introuvable 404; seule une note `status:'approved'` est modifiable, sinon 400; `grade` validée par `Grades.parseGrade` avec l'échelle de la famille, 400 `Note invalide.`; l'ancienne valeur invalide reste acceptée comme point de départ). La valeur d'origine est conservée dans `submittedGrade` si absente (jamais écrasée par une 2e correction), `editedAt` posé, entrée dans le journal (`logActivity`). L'or déjà crédité ne change pas. Un enfant ne peut pas modifier une note validée (la voie `saveFamily` de l'enfant ne doit pas permettre de changer `grade` d'une note approuvée existante: vérifier et fermer si ce n'est pas déjà le cas).
+- UI (section « Approuvées » de l'onglet Notes du parent): bouton « ✏️ Modifier » → champ note (même validation, message d'erreur clair) + Enregistrer/Annuler, par id de note; mention « soumise: … » si la valeur d'origine diffère; les moyennes/statistiques se recalculent.
+
+## Tests
+Vitest `test/edit-grade.test.js`: parent OK, enfant 403, autre famille 403, note en attente 400, note invalide 400, ancienne note au mauvais format corrigeable, `submittedGrade` conservé après 2 corrections, or inchangé, moyenne de `getGradeStats` recalculée, enfant ne peut pas changer une note validée via `saveFamily`. Playwright `e2e/edit-grade.spec.js` et `e2e/event-dates-mobile.spec.js`.
