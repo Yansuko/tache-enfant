@@ -1,0 +1,9 @@
+# Swipe pour changer d'enfant (mobile) — conception
+
+- Glisser vers la gauche = enfant suivant, vers la droite = précédent (`state.activeChild`), sans retour en boucle (rien aux extrémités). S'applique là où un sélecteur d'enfant existe: mode enfant (`#child-select` visible: onglets Quêtes, Notes, Boutique) et écrans parent qui affichent `childSeg()` (Quêtes et Boutique). Ailleurs (Notes, Statistiques, Enfants, Famille côté parent) le swipe ne fait rien.
+- `public/swipe.js` (global `Swipe`, testable en Node comme `public/rollover.js`): `decide({x0,y0,t0},{x1,y1,t1},{count,index}, opts)` → `'next' | 'prev' | null`; seuils: |dx| ≥ 60 px, |dx| > 1.5·|dy|, durée ≤ 600 ms, ≥ 2 enfants, pas d'index hors bornes.
+- Câblage sur `#main` (événements `touchstart`/`touchend`, passifs): ignoré si le geste commence dans `input, select, textarea, [contenteditable], [role=slider]`, un élément défilant horizontalement (`scrollWidth > clientWidth`), ou si une fenêtre modale/dialog est ouverte; si la sélection de texte est active; `touch-action: pan-y` sur `#main` pour ne pas gêner le défilement vertical.
+- Effet = celui du sélecteur: `state.activeChild = …; render()` (le PIN d'un enfant verrouillé est demandé comme aujourd'hui). Animation courte (150 ms, glissement du contenu dans le sens du geste), désactivée avec `prefers-reduced-motion`. Brouillons en cours (champs non vides) non perdus silencieusement: pas de swipe si un champ a le focus.
+
+## Tests
+Vitest `test/swipe.test.js` (seuils, diagonale, lent, extrémités, un seul enfant). Playwright `e2e/swipe-children.spec.js` (émulation tactile `hasTouch`, événements tactiles via CDP `Input.dispatchTouchEvent` ou `TouchEvent` synthétiques): changement d'enfant côté parent (Quêtes) et côté enfant, extrémités sans effet, depuis un champ de saisie sans effet, PIN demandé pour un enfant verrouillé, onglets sans sélecteur sans effet, défilement vertical sans changement, un seul enfant sans effet.
