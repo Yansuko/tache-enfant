@@ -151,6 +151,8 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px
 .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
 .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
 textarea.input { min-height: 90px; resize: vertical; }
+/* iOS Safari donne aux champs de date une largeur intrinsèque qui déborde du cadre: on la neutralise */
+input[type=date] { min-width: 0 !important; max-width: 100%; -webkit-appearance: none; appearance: none; }
 .radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
 .radio input, .seg-opt input {
   position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
@@ -260,7 +262,8 @@ textarea.input { min-height: 90px; resize: vertical; }
 /* ── Stats notes / récompenses / sanctions (#xs-stats) ── */
 .xs-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; font-size: 13px; }
 .xs-filters label { display: flex; align-items: center; gap: 6px; }
-.xs-filters .input { width: auto; min-height: 34px; padding: 4px 12px; font-size: 16px; }
+.xs-filters label:not(.xs-check) { flex: 1 1 150px; min-width: 0; }
+.xs-filters .input { flex: 1; width: 0; min-height: 34px; padding: 4px 12px; font-size: 16px; }
 .xs-check input { accent-color: var(--color-accent); }
 .xs-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .xs-tabs .btn { min-height: 34px; padding: 4px 14px; font-size: 13px; }

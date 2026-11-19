@@ -1054,8 +1054,8 @@ function eventsBlock() {
       <div class="card-title" style="font-size:14px">${e.id ? '✎ Modifier l\'événement' : '+ Nouvel événement'}</div>
       <div class="field" style="margin:0"><label for="ev-name">Nom</label><input class="input" id="ev-name" maxlength="60" placeholder="Ex : Vacances" value="${esc(e.name || '')}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="field" style="margin:0;flex:1;min-width:130px"><label for="ev-start">Du</label><input class="input" id="ev-start" type="date" value="${esc(e.start || day)}" style="width:100%"></div>
-        <div class="field" style="margin:0;flex:1;min-width:130px"><label for="ev-end">Au</label><input class="input" id="ev-end" type="date" value="${esc(e.end || day)}" style="width:100%"></div>
+        <div class="field" style="margin:0;flex:1 1 150px;min-width:0"><label for="ev-start">Du</label><input class="input" id="ev-start" type="date" value="${esc(e.start || day)}" style="width:100%"></div>
+        <div class="field" style="margin:0;flex:1 1 150px;min-width:0"><label for="ev-end">Au</label><input class="input" id="ev-end" type="date" value="${esc(e.end || day)}" style="width:100%"></div>
       </div>
       <div style="display:flex;gap:8px">
         <div class="field" style="margin:0;flex:1"><label for="ev-xp">XP</label>${sel('ev-xp', e.xpMult)}</div>
