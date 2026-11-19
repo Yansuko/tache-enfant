@@ -91,6 +91,7 @@
     display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0;
   }
   .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-neutral-600); }
+  #main { touch-action: pan-y; } /* swipe horizontal entre enfants, défilement vertical natif */
   .lvlup-overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 50; }
   .lvlup-badge {
     font-family: var(--font-heading); font-size: 32px; color: var(--color-accent-800);
@@ -126,6 +127,7 @@
 <script src="/events.js"></script>
 <script src="/shop.js"></script>
 <script src="/grades.js"></script>
+<script src="/swipe.js"></script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -2917,6 +2919,33 @@ async function loadStatsForCurrentChild() {
 document.body.addEventListener('change', e => {
   if ((e.target.name === 'child' || e.target.id === 'child-select') && state) { state.activeChild = +e.target.value; render(); }
 });
+
+/* ── Swipe entre enfants (mobile): là où un sélecteur d'enfant est affiché ── */
+{
+  const mainEl = document.getElementById('main');
+  const FIELD = 'input, select, textarea, [contenteditable], [role=slider]';
+  const scrollsX = el => el.scrollWidth > el.clientWidth && /auto|scroll/.test(getComputedStyle(el).overflowX);
+  let start = null;
+  mainEl.addEventListener('touchstart', e => {
+    start = null;
+    const picker = state && (state.role === 'enfant' ? document.getElementById('child-select').style.display !== 'none' : mainEl.querySelector('input[name=child]'));
+    if (!picker || creatingPin || e.touches.length !== 1) return;
+    if (document.activeElement?.matches(FIELD) || document.querySelector('dialog[open], [aria-modal=true]') || String(getSelection())) return;
+    for (let el = e.target; el && el !== mainEl; el = el.parentElement) if (el.matches(FIELD) || scrollsX(el)) return;
+    const t = e.touches[0];
+    start = { x0: t.clientX, y0: t.clientY, t0: e.timeStamp };
+  }, { passive: true });
+  mainEl.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dir = start && t && Swipe.decide(start, { x1: t.clientX, y1: t.clientY, t1: e.timeStamp }, { count: state.children.length, index: state.activeChild });
+    start = null;
+    if (!dir) return;
+    state.activeChild += dir === 'next' ? 1 : -1;
+    render();
+    if (mainEl.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+      mainEl.animate([{ transform: `translateX(${dir === 'next' ? 40 : -40}px)`, opacity: 0.4 }, { transform: 'none', opacity: 1 }], { duration: 150, easing: 'ease-out' });
+  }, { passive: true });
+}
 
 /* self-check (fonctions pures) */
 console.assert(gradeReward('16').xp === 50 && gradeReward('13,5').gold === 5 && gradeReward('8').gold === 0, 'gradeReward barème');
