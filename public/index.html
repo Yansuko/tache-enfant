@@ -1370,9 +1370,9 @@ function screenEnfants() {
   <div class="deck deck-2" style="padding:14px 20px">
     ${children.length ? children.map((c, i) => `
     <div class="card elev-sm" style="gap:10px;padding:12px">
-     <div style="display:flex;align-items:center;gap:12px">
+     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div class="task-icon">🧒</div>
-      <div style="flex:1">
+      <div style="flex:1 1 140px">
         <div class="card-title" style="font-size:15px">${esc(c.name)}</div>
         <span class="tag tag-accent-2" style="margin-top:4px">⚔️ Niv. ${level(c.xp)} · ${c.xp} XP</span>
         <span class="tag tag-accent" style="margin-top:4px;margin-left:6px">🪙 ${c.gold}</span>

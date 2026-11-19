@@ -151,8 +151,13 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px
 .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
 .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
 textarea.input { min-height: 90px; resize: vertical; }
-/* iOS Safari donne aux champs de date une largeur intrinsèque qui déborde du cadre: on la neutralise */
-input[type=date] { min-width: 0 !important; max-width: 100%; -webkit-appearance: none; appearance: none; }
+/* iOS Safari donne aux champs natifs (heure, date, nombre, liste…) une largeur intrinsèque qui ignore width:100%
+   et déborde du cadre: on la neutralise pour tous les champs, et les champs flexibles peuvent rétrécir */
+input, select, textarea { min-width: 0 !important; max-width: 100%; box-sizing: border-box; }
+.field { min-width: 0; }
+input[type=time], input[type=date], input[type=datetime-local], input[type=month], input[type=week] {
+  -webkit-appearance: none; appearance: none; min-height: 36px;
+}
 .radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
 .radio input, .seg-opt input {
   position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
