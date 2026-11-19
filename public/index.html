@@ -1274,6 +1274,7 @@ function screenSanctions() {
 }
 
 let gradeFix = null;   // {id, grade, err}: correction refusée, affichée sur la carte « À valider »
+let gradeEdit = null;  // {id, grade?, err?}: correction d'une note déjà validée, ouverte sur la carte « Approuvées »
 let gradeFilter = { child: '', subject: '' };   // filtres de l'onglet Notes: état client, non persisté
 const fmt20 = n => String(Math.round(n * 10) / 10).replace('.', ',');
 const gradeDate = r => { const t = r.approvedAt ?? r.submittedAt; return t ? new Date(t).toLocaleDateString('fr-FR') : ''; };
@@ -1312,7 +1313,7 @@ function screenGrades() {
         </div>
       </div>`;
   const doneCard = (r, cls, mark) => `
-      <div class="card elev-sm ${cls}" style="gap:8px;margin-bottom:10px;opacity:0.7">
+      <div class="card elev-sm ${cls}" style="gap:8px;margin-bottom:10px;opacity:${gradeEdit?.id === r.id && r.id ? 1 : 0.7}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="min-width:0">
             <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
@@ -1320,6 +1321,16 @@ function screenGrades() {
           </div>
           <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙 ${mark}</span>
         </div>
+        ${cls !== 'grade-approved' || !r.id ? '' : gradeEdit?.id !== r.id ? `<button class="btn btn-ghost" style="align-self:flex-start" data-action="edit-grade" data-id="${esc(r.id)}">✏️ Modifier</button>` : `
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+          <label for="grade-edit-${esc(r.id)}" style="color:var(--color-neutral-600)">Nouvelle note:</label>
+          <input id="grade-edit-${esc(r.id)}" class="input" value="${esc(gradeEdit.grade ?? r.grade ?? '')}" style="width:120px;padding:4px;font-size:16px">
+        </div>
+        ${gradeEdit.err ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeEdit.err)}</p>` : ''}
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" style="flex:1" data-action="save-grade-edit" data-id="${esc(r.id)}">Enregistrer</button>
+          <button class="btn btn-secondary" style="flex:1" data-action="cancel-grade-edit" data-id="${esc(r.id)}">Annuler</button>
+        </div>`}
       </div>`;
   const section = s => `
     <section class="grade-section" style="display:flex;flex-direction:column;gap:10px">
@@ -2504,6 +2515,20 @@ const ACTIONS = {
     const child = state.children.find(c => c.name === grade.child);
     if (child && r.child) { child.gold = r.child.gold; child.goldBase = r.child.gold; }
     render();
+  },
+  'edit-grade': el => { gradeEdit = { id: el.dataset.id }; },
+  'cancel-grade-edit': () => { gradeEdit = null; },
+  'save-grade-edit': async el => {
+    const id = el.dataset.id;
+    const grade = (state.gradeRequests || []).find(r => r && r.id === id && r.status === 'approved');
+    if (!grade) { gradeEdit = null; return; }
+    const note = val(`grade-edit-${id}`), parsed = Grades.parseGrade(note, state.gradeScale);
+    if (!parsed.ok) { gradeEdit = { id, grade: note, err: gradeHint() }; return; }
+    let r;
+    try { r = await api('editGrade', { familyId: state.id, gradeId: id, grade: parsed.text }); }
+    catch (e) { gradeEdit = { id, grade: note, err: String(e) === 'Note invalide.' ? gradeHint() : '⚠️ ' + e }; return; }
+    Object.assign(grade, r.grade);   // note, submittedGrade, editedAt du serveur: la sauvegarde qui suit ne la défait pas
+    gradeEdit = null;
   },
   'refuse-grade': el => {
     const grade = (state.gradeRequests || []).find(r => r && r.id === el.dataset.id && r.status === 'pending');
