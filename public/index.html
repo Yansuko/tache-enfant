@@ -736,6 +736,7 @@ async function persistFamily() {
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
       console.log(`[PERSIST-TOKEN-${persistId}] Token present:`, !!token);
+      const sent = JSON.parse(JSON.stringify(payload.family));   // copie: payload partage ses tableaux avec state
       const res = await api('saveFamily', payload);
       if (!res.family) throw new Error('saveFamily returned no family: ' + JSON.stringify(res));
 
@@ -791,6 +792,10 @@ async function persistFamily() {
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
       };
+      // Modifications locales faites pendant l'envoi (ex. ajout puis suppression rapide): rejouées sur la réponse,
+      // sinon elle les écrase et la boucle renvoie l'ancien état au serveur (l'élément supprimé revient).
+      for (const k of ['requests', 'gradeRequests', 'sanctionsList', 'proposals', 'rewards', 'questList', 'taskRequests', 'actionLog', 'reminders', 'events'])
+        serverFields[k] = rebaseList(serverFields[k], sent[k], state[k]);
       Object.assign(state, serverFields);
       const sentDel = payload.family.remindersDeleted || [];   // suppressions de rappels prises en compte par le serveur
       if (sentDel.length) state.remindersDeleted = (state.remindersDeleted || []).filter(id => !sentDel.includes(id));
@@ -815,6 +820,17 @@ async function persistFamily() {
   saving = false;
   localStorage.setItem('statsChildIndex', statsChildIndex);
   localStorage.setItem('statsPeriod', statsPeriod);
+}
+// Réponse du serveur + (local − envoyé): suppressions, ajouts et modifications locales postérieures à l'envoi, par id
+// (sans id: par contenu). ponytail: enfants exclus (fusion propre via mergeValidations).
+function rebaseList(server, sent, local) {
+  if (!Array.isArray(server) || !Array.isArray(sent) || !Array.isArray(local)) return server;
+  const key = x => x?.id ?? JSON.stringify(x);
+  const was = new Map(sent.map(x => [key(x), JSON.stringify(x)]));
+  const now = new Map(local.map(x => [key(x), x]));
+  const changed = local.filter(x => was.get(key(x)) !== JSON.stringify(x));   // ajoutés ou modifiés localement
+  const drop = new Set([...was.keys()].filter(k => !now.has(k)).concat(changed.map(key)));
+  return [...server.filter(x => !drop.has(key(x))), ...changed];
 }
 function stripUi(f) { const { role, tab, activeChild, memberInfo, ...rest } = f; return rest; }
 async function save() { return await persistFamily(); }

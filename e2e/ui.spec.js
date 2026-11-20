@@ -1,4 +1,4 @@
-import { test, expect, settle, instrument } from './helpers.js';
+import { test, expect, settle, instrument, newFamily, parentLogin, me } from './helpers.js';
 
 // Base vierge à chaque démarrage: le compte de démo (parent@demo.fr / demo) est semé au premier appel API.
 const login = async (page, password = 'demo') => {
@@ -56,6 +56,38 @@ test('un modèle de quête supprimé ne revient ni au rechargement ni après une
   await tab(page, 'Quêtes');
   await expect(templateCards(page, 'Modèle éphémère')).toHaveCount(0);
   await expect(templateCards(page, 'Ranger sa chambre')).toHaveCount(1);   // pas de doublons
+});
+
+// Réseau lent: le parent supprime le modèle pendant que l'enregistrement de son ajout est encore en vol.
+// La réponse de l'ajout ne doit pas écraser la suppression locale (sinon elle est renvoyée au serveur et le modèle revient).
+test('un modèle supprimé pendant l\'enregistrement de son ajout ne revient pas', async ({ page, request }) => {
+  const f = await newFamily(request, fam => { fam.questList = [{ id: 'q-lit', icon: '⭐', name: 'Faire son lit', xp: 10, gold: 5, frequency: 'daily' }]; });
+  await parentLogin(page, f);
+  await tab(page, 'Quêtes');
+  let release, held = false;
+  const gate = new Promise(r => { release = r; });
+  await page.route('**/api', async route => {
+    const b = route.request().postDataJSON();
+    if (held || b?.action !== 'saveFamily' || !b.family.questList.some(q => q.name === 'Modèle lent')) return route.continue();
+    held = true;
+    const res = await route.fetch();          // le serveur enregistre l'ajout...
+    await gate;                               // ...mais sa réponse arrive après la suppression
+    return route.fulfill({ response: res });
+  });
+
+  await page.locator('#qd-name').fill('Modèle lent');
+  await page.locator('#qd-xp').fill('12');
+  await page.getByRole('button', { name: 'Enregistrer le modèle' }).click();
+  await expect(templateCards(page, 'Modèle lent')).toHaveCount(1);
+  await expect.poll(() => held).toBe(true);
+  await templateCards(page, 'Modèle lent').locator('[data-action="del-quest-def"]').click();
+  await expect(templateCards(page, 'Modèle lent')).toHaveCount(0);
+  release();
+
+  await settle(page);
+  await syncCycle(page);
+  await expect(templateCards(page, 'Modèle lent')).toHaveCount(0);
+  expect((await me(request, f)).questList.map(q => q.name)).toEqual(['Faire son lit']);
 });
 
 test('une quête déjà validée puis réassignée arrive à faire, même après une synchro', async ({ page }) => {
