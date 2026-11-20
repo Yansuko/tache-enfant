@@ -7,21 +7,20 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/logo-192.png">
 <link rel="apple-touch-icon" href="/logo-192.png">
-<meta name="theme-color" content="#C4785C">
+<meta name="theme-color" content="#f3d6c6">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="./styles.css">
 <style>
-  body { background: var(--color-neutral-200); }
   .phone {
     max-width: 440px; min-height: 100dvh; margin: 0 auto;
-    background: var(--color-bg); display: flex; flex-direction: column;
-    box-shadow: var(--shadow-md);
+    display: flex; flex-direction: column;
   }
   .topbar {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 10px 16px; border-bottom: 1px solid var(--color-divider);
-    font-size: 12px; color: var(--color-neutral-600); grid-area: top;
+    font-size: 12px; color: var(--color-text-muted); grid-area: top;
+    position: relative; z-index: 2;
   }
   .topbar > span { font-family: var(--font-heading); font-size: 14px; color: var(--color-text); white-space: nowrap; }
   .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -30,12 +29,12 @@
   .bottom-nav {
     display: flex; justify-content: space-around; align-items: center;
     padding: 10px 16px; border-top: 1px solid var(--color-divider);
-    position: sticky; bottom: 0; background: var(--color-bg); grid-area: nav;
+    position: sticky; bottom: 0; z-index: 2; grid-area: nav;
   }
   .no-nav .bottom-nav { display: none; }
   .bottom-nav button {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
-    background: none; border: 0; cursor: pointer; color: var(--color-neutral-600);
+    background: none; border: 0; cursor: pointer; color: var(--color-text-muted);
     font-family: var(--font-heading); font-size: 11px; padding: 4px 10px; border-radius: 12px;
   }
   .bottom-nav button.active { color: var(--color-accent-700); }
@@ -58,6 +57,8 @@
     .phone {
       max-width: 1080px; height: calc(100dvh - 48px); min-height: 560px;
       border-radius: 24px; overflow: hidden;
+      border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+      background: color-mix(in srgb, var(--glass-bg) 40%, transparent);
       display: grid; grid-template-columns: 236px 1fr; grid-template-rows: auto 1fr;
       grid-template-areas: "top top" "nav main";
     }
@@ -70,7 +71,7 @@
     .bottom-nav button {
       flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; font-size: 13px;
     }
-    .bottom-nav button.active { background: var(--color-accent-100); color: var(--color-accent-800); }
+    .bottom-nav button.active { background: var(--tint-accent); color: var(--color-accent-800); }
     .deck-2 { grid-template-columns: 1fr 1fr; }
     main > div { padding-left: 0 !important; padding-right: 0 !important; }
     /* Stats desktop optimization */
@@ -84,13 +85,13 @@
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
     border: 2px solid var(--color-divider); background: transparent; padding: 0;
   }
-  .check.done { background: var(--color-accent-2-500); border-color: var(--color-accent-2-500);
-    color: #fff; font-size: 14px; }
+  .check.done { background: var(--color-accent-2-600); border-color: var(--color-accent-2-600);
+    color: var(--color-on-accent); font-size: 14px; }
   .task-icon {
-    width: 40px; height: 40px; border-radius: 50%; background: var(--color-accent-2-100);
+    width: 40px; height: 40px; border-radius: 50%; background: var(--tint-accent-2);
     display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0;
   }
-  .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-neutral-600); }
+  .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); }
   #main { touch-action: pan-y; } /* swipe horizontal entre enfants, défilement vertical natif */
   .lvlup-overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 50; }
   .lvlup-badge {
@@ -112,12 +113,12 @@
   }
   #toast {
     position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-    background: var(--color-accent-800); color: #fff; padding: 10px 16px;
+    background: var(--color-accent-800); color: var(--color-accent-100); padding: 10px 16px;
     border-radius: 999px; font-size: 13px; display: none; z-index: 60;
   }
   #flash {
     position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: calc(100vw - 32px);
-    background: var(--color-neutral-800, #333); color: #fff; padding: 10px 16px;
+    background: var(--color-text); color: var(--color-bg); padding: 10px 16px;
     border-radius: 999px; font-size: 13px; z-index: 61; text-align: center;
   }
 </style>
@@ -128,6 +129,43 @@
 <script src="/shop.js"></script>
 <script src="/grades.js"></script>
 <script src="/swipe.js"></script>
+<script src="/sun.js"></script>
+<script src="/themes.js"></script>
+<script>
+// ── Apparence: variables du thème sur :root, data-theme/data-mode sur <html>, theme-color ──
+// Choix de l'appareil (localStorage dk-appearance), sinon prefers-color-scheme, sinon Auto (coucher du soleil).
+// Réévalué au lancement, au retour de visibilité, au changement de thème système et toutes les 60 s;
+// le DOM n'est touché que si le résultat change (pas de clignotement).
+const APPEARANCE_KEY = 'dk-appearance';
+let appliedAppearance = '';
+function readAppearance() {
+  try { return JSON.parse(localStorage.getItem(APPEARANCE_KEY)); } catch { return null; }
+}
+function applyAppearance(appearance = readAppearance()) {
+  if (!window.Themes || !window.matchMedia) return false;   // script absent (jsdom, cache partiel): thème par défaut du CSS
+  const loc = Themes.normalizeAppearance(appearance).location || {};
+  const systemDark = matchMedia('(prefers-color-scheme: dark)').matches ? true
+    : matchMedia('(prefers-color-scheme: light)').matches ? false : undefined;
+  const r = Themes.resolve(appearance, { now: Date.now(), lat: loc.lat, lon: loc.lon, systemDark });
+  const vars = Themes.cssVars(r.theme, r.accent), mode = r.isDark ? 'dark' : 'light';
+  const key = JSON.stringify([r.theme.id, mode, vars]);
+  if (key === appliedAppearance) return false;
+  appliedAppearance = key;
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+  root.style.colorScheme = mode;
+  root.dataset.theme = r.theme.id;
+  root.dataset.mode = mode;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', r.theme.themeColor);
+  return true;
+}
+applyAppearance();
+if (window.Themes && window.matchMedia) {
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) applyAppearance(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance());
+  setInterval(() => applyAppearance(), 60000);
+}
+</script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
@@ -698,6 +736,7 @@ async function persistFamily() {
       const lucas = payload.family.children?.find(c => c.name === 'Lucas');
       console.log(`[PERSIST-SEND-${persistId}] ${persistTime} Lucas BEFORE send:`, JSON.stringify(lucas?.tasks?.map(t => ({ name: t.name, done: t.done, completedAt: t.completedAt }))));
       console.log(`[PERSIST-TOKEN-${persistId}] Token present:`, !!token);
+      const sent = JSON.parse(JSON.stringify(payload.family));   // copie: payload partage ses tableaux avec state
       const res = await api('saveFamily', payload);
       if (!res.family) throw new Error('saveFamily returned no family: ' + JSON.stringify(res));
 
@@ -753,6 +792,10 @@ async function persistFamily() {
         day: res.family.day,
         dailyBonus: res.family.dailyBonus
       };
+      // Modifications locales faites pendant l'envoi (ex. ajout puis suppression rapide): rejouées sur la réponse,
+      // sinon elle les écrase et la boucle renvoie l'ancien état au serveur (l'élément supprimé revient).
+      for (const k of ['requests', 'gradeRequests', 'sanctionsList', 'proposals', 'rewards', 'questList', 'taskRequests', 'actionLog', 'reminders', 'events'])
+        serverFields[k] = rebaseList(serverFields[k], sent[k], state[k]);
       Object.assign(state, serverFields);
       const sentDel = payload.family.remindersDeleted || [];   // suppressions de rappels prises en compte par le serveur
       if (sentDel.length) state.remindersDeleted = (state.remindersDeleted || []).filter(id => !sentDel.includes(id));
@@ -778,6 +821,17 @@ async function persistFamily() {
   localStorage.setItem('statsChildIndex', statsChildIndex);
   localStorage.setItem('statsPeriod', statsPeriod);
 }
+// Réponse du serveur + (local − envoyé): suppressions, ajouts et modifications locales postérieures à l'envoi, par id
+// (sans id: par contenu). ponytail: enfants exclus (fusion propre via mergeValidations).
+function rebaseList(server, sent, local) {
+  if (!Array.isArray(server) || !Array.isArray(sent) || !Array.isArray(local)) return server;
+  const key = x => x?.id ?? JSON.stringify(x);
+  const was = new Map(sent.map(x => [key(x), JSON.stringify(x)]));
+  const now = new Map(local.map(x => [key(x), x]));
+  const changed = local.filter(x => was.get(key(x)) !== JSON.stringify(x));   // ajoutés ou modifiés localement
+  const drop = new Set([...was.keys()].filter(k => !now.has(k)).concat(changed.map(key)));
+  return [...server.filter(x => !drop.has(key(x))), ...changed];
+}
 function stripUi(f) { const { role, tab, activeChild, memberInfo, ...rest } = f; return rest; }
 async function save() { return await persistFamily(); }
 
@@ -787,7 +841,7 @@ function taskRow(t, i, small) {
   const sz = small ? 22 : 26;
   const freqLabel = { unique: '🎯', daily: '📅', weekly: '📆', monthly: '🗓️' }[t.frequency || 'daily'];
   return `
-  <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px${t.done ? ';opacity:0.6' : ''}">
+  <div class="card elev-sm${t.done ? ' dim' : ''}" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px">
     ${small ? '' : `<div class="task-icon">${t.icon || '⭐'}</div>`}
     <button class="check${t.done ? ' done' : ''}" style="width:${sz}px;height:${sz}px" data-action="toggle-task" data-i="${i}" aria-label="${t.done ? 'Fait' : 'À faire'}">${t.done ? '✓' : ''}</button>
     <div style="flex:1">
@@ -804,23 +858,23 @@ function screenAccueil() {
   return `
   <div style="padding:22px 20px 4px;display:flex;align-items:flex-start;justify-content:space-between">
     <div>
-      <div style="font-size:13px;color:var(--color-neutral-600)">Salut 👋</div>
+      <div style="font-size:13px;color:var(--color-text-muted)">Salut 👋</div>
       <h2 style="margin:2px 0 0;font-size:26px">${esc(c.name)}</h2>
     </div>
-    <div style="display:flex;align-items:center;gap:6px;background:var(--color-accent-100);color:var(--color-accent-800);padding:8px 14px;border-radius:999px;font-family:var(--font-heading);font-size:16px">🪙 ${c.gold}</div>
+    <div style="display:flex;align-items:center;gap:6px;background:var(--tint-accent);color:var(--color-accent-800);padding:8px 14px;border-radius:999px;font-family:var(--font-heading);font-size:16px">🪙 ${c.gold}</div>
   </div>
-  <div style="margin:12px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-accent-2-100);display:flex;flex-direction:column;gap:6px">
+  <div style="margin:12px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--tint-accent-2);display:flex;flex-direction:column;gap:6px">
     <div style="display:flex;align-items:baseline;justify-content:space-between">
       <span style="font-family:var(--font-heading);font-size:16px;color:var(--color-accent-2-800)">⚔️ Niveau ${level(c.xp)}</span>
-      <span style="font-size:12px;color:var(--color-accent-2-700)">${c.xp % LVL_XP}/${LVL_XP} XP</span>
+      <span style="font-size:12px;color:var(--color-accent-2-800)">${c.xp % LVL_XP}/${LVL_XP} XP</span>
     </div>
-    <div style="height:8px;border-radius:999px;background:var(--color-accent-2-300);overflow:hidden">
+    <div style="height:8px;border-radius:999px;background:color-mix(in srgb, var(--color-accent-2-500) 30%, transparent);overflow:hidden">
       <div style="height:100%;width:${(c.xp % LVL_XP) / LVL_XP * 100}%;background:var(--color-accent-2-600);border-radius:999px"></div>
     </div>
   </div>
   ${(() => {
     const m = eventMult(c), txt = multText(m);
-    return m.names.length && txt ? `<div class="event-banner" role="status" style="margin:10px 20px 0;padding:10px 14px;border-radius:var(--radius-lg);background:var(--color-accent-100);color:var(--color-accent-800);font-family:var(--font-heading);font-size:15px;overflow-wrap:anywhere">🎉 ${esc(m.names.join(', '))}: ${txt}</div>` : '';
+    return m.names.length && txt ? `<div class="event-banner" role="status" style="margin:10px 20px 0;padding:10px 14px;border-radius:var(--radius-lg);background:var(--tint-accent);color:var(--color-accent-800);font-family:var(--font-heading);font-size:15px;overflow-wrap:anywhere">🎉 ${esc(m.names.join(', '))}: ${txt}</div>` : '';
   })()}
   ${(() => {
     const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
@@ -829,17 +883,21 @@ function screenAccueil() {
     const got = c.dailyBonusDay === state.day;
     const dailyBonus = dailyBonusOf(c);
     return `
-    <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px">
+    <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--glass-bg);border:1px solid var(--glass-border);box-shadow:var(--glass-shadow);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);display:flex;flex-direction:column;gap:6px">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <span style="font-family:var(--font-heading);font-size:15px">🎯 Mission du jour · ${doneN}/${daily.length}</span>
         ${got ? '<span class="tag tag-accent-2">Bonus reçu 🎁</span>' : loot(dailyBonus.xp, dailyBonus.gold).replaceAll('margin-top:4px', '')}
       </div>
-      <div style="height:6px;border-radius:999px;background:var(--color-neutral-300);overflow:hidden">
+      <div style="height:6px;border-radius:999px;background:var(--tint-neutral);overflow:hidden">
         <div style="height:100%;width:${doneN / daily.length * 100}%;background:var(--color-accent-500);border-radius:999px"></div>
       </div>
     </div>`;
   })()}
   <div style="padding:10px 20px 0">${pushStatusCard()}</div>
+  <div style="padding:10px 20px 0"><div class="card elev-sm">
+    <button class="btn btn-secondary btn-block" data-action="ap-toggle" aria-expanded="${apOpen}">🎨 Apparence</button>
+    ${apOpen ? appearanceBlock() : ''}
+  </div></div>
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
   <div class="deck deck-2" style="padding:4px 20px 16px">
     ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || "<p class='text-muted' style='padding-top:8px'>Aucune quête pour aujourd'hui 🎉</p>"}
@@ -871,7 +929,7 @@ function screenNotes() {
   return `
   <div style="padding:22px 20px 4px">
     <h2 style="margin:0;font-size:24px">Mes notes 📘</h2>
-    <p style="margin:6px 0 0;font-size:13px;color:var(--color-neutral-600)">Soumet tes notes pour gagner de l'or !</p>
+    <p style="margin:6px 0 0;font-size:13px;color:var(--color-text-muted)">Soumet tes notes pour gagner de l'or !</p>
   </div>
   <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1;overflow:auto">
     ${approved.length > 0 ? `
@@ -893,7 +951,7 @@ function screenNotes() {
     <div>
       <div class="kicker" style="margin-bottom:10px">En attente d'approbation ⏳</div>
       ${pending.map(r => `
-      <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
+      <div class="card elev-sm dim" style="gap:8px;margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <span class="card-title" style="font-size:15px">${esc(r.subject)}</span>
           <span class="tag tag-accent">${esc(r.gold)} 🪙</span>
@@ -914,7 +972,7 @@ function screenNotes() {
         <div class="field">
           <label for="grade-value">Note obtenue</label>
           <input class="input" id="grade-value" inputmode="decimal" placeholder="Ex : 15,5" value="${esc(gradeForm.grade || '')}" aria-describedby="grade-help">
-          <small id="grade-help" style="color:var(--color-neutral-600)">15,5, 17/20 ou TB</small>
+          <small id="grade-help" style="color:var(--color-text-muted)">15,5, 17/20 ou TB</small>
           ${gradeForm.err ? `<p id="grade-error" role="alert" style="margin:4px 0 0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeForm.err)}</p>` : ''}
         </div>
         <div class="field">
@@ -946,12 +1004,12 @@ function screenRecompenses() {
   const statusTag = { approved: '<span class="tag tag-accent-2">Achetée ✅</span>', pending: '<span class="tag tag-neutral">En attente</span>', refused: '<span class="tag tag-accent">Refusée</span>' };
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:24px">Boutique 🛒</h2></div>
-  <div style="margin:14px 20px 18px;padding:16px;border-radius:var(--radius-lg);background:var(--color-accent-100);display:flex;flex-direction:column;gap:8px">
+  <div style="margin:14px 20px 18px;padding:16px;border-radius:var(--radius-lg);background:var(--tint-accent);display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;align-items:baseline;justify-content:space-between">
       <span style="font-family:var(--font-heading);font-size:22px;color:var(--color-accent-800)">🪙 ${c.gold}</span>
-      <span style="font-size:12px;color:var(--color-accent-700)">${next ? `prochain article à ${next.cost} 🪙` : 'Tout est à portée de bourse !'}</span>
+      <span style="font-size:12px;color:var(--color-accent-800)">${next ? `prochain article à ${next.cost} 🪙` : 'Tout est à portée de bourse !'}</span>
     </div>
-    <div style="height:8px;border-radius:999px;background:var(--color-accent-300);overflow:hidden">
+    <div style="height:8px;border-radius:999px;background:color-mix(in srgb, var(--color-accent-500) 30%, transparent);overflow:hidden">
       <div style="height:100%;width:${pct}%;background:var(--color-accent-600);border-radius:999px"></div>
     </div>
   </div>
@@ -961,8 +1019,8 @@ function screenRecompenses() {
       const manque = r.cost - c.gold;
       const pending = requests.some(q => q.child === c.name && q.name === r.name && q.status === 'pending');
       return `
-      <div class="card elev-sm shop-item" style="flex-direction:row;align-items:center;gap:12px${locked || manque > 0 ? ';opacity:0.55' : ''}">
-        <div style="font-size:24px">${locked ? '🔒' : r.icon}</div>
+      <div class="card elev-sm shop-item${locked || manque > 0 ? ' dim' : ''}" style="flex-direction:row;align-items:center;gap:12px">
+        <div class="shop-ico" style="font-size:24px">${locked ? '🔒' : r.icon}</div>
         <div style="flex:1"><div class="card-title" style="font-size:15px">${esc(r.name)}</div>
           <span class="tag tag-outline">${r.cost} 🪙</span>${r.lvl > 1 ? ` <span class="tag ${locked ? 'tag-accent' : 'tag-accent-2'}">Niv. ${r.lvl}</span>` : ''}</div>
         ${locked
@@ -1017,7 +1075,7 @@ function remindersBlock() {
     <div class="card elev-sm reminder-row" style="flex-direction:row;align-items:center;gap:10px;padding:12px">
       <div style="flex:1;min-width:0">
         <div class="card-title" style="font-size:14px">${esc(kids.find(k => k.id === r.childId)?.name || '?')} · ${esc(r.questName || 'Toutes les quêtes')}</div>
-        <div style="font-size:12px;color:var(--color-neutral-600)">${r.days.map(d => DAYS[d]).join(', ')} à ${esc(r.time)}</div>
+        <div style="font-size:12px;color:var(--color-text-muted)">${r.days.map(d => DAYS[d]).join(', ')} à ${esc(r.time)}</div>
       </div>
       <input type="checkbox" data-action="toggle-reminder" data-i="${i}"${r.enabled ? ' checked' : ''} aria-label="Rappel actif" style="width:22px;height:22px">
       <button class="btn btn-icon btn-ghost" data-action="del-reminder" data-i="${i}" aria-label="Supprimer le rappel">✕</button>
@@ -1045,7 +1103,7 @@ function eventsBlock() {
     <div class="card elev-sm event-row" style="flex-direction:row;align-items:center;gap:10px;padding:12px">
       <div style="flex:1;min-width:0">
         <div class="card-title" style="font-size:14px;overflow-wrap:anywhere">${esc(ev.name)} · ${esc(multText(ev) || 'aucun bonus')}</div>
-        <div style="font-size:12px;color:var(--color-neutral-600)">${xsDay(ev.start)} → ${xsDay(ev.end)} · ${ev.childIds?.length ? esc(ev.childIds.map(id => kids.find(k => k.id === id)?.name || '?').join(', ')) : 'Tous les enfants'}</div>
+        <div style="font-size:12px;color:var(--color-text-muted)">${xsDay(ev.start)} → ${xsDay(ev.end)} · ${ev.childIds?.length ? esc(ev.childIds.map(id => kids.find(k => k.id === id)?.name || '?').join(', ')) : 'Tous les enfants'}</div>
       </div>
       <button class="btn btn-icon btn-ghost" data-action="edit-event" data-i="${i}" aria-label="Modifier l'événement">✎</button>
       <button class="btn btn-icon btn-ghost" data-action="del-event" data-i="${i}" aria-label="Supprimer l'événement">✕</button>
@@ -1061,7 +1119,7 @@ function eventsBlock() {
         <div class="field" style="margin:0;flex:1"><label for="ev-xp">XP</label>${sel('ev-xp', e.xpMult)}</div>
         <div class="field" style="margin:0;flex:1"><label for="ev-gold">Or 🪙</label>${sel('ev-gold', e.goldMult)}</div>
       </div>
-      <div style="font-size:13px;color:var(--color-neutral-600)">Enfants (aucun coché = tous)</div>
+      <div style="font-size:13px;color:var(--color-text-muted)">Enfants (aucun coché = tous)</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">${kids.map(k => `<label style="display:flex;align-items:center;gap:4px;font-size:14px"><input type="checkbox" name="ev-child" value="${esc(k.id)}"${e.childIds?.includes(k.id) ? ' checked' : ''}>${esc(k.name)}</label>`).join('')}</div>
       <button class="btn btn-secondary btn-block" data-action="save-event">${e.id ? 'Enregistrer l\'événement' : 'Ajouter l\'événement'}</button>
       ${e.id ? '<button class="btn btn-ghost btn-block" data-action="cancel-event">Annuler</button>' : ''}
@@ -1096,7 +1154,7 @@ function screenTaches() {
         <span class="card-title" style="font-size:15px">${esc(req.taskName)}</span>
         ${loot(req.xp, req.gold)}
       </div>
-      <div style="font-size:12px;color:var(--color-neutral-600)"><span class="tag tag-neutral">${freqLabel}</span> ${date}</div>
+      <div style="font-size:12px;color:var(--color-text-muted)"><span class="tag tag-neutral">${freqLabel}</span> ${date}</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1" data-action="approve-task" data-i="${realIdx}">Valider</button>
         <button class="btn btn-secondary" style="flex:1" data-action="reject-task" data-i="${realIdx}">Refuser</button>
@@ -1116,7 +1174,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="new-task-xp" type="number" min="1" placeholder="Ex : 20"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="new-task-gold" type="number" min="0" placeholder="Ex : 10"></div>
       </div>
-      <div style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
+      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-primary btn-block" data-action="add-task">Ajouter la quête</button>
     </div>
 
@@ -1144,7 +1202,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="qd-xp" type="number" min="1" placeholder="Ex : 15"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="qd-gold" type="number" min="0" placeholder="Ex : 7"></div>
       </div>
-      <div style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
+      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-secondary btn-block" data-action="add-quest-def">Enregistrer le modèle</button>
     </div>
   </div>`;
@@ -1173,7 +1231,7 @@ function screenSanctions() {
   ${pending.map(r => {
     const qi = requests.indexOf(r);
     return `
-    <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-accent-100);display:flex;align-items:center;gap:10px">
+    <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--tint-accent);display:flex;align-items:center;gap:10px">
       <span style="font-size:18px">🛒</span>
       <div style="flex:1;font-size:13px;color:var(--color-accent-800)"><strong>${esc(r.child)}</strong> veut acheter : ${esc(r.name)} (${esc(r.cost)} 🪙)</div>
     </div>
@@ -1206,7 +1264,7 @@ function screenSanctions() {
     ${(() => {
       const c = child();
       return c && c.sanctions && Array.isArray(c.sanctions) ? c.sanctions.map(s => `
-    <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:10px;color:var(--color-neutral-700)">
+    <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:10px;color:var(--color-text-muted)">
       <span>${esc(s.motif)} · ${esc(c.name)}</span><span class="tag tag-accent">-${s.gold} 🪙</span>
     </div>`).join('') : '';
     })()}
@@ -1247,7 +1305,7 @@ function screenSanctions() {
       <span style="font-size:14px">${r.icon} ${esc(r.name)}</span>
       <div style="display:flex;align-items:center;gap:6px"><span class="tag tag-outline">${r.cost} 🪙</span><span class="tag tag-neutral">Niv. ${r.lvl}</span><button class="btn btn-icon btn-ghost" data-action="del-reward" data-i="${i}" aria-label="Supprimer">✕</button></div>
     </div>
-    ${state.children.length ? `<details style="margin:4px 0 6px;font-size:13px"><summary style="cursor:pointer;color:var(--color-neutral-700)">Par enfant${r.childIds?.length ? ` · réservé à ${esc(state.children.filter(k => r.childIds.includes(k.id)).map(k => k.name).join(', '))}` : ''}${Object.keys(r.prices || {}).length ? ' · prix propres' : ''}</summary>
+    ${state.children.length ? `<details style="margin:4px 0 6px;font-size:13px"><summary style="cursor:pointer;color:var(--color-text-muted)">Par enfant${r.childIds?.length ? ` · réservé à ${esc(state.children.filter(k => r.childIds.includes(k.id)).map(k => k.name).join(', '))}` : ''}${Object.keys(r.prices || {}).length ? ' · prix propres' : ''}</summary>
       <div style="display:flex;flex-direction:column;gap:6px;padding:8px 0">
         ${state.children.map(k => `
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1295,14 +1353,14 @@ function screenGrades() {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="min-width:0">
             <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}</div>
+            <div style="font-size:12px;color:var(--color-text-muted);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}</div>
           </div>
           <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
-          <label for="grade-note-${esc(r.id)}" style="color:var(--color-neutral-600)">Note:</label>
+          <label for="grade-note-${esc(r.id)}" style="color:var(--color-text-muted)">Note:</label>
           <input id="grade-note-${esc(r.id)}" class="input" inputmode="decimal" value="${esc(gradeFix && gradeFix.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
-          <label for="grade-gold-${esc(r.id)}" style="color:var(--color-neutral-600)">Or à attribuer:</label>
+          <label for="grade-gold-${esc(r.id)}" style="color:var(--color-text-muted)">Or à attribuer:</label>
           <input type="number" id="grade-gold-${esc(r.id)}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
           <span>🪙</span>
         </div>
@@ -1313,17 +1371,17 @@ function screenGrades() {
         </div>
       </div>`;
   const doneCard = (r, cls, mark) => `
-      <div class="card elev-sm ${cls}" style="gap:8px;margin-bottom:10px;opacity:${gradeEdit?.id === r.id && r.id ? 1 : 0.7}">
+      <div class="card elev-sm ${cls}${gradeEdit?.id === r.id && r.id ? '' : ' dim'}" style="gap:8px;margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="min-width:0">
             <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
+            <div style="font-size:12px;color:var(--color-text-muted);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
           </div>
           <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙 ${mark}</span>
         </div>
         ${cls !== 'grade-approved' || !r.id ? '' : gradeEdit?.id !== r.id ? `<button class="btn btn-ghost" style="align-self:flex-start" data-action="edit-grade" data-id="${esc(r.id)}">✏️ Modifier</button>` : `
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
-          <label for="grade-edit-${esc(r.id)}" style="color:var(--color-neutral-600)">Nouvelle note:</label>
+          <label for="grade-edit-${esc(r.id)}" style="color:var(--color-text-muted)">Nouvelle note:</label>
           <input id="grade-edit-${esc(r.id)}" class="input" value="${esc(gradeEdit.grade ?? r.grade ?? '')}" style="width:120px;padding:4px;font-size:16px">
         </div>
         ${gradeEdit.err ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeEdit.err)}</p>` : ''}
@@ -1336,7 +1394,7 @@ function screenGrades() {
     <section class="grade-section" style="display:flex;flex-direction:column;gap:10px">
       <div class="grade-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
         <h3 class="grade-name" style="margin:0;font-size:18px;overflow-wrap:anywhere;min-width:0">${esc(s.child)}</h3>
-        <span style="font-size:13px;color:var(--color-neutral-600)">${s.avg == null ? 'Moyenne —' : `Moyenne ${fmt20(s.avg)}/20`} · ${s.count} note${s.count > 1 ? 's' : ''}${s.pending ? ` · ${s.pending} à valider` : ''}</span>
+        <span style="font-size:13px;color:var(--color-text-muted)">${s.avg == null ? 'Moyenne —' : `Moyenne ${fmt20(s.avg)}/20`} · ${s.count} note${s.count > 1 ? 's' : ''}${s.pending ? ` · ${s.pending} à valider` : ''}</span>
       </div>
       ${s.bySubject.length ? `<div class="grade-subjects" style="font-size:13px;overflow-wrap:anywhere">${s.bySubject.map(b => `${esc(b.subject)} ${b.avg == null ? '—' : fmt20(b.avg)}`).join(' · ')}</div>` : ''}
       ${s.pendingList.length ? `<div><div class="kicker" style="margin-bottom:10px">À valider (${s.pendingList.length})</div>${s.pendingList.map(pendingCard).join('')}</div>` : ''}
@@ -1354,7 +1412,7 @@ function screenGrades() {
     <div class="field" style="margin:0"><label for="grade-subject-filter">Matière</label>
       <select id="grade-subject-filter" class="input" style="font-size:16px"><option value="">Toutes les matières</option>${subs.map(m => `<option value="${esc(m)}"${m === gradeFilter.subject ? ' selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
     ${grades.length ? sections.map(section).join('') : `
-    <div style="padding:40px 20px;text-align:center;color:var(--color-neutral-600)">
+    <div style="padding:40px 20px;text-align:center;color:var(--color-text-muted)">
       <div style="font-size:32px;margin-bottom:10px">📘</div>
       <p>Aucune note soumise pour le moment</p>
     </div>`}
@@ -1380,8 +1438,10 @@ function screenEnfants() {
       </div>
       <button class="btn btn-secondary" data-action="reset-child-pin" data-i="${i}" title="Réinitialiser le PIN">🔑</button>
       <button class="btn btn-secondary" data-action="view-stats" data-i="${i}" title="Voir les statistiques" aria-label="Voir les statistiques">📊</button>
+      ${c.id ? `<button class="btn btn-secondary" data-action="ap-child" data-id="${esc(c.id)}" title="Apparence" aria-label="Apparence de ${esc(c.name)}" aria-expanded="${apChild === c.id}">🎨</button>` : ''}
       <button class="btn btn-icon btn-ghost" data-action="del-child" data-i="${i}" aria-label="Supprimer">✕</button>
      </div>
+     ${apChild && apChild === c.id ? appearanceBlock(c) : ''}
      <div class="qs" id="qs-${i}">${qsCache[c.id] || '<span class="text-muted">Chargement…</span>'}</div>
     </div>`).join('') : '<p class="text-muted">Aucun enfant.</p>'}
   </div>
@@ -1443,6 +1503,84 @@ function scaleError(rows) {
   }
   return '';
 }
+// ── Menu Apparence: réglage du profil (compte parent ou enfant), synchronisé par setAppearance ──
+// Le profil actif (parent: son compte; vue enfant: l'enfant) fait foi et est recopié sur l'appareil (dk-appearance).
+// La position (localisation précise) reste sur l'appareil: jamais envoyée au serveur.
+let apOpen = false, apChild = null, apMsg = '';
+const activeProfile = () => state?.role === 'enfant' && state.children?.length ? child() : me;
+// Apparence propre à l'appareil (celle d'avant toute connexion): mise de côté sous DEVICE_APPEARANCE_KEY la première
+// fois qu'un profil remplace dk-appearance, pour y revenir quand le profil affiché n'a rien d'enregistré.
+const DEVICE_APPEARANCE_KEY = 'dk-appearance-device';
+function writeDeviceAppearance(a) {   // a: apparence à appliquer (null = aucune: prefers-color-scheme, sinon Auto)
+  try { if (localStorage.getItem(DEVICE_APPEARANCE_KEY) === null) localStorage.setItem(DEVICE_APPEARANCE_KEY, localStorage.getItem(APPEARANCE_KEY) || 'null'); } catch {}
+  const loc = readAppearance()?.location, next = { ...a };
+  delete next.location;
+  if (loc) next.location = loc;
+  const json = JSON.stringify(next);
+  try { if (localStorage.getItem(APPEARANCE_KEY) !== json) localStorage.setItem(APPEARANCE_KEY, json); } catch {}
+  applyAppearance();
+}
+// Appareil partagé: le profil actif l'emporte; sans apparence enregistrée, celle de l'appareil (jamais celle du profil précédent).
+function syncAppearance() {
+  const a = activeProfile()?.appearance;
+  if (a && typeof a === 'object') return writeDeviceAppearance(a);
+  let own = null;
+  try { const saved = localStorage.getItem(DEVICE_APPEARANCE_KEY); own = saved === null ? readAppearance() : JSON.parse(saved); } catch {}
+  writeDeviceAppearance(own && typeof own === 'object' ? own : null);
+}
+// cid: id de l'enfant réglé ('' = compte parent connecté)
+async function changeAppearance(cid, patch) {
+  const prof = cid ? state.children.find(c => c.id === cid) : me;
+  if (!prof) return;
+  const next = { ...Themes.normalizeAppearance(prof.appearance || (prof === activeProfile() ? readAppearance() : null)), ...patch };
+  delete next.location;
+  prof.appearance = next;
+  if (prof === activeProfile()) writeDeviceAppearance(next);   // aperçu en direct
+  try { await api('setAppearance', cid ? { appearance: next, childId: cid } : { appearance: next }); }
+  catch (e) { flash('⚠️ Apparence non enregistrée: ' + e); }
+}
+const fmtTime = ms => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function appearanceBlock(target) {   // target: enfant réglé par un parent, sinon le profil actif
+  const own = !target, prof = own ? activeProfile() : target;
+  const cid = own ? (state?.role === 'enfant' ? child().id : '') : target.id;
+  const a = Themes.normalizeAppearance(prof?.appearance || (own ? readAppearance() : null));
+  const fam = document.documentElement.dataset.mode === 'dark' ? 'dark' : 'light';
+  const pressed = on => `aria-pressed="${on}"`;
+  const themeSelect = (family, key, label) => {
+    const list = Themes.THEMES.filter(t => t.family === family);
+    return list.length < 2 ? '' : `<div class="field" style="margin:0"><label for="ap-${key}-${esc(cid)}">${label}</label>
+      <select class="input" id="ap-${key}-${esc(cid)}" data-ap-theme="${key}" style="width:100%">${list.map(t =>
+        `<option value="${esc(t.id)}"${t.id === a[key] ? ' selected' : ''}>${esc(t.names.fr)}</option>`).join('')}</select></div>`;
+  };
+  const loc = own ? readAppearance()?.location : null;
+  const sun = loc && Sun.times(Date.now(), loc.lat, loc.lon);
+  return `<div class="ap" ${own ? 'id="ap-self" ' : ''}data-ap="${esc(cid)}" style="display:flex;flex-direction:column;gap:10px">
+    ${own ? '' : `<div class="card-title" style="font-size:16px;overflow-wrap:anywhere">🎨 Apparence de ${esc(target.name)}</div>`}
+    <div class="field" style="margin:0"><label>Mode</label>
+      <div class="seg ap-seg">${[['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) =>
+        `<button type="button" class="seg-opt" data-action="ap-mode" data-v="${v}" ${pressed(a.mode === v)}>${l}</button>`).join('')}</div>
+      <p class="text-muted" style="font-size:13px;margin:4px 0 0">Auto : clair le jour, sombre après le coucher du soleil.</p>
+    </div>
+    <div class="field" style="margin:0"><label>Couleur</label>
+      <div class="ap-swatches">${Themes.ACCENTS.map(x =>
+        `<button type="button" class="ap-swatch" data-action="ap-accent" data-v="${esc(x.id)}" ${pressed(a.accent === x.id)}><i style="background:${esc(x[fam][500])}"></i>${esc(x.names.fr)}</button>`).join('')}</div>
+    </div>
+    ${themeSelect('light', 'lightTheme', 'Thème de jour')}${themeSelect('dark', 'darkTheme', 'Thème de nuit')}
+    ${own ? `<div class="field" style="margin:0"><label>Coucher du soleil</label>
+      ${loc ? `<p style="margin:0;font-size:16px">📍 Position enregistrée sur cet appareil${sun?.sunset ? ` · coucher à ${fmtTime(sun.sunset)}` : ''}.</p>
+        <button type="button" class="btn btn-secondary btn-block" data-action="ap-paris">Revenir à Paris</button>`
+      : `<button type="button" class="btn btn-secondary btn-block" data-action="ap-locate">📍 Localisation précise</button>
+        <p class="text-muted" style="font-size:13px;margin:0">Par défaut, l'heure de Paris. Ta position reste sur cet appareil.</p>`}
+      ${apMsg ? `<p role="status" style="margin:0;font-size:14px;overflow-wrap:anywhere">${esc(apMsg)}</p>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+function setDeviceLocation(loc) {
+  const cur = readAppearance() || {};
+  if (loc) cur.location = loc; else delete cur.location;
+  try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(cur)); } catch {}
+  applyAppearance();
+}
 function scaleBlock() {
   return `
   <div style="padding:18px 20px 4px" class="kicker">Appréciations</div>
@@ -1472,6 +1610,8 @@ function screenFamille() {
   </div>
   <div style="padding:10px 20px 0">${pushStatusCard()}</div>
   ${installCard() ? `<div style="padding:10px 20px 0">${installCard()}</div>` : ''}
+  <div style="padding:14px 20px 4px" class="kicker">🎨 Apparence</div>
+  <div style="padding:0 20px"><div class="card elev-sm">${appearanceBlock()}</div></div>
   <div style="padding:14px 20px 4px" class="kicker">Familles que je gère</div>
   <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
     ${families.map(f => `
@@ -1535,15 +1675,15 @@ function renderAuthChild() {
   document.getElementById('main').innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="display:flex;gap:8px;margin-bottom:8px">
-      <button class="btn" style="flex:1;border:2px solid var(--color-neutral-300);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
-      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--color-accent-100);color:var(--color-accent-800)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-divider);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--tint-accent);color:var(--color-text)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
     </div>
     <div style="text-align:center">
       <div style="font-size:40px">🎮</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace enfant</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton nom et le code PIN</p>
     </div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo" value="${esc(authDraft.famname || '')}"></div>
     <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma" value="${esc(authDraft.cname || '')}"></div>
     <div class="field" style="margin:0"><label>Ton code PIN (4 chiffres)</label><input class="input" id="ec-pin" type="password" placeholder="****"></div>
@@ -1562,7 +1702,7 @@ function renderResetPassword() {
       <div style="font-size:40px">🔐</div>
       <h2 style="margin:6px 0 0;font-size:24px">Réinitialiser le mot de passe</h2>
     </div>
-    ${resetMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(resetMsg)}</div>` : ''}
+    ${resetMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(resetMsg)}</div>` : ''}
     ${resetPasswordStep === 1 ? `
     <div class="field" style="margin:0"><label>Email</label><input class="input" id="reset-email" type="email" placeholder="parent@email.fr"></div>
     <button class="btn btn-primary btn-block" data-action="reset-password-step1">Envoyer le code</button>
@@ -1587,15 +1727,15 @@ function renderAuth() {
   mainEl.innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="display:flex;gap:8px;margin-bottom:8px">
-      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--color-accent-100);color:var(--color-accent-800)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
-      <button class="btn" style="flex:1;border:2px solid var(--color-neutral-300);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--tint-accent);color:var(--color-text)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-divider);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
     </div>
     <div style="text-align:center">
       <div style="font-size:40px">🛡️</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
     </div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa" value="${esc(authDraft.name || '')}"></div>` : ''}
     <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr" value="${esc(authDraft.email || '')}"></div>
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
@@ -1617,7 +1757,7 @@ function renderUnlock() {
     <div style="text-align:center"><div style="font-size:40px">🔐</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton mot de passe pour déverrouiller la gestion.</p></div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     <div class="field" style="margin:0"><label>Mot de passe de ${esc(me.email)}</label><input class="input" id="pu-pass" type="password" placeholder="••••••"></div>
     <button class="btn btn-primary btn-block" data-action="unlockParent">Déverrouiller</button>
     <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
@@ -1664,16 +1804,16 @@ function renderStatsCharts() {
     const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
     const dateLabels = points.map(p => {
       const dateLabel = new Date(p.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
-      return `<text x="${p.x}" y="${height - 2}" text-anchor="middle" font-size="11" fill="var(--color-neutral-600)">${dateLabel}</text>`;
+      return `<text x="${p.x}" y="${height - 2}" text-anchor="middle" font-size="11" style="fill:var(--color-text-muted)">${dateLabel}</text>`;
     }).join('');
 
-    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#3b82f6" stroke="white" stroke-width="2"/><title>${p.count} tâches</title>`).join('');
+    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" stroke-width="2" style="fill:var(--color-accent-600);stroke:var(--color-surface)"/><title>${p.count} tâches</title>`).join('');
 
     barChart.innerHTML = `
       <svg width="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="max-height:250px;stroke-linecap:round;stroke-linejoin:round">
-        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="2"/>
-        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="2"/>
-        <path d="${pathD}" stroke="#3b82f6" stroke-width="3" fill="none"/>
+        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke-width="2" style="stroke:var(--color-divider)"/>
+        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke-width="2" style="stroke:var(--color-divider)"/>
+        <path d="${pathD}" stroke-width="3" fill="none" style="stroke:var(--color-accent-600)"/>
         ${circlePoints}
         ${dateLabels}
       </svg>
@@ -1726,8 +1866,8 @@ function renderStatsCharts() {
                 <span style="flex:1">${esc(t.name)}</span>
                 <span style="font-weight:bold;color:var(--color-accent-800)">${t.count}x</span>
               </div>
-              <div style="width:100%;height:16px;background:var(--color-neutral-200);border-radius:4px;overflow:hidden">
-                <div style="width:${pct}%;height:100%;background:#06b6d4"></div>
+              <div style="width:100%;height:16px;background:var(--tint-neutral);border-radius:4px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:var(--color-accent-2-500)"></div>
               </div>
             </div>
           `;
@@ -1776,7 +1916,7 @@ function screenStats() {
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Meilleur jour</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${data?.bestDay ? `${data.bestDay.date}` : 'N/A'}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${data?.bestDay ? `${data.bestDay.date}` : 'N/A'}</div>
     </div>
   </div>
 
@@ -1857,13 +1997,17 @@ function screenStats() {
 }
 
 /* ── stats notes / récompenses / sanctions ── */
-const XS_COLORS = ['#c67139', '#7a8a5e', '#3b82f6', '#a855f7', '#0891b2', '#be185d'];
+// une couleur par matière: les six accents du registre, au palier lisible sur le fond du thème affiché
+const xsColors = () => {
+  const dark = document.documentElement.dataset.mode === 'dark';
+  return window.Themes ? Themes.ACCENTS.map(a => a[dark ? 'dark' : 'light'][dark ? 500 : 600]) : ['currentColor'];
+};
 // "16/20", "15,5", "8/10", "TB" → note sur 20 (même règle que le serveur, tableau d'appréciations de la famille); null si illisible
 function on20(g) { const r = Grades.parseGrade(g, state?.gradeScale); return r.ok ? r.value20 : null; }
 const xsDay = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '—';
 const xsBox = (label, value, color = 'var(--color-accent-800)') =>
   `<div class="card elev-sm xs-box"><div class="kicker">${label}</div><div class="xs-num" style="color:${color}">${value}</div></div>`;
-const xsFreq = f => xsBox('Fréquence', `${f?.perWeek ?? 0}<small>/sem</small> · ${f?.perMonth ?? 0}<small>/mois</small>`, 'var(--color-neutral-800)');
+const xsFreq = f => xsBox('Fréquence', `${f?.perWeek ?? 0}<small>/sem</small> · ${f?.perMonth ?? 0}<small>/mois</small>`, 'var(--color-text)');
 const xsTable = (heads, rows) => rows.length
   ? `<div class="xs-table-wrap"><table class="xs-table"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
   : '<p class="text-muted" style="margin:0;font-size:13px">Aucune donnée sur la période.</p>';
@@ -1878,15 +2022,16 @@ function xsGradeChart(grades) {
   if (!pts.length) return '<p class="text-muted" style="margin:0;font-size:13px">Pas de notes datées à tracer.</p>';
   const days = [...new Set(pts.map(g => g.date))].sort(), subjects = [...new Set(pts.map(g => g.subject))];
   const W = 400, H = 180, P = 28, x = d => P + (days.length > 1 ? days.indexOf(d) / (days.length - 1) : 0.5) * (W - 2 * P), y = v => H - P - v / 20 * (H - 2 * P);
+  const COLORS = xsColors();
   const lines = subjects.map((s, i) => {
-    const c = XS_COLORS[i % XS_COLORS.length], ps = pts.filter(g => g.subject === s);
+    const c = COLORS[i % COLORS.length], ps = pts.filter(g => g.subject === s);
     return `<polyline points="${ps.map(g => `${x(g.date)},${y(on20(g.grade))}`).join(' ')}" fill="none" stroke="${c}" stroke-width="2.5"/>` +
       ps.map(g => `<circle cx="${x(g.date)}" cy="${y(on20(g.grade))}" r="4" fill="${c}"><title>${esc(s)} : ${esc(g.grade)} (${g.date})</title></circle>`).join('');
   }).join('');
-  const grid = [0, 10, 20].map(v => `<line x1="${P}" x2="${W - P}" y1="${y(v)}" y2="${y(v)}" stroke="var(--color-divider)"/><text x="${P - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--color-neutral-600)">${v}</text>`).join('');
+  const grid = [0, 10, 20].map(v => `<line x1="${P}" x2="${W - P}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--color-divider)"/><text x="${P - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" style="fill:var(--color-text-muted)">${v}</text>`).join('');
   const step = Math.ceil(days.length / 6); // max ~6 étiquettes
-  const labels = days.map((d, i) => i % step ? '' : `<text x="${x(d)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--color-neutral-600)">${xsDay(d)}</text>`).join('');
-  const legend = subjects.map((s, i) => `<span><i style="background:${XS_COLORS[i % XS_COLORS.length]}"></i>${esc(s)}</span>`).join('');
+  const labels = days.map((d, i) => i % step ? '' : `<text x="${x(d)}" y="${H - 6}" text-anchor="middle" font-size="10" style="fill:var(--color-text-muted)">${xsDay(d)}</text>`).join('');
+  const legend = subjects.map((s, i) => `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(s)}</span>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Évolution des notes par matière">${grid}${lines}${labels}</svg><div class="xs-legend">${legend}</div>`;
 }
 
@@ -1902,7 +2047,7 @@ function xsHtml() {
   else if (xs.tab === 'grades') {
     const g = d.grades, trend = { improving: '📈 En progrès', declining: '📉 En baisse', stable: '➡️ Stable' }[g.trend] || '—';
     body = `
-      <div class="xs-boxes">${xsBox('XP gagnés', g.totalXP, 'var(--color-accent-2-800)')}${xsBox('Or 🪙 gagné', g.totalGold, 'var(--color-accent-700)')}${xsBox('Notes', g.grades.length)}${xsBox('Tendance', `<small>${trend}</small>`, 'var(--color-neutral-800)')}</div>
+      <div class="xs-boxes">${xsBox('XP gagnés', g.totalXP, 'var(--color-accent-2-800)')}${xsBox('Or 🪙 gagné', g.totalGold, 'var(--color-accent-700)')}${xsBox('Notes', g.grades.length)}${xsBox('Tendance', `<small>${trend}</small>`, 'var(--color-text)')}</div>
       <div class="xs-grid">
         <div class="card elev-sm xs-card"><div class="xs-title">Évolution par matière (/20)</div>${xsGradeChart(g.grades)}</div>
         <div class="card elev-sm xs-card"><div class="xs-title">Notes par jour</div>${xsBars(Object.entries(g.byDay).sort().map(([k, v]) => [xsDay(k), v.count])) || '<p class="text-muted" style="margin:0;font-size:13px">Aucune note datée.</p>'}</div>
@@ -1985,6 +2130,7 @@ function render() {
   document.getElementById('role-seg').style.display = me ? '' : 'none';
   document.getElementById('logout-btn').style.display = me ? '' : 'none';
   const roleInput = document.querySelector(`#role-seg input[value=${role}]`); if (roleInput) roleInput.checked = true;
+  if (me) syncAppearance();   // le profil connecté l'emporte sur l'appareil
 
   if (!me) { console.log('[RENDER-AUTH] me is null, calling renderAuth()'); hideSelect(); renderAuth(); console.log('[RENDER-AUTH-DONE] renderAuth returned'); return; }
   if (!families.length) { hideSelect(); state = null; return renderNoFamily(); }
@@ -2445,6 +2591,21 @@ const ACTIONS = {
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
   'add-scale-row': () => { scaleDraft = [...readScale(), { labels: [], value: '' }]; },
   'del-scale-row': el => { scaleDraft = readScale(); scaleDraft.splice(+el.dataset.i, 1); },
+  'ap-mode': el => changeAppearance(el.closest('[data-ap]').dataset.ap, { mode: el.dataset.v }),
+  'ap-accent': el => changeAppearance(el.closest('[data-ap]').dataset.ap, { accent: el.dataset.v }),
+  'ap-toggle': () => { apOpen = !apOpen; apMsg = ''; },
+  'ap-child': el => { apChild = apChild === el.dataset.id ? null : el.dataset.id; },
+  'ap-paris': () => { setDeviceLocation(null); apMsg = 'Coucher du soleil calculé pour Paris.'; },
+  // la permission n'est demandée qu'ici, au clic
+  'ap-locate': async () => {
+    const pos = await new Promise(ok => {
+      if (!navigator.geolocation) return ok(null);
+      navigator.geolocation.getCurrentPosition(ok, () => ok(null), { timeout: 15000, maximumAge: 3600000 });
+    });
+    const r2 = v => Math.round(v * 100) / 100;   // ~1 km suffit pour le coucher du soleil
+    setDeviceLocation(pos ? { lat: r2(pos.coords.latitude), lon: r2(pos.coords.longitude) } : null);
+    apMsg = pos ? '' : 'Localisation refusée ou indisponible : le coucher du soleil est calculé pour Paris.';
+  },
   'save-scale': () => {
     const rows = readScale();
     scaleErr = scaleError(rows);
@@ -2818,7 +2979,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'remind-task', 'enable-push', 'install-app', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
+const SERVER_ACTIONS = new Set(['ap-mode', 'ap-accent', 'ap-toggle', 'ap-child', 'ap-paris', 'ap-locate', 'login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'remind-task', 'enable-push', 'install-app', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -2903,6 +3064,10 @@ document.body.addEventListener('change', e => {
   if (e.target.id === 'rem-child') { document.getElementById('rem-quest').innerHTML = remQuestOptions(e.target.value); return; }
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
   if (e.target.id === 'grade-subject-filter') { gradeFilter.subject = e.target.value; render(); return; }
+  if (e.target.dataset.apTheme) {
+    changeAppearance(e.target.closest('[data-ap]').dataset.ap, { [e.target.dataset.apTheme]: e.target.value }).then(render);
+    return;
+  }
   if (e.target.id === 'email-notif-enabled') {
     if (state) {
       state.emailNotifications = e.target.checked;
@@ -3402,6 +3567,7 @@ setInterval(async () => {
       // Step 2: PULL - Get latest from server (AFTER push completes to ensure we have latest)
       console.log(`[SYNC-${syncId}] PULL: Fetching latest from server`);
       const serverRes = await api('me');
+      if (me && serverRes.me && 'appearance' in serverRes.me) { me.appearance = serverRes.me.appearance; syncAppearance(); }
       if (serverRes.families && serverRes.families[0]) {
         const serverFamily = serverRes.families[0];
         // Merge: keep local role/profile but merge data intelligently
@@ -3437,6 +3603,7 @@ setInterval(async () => {
           if (!scaleDirty) state.gradeScale = serverFamily.gradeScale || state.gradeScale;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
+          syncAppearance();   // apparence changée sur un autre appareil (même si le rendu est différé)
           lastSyncedSig = stateSig();
           rolloverDay(state, today());   // idempotent: la référence ci-dessus reste celle du serveur, un changement sera envoyé à la prochaine synchro
 

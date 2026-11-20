@@ -2,44 +2,59 @@
 @import url('https://fonts.googleapis.com/css2?family=Caprasimo:wght@400&family=Figtree:wght@400;600;700&display=swap');
 
 :root {
-  --color-bg: #f5ead8;
-  --color-surface: #ebddc5;
-  --color-text: #201e1d;
-  --color-accent: #c67139;
-  --color-accent-2: #7a8a5e;
-  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+  /* Valeurs de repli = thème Clair + accent Terracotta de public/themes.js (source de vérité);
+     applyAppearance() les remplace par le thème et l'accent choisis. */
+  --color-bg: #f3d6c6;
+  --color-surface: #fbf3ee;
+  --color-text: #2b2320;
+  --color-accent: #9e5940;
+  --color-accent-2: #67754c;
+  --color-divider: color-mix(in srgb, #2b2320 16%, transparent);
+  --color-text-muted: #5a4a44;
+  --color-on-accent: #ffffff;
+  --glass-bg: rgba(255,255,255,.45);
+  --glass-border: rgba(255,255,255,.7);
+  --glass-highlight: rgba(255,255,255,.8);
+  --glass-blur: blur(18px) saturate(160%);
+  --glass-shadow: 0 4px 16px rgba(120,70,50,.12);
+  --bg-gradient: linear-gradient(160deg, #fbe9df, #f3d6c6 55%, #e9c9d6);
+  --blob-1: rgba(240,163,127,.55);
+  --blob-2: rgba(201,166,232,.45);
 
-  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
-     same step of any role matches the others in visual value. */
-  --color-neutral-100: #f9f4ed;
-  --color-neutral-200: #eee7db;
-  --color-neutral-300: #dcd3c4;
-  --color-neutral-400: #c0b6a5;
-  --color-neutral-500: #a19786;
-  --color-neutral-600: #82796a;
-  --color-neutral-700: #645c50;
-  --color-neutral-800: #474238;
-  --color-neutral-900: #2e2b25;
+  --color-neutral-100: #f7f4f3;
+  --color-neutral-200: #ede6e4;
+  --color-neutral-300: #ded1cd;
+  --color-neutral-400: #c6b3ac;
+  --color-neutral-500: #a4918a;
+  --color-neutral-600: #7b6a64;
+  --color-neutral-700: #60524c;
+  --color-neutral-800: #483d39;
+  --color-neutral-900: #302a27;
 
-  --color-accent-100: #fff2eb;
-  --color-accent-200: #ffe1d0;
-  --color-accent-300: #ffc6a5;
-  --color-accent-400: #f6a06b;
-  --color-accent-500: #d67f48;
-  --color-accent-600: #b2622d;
-  --color-accent-700: #8c491a;
-  --color-accent-800: #643312;
-  --color-accent-900: #402310;
+  --color-accent-100: #fef2ee;
+  --color-accent-200: #fce1d8;
+  --color-accent-300: #fac7b5;
+  --color-accent-400: #eea286;
+  --color-accent-500: #cb7f63;
+  --color-accent-600: #9e5940;
+  --color-accent-700: #7d432d;
+  --color-accent-800: #5d3323;
+  --color-accent-900: #3e241a;
 
-  --color-accent-2-100: #f0fae1;
-  --color-accent-2-200: #e1eecc;
-  --color-accent-2-300: #ccdbb2;
-  --color-accent-2-400: #aebf92;
-  --color-accent-2-500: #8fa073;
-  --color-accent-2-600: #728157;
-  --color-accent-2-700: #56633f;
-  --color-accent-2-800: #3d472b;
-  --color-accent-2-900: #272e1b;
+  --color-accent-2-100: #f4f6f0;
+  --color-accent-2-200: #e5eadc;
+  --color-accent-2-300: #ced9bd;
+  --color-accent-2-400: #aebf93;
+  --color-accent-2-500: #8c9d70;
+  --color-accent-2-600: #67754c;
+  --color-accent-2-700: #4e5b38;
+  --color-accent-2-800: #3b442b;
+  --color-accent-2-900: #282e1f;
+
+  /* Teintes translucides (verre teinté, comme les pastilles de la maquette): suivent le thème et l'accent */
+  --tint-accent: color-mix(in srgb, var(--color-accent-300) 50%, transparent);
+  --tint-accent-2: color-mix(in srgb, var(--color-accent-2-300) 55%, transparent);
+  --tint-neutral: color-mix(in srgb, var(--color-text) 7%, transparent);
 
   --font-heading: "Caprasimo", system-ui, sans-serif;
   --font-heading-weight: 400;
@@ -58,15 +73,30 @@
 
   /* Elevation — derived from the ground: soft ink-tinted shadows on a
      light theme, a hairline edge + ambient darkness on a dark one. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
-  --shadow-md: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+  --shadow-sm: 0 1px 2px rgba(120,70,50,.12);
+  --shadow-md: 0 3px 10px rgba(120,70,50,.14);
+  --shadow-lg: 0 12px 32px rgba(120,70,50,.2);
 }
+/* contrôles natifs (listes, dates, heures, nombres, barres de défilement) en sombre */
+:root[data-mode="dark"] { color-scheme: dark; }
+select.input option { background: var(--color-surface); color: var(--color-text); }
+input[type=checkbox], input[type=radio] { accent-color: var(--color-accent); }
+::placeholder { color: var(--color-text-muted); opacity: 1; }
 
+html { background: var(--color-bg); }
 body {
-  background: var(--color-bg);
+  background: transparent;
   color: var(--color-text);
   font-family: var(--font-body);
+  transition: color .3s;
+}
+/* Fond d'écran: dégradé du thème + deux taches floues, fixes derrière le contenu */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(circle at 8% 14%, var(--blob-1), transparent 42%),
+    radial-gradient(circle at 96% 82%, var(--blob-2), transparent 40%),
+    var(--bg-gradient);
 }
 h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
 
@@ -92,14 +122,14 @@ h5 { font-size: 16px; }
 h6 { font-size: 13px; }
 h6 { letter-spacing: 0.08em; text-transform: uppercase; }
 p { margin: 0 0 var(--space-3); }
-a { color: var(--color-accent); text-underline-offset: 3px; }
+a { color: var(--color-text); text-decoration-color: var(--color-accent); text-underline-offset: 3px; }
 img { display: block; max-width: 100%; }
 figure { margin: 0; }
 figcaption {
   font-size: 11px; margin-top: var(--space-1);
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  color: var(--color-text-muted);
 }
-.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.text-muted { color: var(--color-text-muted); }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
@@ -122,14 +152,22 @@ figcaption {
   border-radius: var(--radius-md);
 }
 .btn svg { display: block; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-primary { background: var(--color-accent); color: var(--color-bg); }
-.btn-primary:hover { background: var(--color-accent-600); }
-.btn-primary:active { background: var(--color-accent-700); }
+.btn:disabled, .btn:disabled:hover {   /* lisible (texte secondaire), mais clairement inactif: bord pointillé, pas de fond */
+  cursor: not-allowed; background: transparent; color: var(--color-text-muted);
+  border: 1px dashed color-mix(in srgb, var(--color-text) 35%, transparent);
+}
+.btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+/* plus foncé en clair, plus clair en sombre: le contraste avec --color-on-accent augmente */
+.btn-primary:hover { background: color-mix(in srgb, var(--color-accent) 88%, var(--color-text)); }
+.btn-primary:active { background: color-mix(in srgb, var(--color-accent) 78%, var(--color-text)); }
 .btn-secondary { border-color: var(--color-divider); }
 .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
-.btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
+/* texte en couleur de texte (l'accent seul n'est pas assez contrasté sur le verre), soulignement d'accent */
+.btn-ghost { color: var(--color-text); padding-inline: var(--space-1);
+  text-decoration: underline 2px var(--color-accent); text-underline-offset: 4px; }
+.btn-ghost.btn-icon { color: var(--color-text-muted); text-decoration: none; }
+.btn-ghost.btn-icon:hover { color: var(--color-text); }
 .btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .btn-ghost:active { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
 .btn-icon { width: 36px; height: 36px; padding: 0; }
@@ -138,14 +176,14 @@ figcaption {
 /* — forms — */
 .field > label {
   display: block; font-size: 12px; margin-bottom: 5px;
-  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  color: var(--color-text-muted);
 }
 /* iOS Safari zoome au focus si la police du champ est < 16 px */
 input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px; }
 .input {
   width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
   font-size: 16px; color: var(--color-text); caret-color: var(--color-accent);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 72%, transparent);
   border: 1px solid var(--color-divider); border-radius: var(--radius-md);
 }
 .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
@@ -181,16 +219,29 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
   padding: 7px 12px; font-size: 13px; cursor: pointer;
 }
 .seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
-.seg-opt:has(input:checked) { background: var(--color-accent); color: var(--color-bg); }
-.seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.seg-opt:has(input:checked) { background: var(--color-accent); color: var(--color-on-accent); }
+.seg-opt:not(:has(input:checked)):not([aria-pressed="true"]):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+/* — menu Apparence: mode (boutons segmentés) et pastilles d'accent — */
+.ap-seg { display: flex; }
+.ap-seg .seg-opt { flex: 1; justify-content: center; min-height: 44px; border: 0; background: none; color: inherit; font: inherit; font-size: 16px; }
+.ap-seg .seg-opt[aria-pressed="true"] { background: var(--color-accent); color: var(--color-on-accent); }
+.ap-seg .seg-opt:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.ap-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.ap-swatch {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 12px 6px 6px; cursor: pointer;
+  border: 1px solid var(--color-divider); border-radius: 999px; background: var(--glass-bg); color: var(--color-text); font: inherit; font-size: 16px;
+}
+.ap-swatch i { width: 28px; height: 28px; flex: none; border-radius: 50%; }
+.ap-swatch[aria-pressed="true"] { outline: 2px solid var(--color-accent); outline-offset: 1px; font-weight: 600; }
 
 /* — cards — */
 .card {
   display: flex; flex-direction: column; gap: var(--space-2);
   padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface);
 }
-.card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
+.card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-muted); }
 .card-title {
   font-family: var(--font-heading); font-weight: var(--font-heading-weight);
   font-size: 17px; line-height: 1.2;
@@ -198,11 +249,16 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
 .card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
 .card-meta {
   display: flex; align-items: center; gap: 6px; font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+  color: var(--color-text-muted);
 }
 .elev-sm { box-shadow: var(--shadow-sm); }
 .elev-md { box-shadow: var(--shadow-md); }
 .elev-lg { box-shadow: var(--shadow-lg); }
+
+/* carte estompée (quête faite, note traitée, article hors de portée): verre plus léger, bord pointillé, icône en gris;
+   le texte garde ses couleurs (une opacité globale le rendait illisible) */
+.card.dim { background: color-mix(in srgb, var(--glass-bg) 45%, transparent); border-style: dashed; box-shadow: none; }
+.card.dim .task-icon, .card.dim .shop-ico { filter: grayscale(1); opacity: .6; }
 
 /* — tags — */
 .tag {
@@ -210,10 +266,11 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
   letter-spacing: 0.02em; padding: 3px 10px;
   border-radius: calc(var(--radius-md) * 0.75);
 }
-.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
-.tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
-.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
-.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+.tag-accent { background: var(--tint-accent); color: var(--color-accent-800); }
+.tag-accent-2 { background: var(--tint-accent-2); color: var(--color-accent-2-800); }
+.tag-neutral { background: var(--tint-neutral); color: var(--color-text); }
+.tag-outline { border: 1px solid var(--color-accent); background: transparent; color: var(--color-text); }
+button.tag { font: inherit; }
 
 /* — navigation — */
 .nav {
@@ -226,13 +283,13 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
   font-size: 18px; margin-right: auto;
 }
 .nav a { color: inherit; text-decoration: none; font-size: 14px; }
-.nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
+.nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent-700); }
 
 /* — tables — */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th {
   text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  color: var(--color-text-muted);
   padding: var(--space-2); border-bottom: 1px solid var(--color-divider);
 }
 .table td {
@@ -264,6 +321,44 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
 .btn, .tag, .seg, .input { border-radius: 999px; }
 .input { padding-inline: 14px; }
 
+/* ── Verre (liquid glass léger) ──
+   .glass: surface translucide + bord fin + reflet + ombre (cartes, fenêtres); .glass-bar: barres haute et basse.
+   Les composants existants reprennent ces styles sans changer de structure. Flou ≤ 18 px (--glass-blur). */
+.glass, .card, .dialog {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  transition: background-color .3s, border-color .3s;
+}
+.glass-bar, .topbar, .bottom-nav {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  transition: background-color .3s, border-color .3s;
+}
+.btn-secondary {
+  background: color-mix(in srgb, var(--glass-bg) 70%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+}
+.dialog-backdrop { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+/* Repli: sans flou (navigateur sans backdrop-filter, ou transparence réduite demandée) → surfaces quasi opaques */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, .card, .dialog, .glass-bar, .topbar, .bottom-nav, .btn-secondary {
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .card, .dialog, .glass-bar, .topbar, .bottom-nav, .btn-secondary, .dialog-backdrop {
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .glass, .card, .dialog, .glass-bar, .topbar, .bottom-nav, .btn-secondary {
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body, .glass, .card, .dialog, .glass-bar, .topbar, .bottom-nav { transition: none; }
+}
+
 /* ── Stats notes / récompenses / sanctions (#xs-stats) ── */
 .xs-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; font-size: 13px; }
 .xs-filters label { display: flex; align-items: center; gap: 6px; }
@@ -280,7 +375,7 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
 .xs-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .xs-card { padding: 14px; gap: 8px; min-width: 0; }
 .xs-title { font-size: 12px; font-weight: 700; }
-.xs-badge { align-self: flex-start; background: var(--color-accent-100); color: var(--color-accent-800); padding: 6px 14px; border-radius: 999px; font-size: 13px; }
+.xs-badge { align-self: flex-start; background: var(--tint-accent); color: var(--color-accent-800); padding: 6px 14px; border-radius: 999px; font-size: 13px; }
 .xs-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
 .xs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 .xs-bar { display: grid; grid-template-columns: 56px 1fr 24px; align-items: center; gap: 8px; font-size: 12px; }
@@ -297,4 +392,4 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
   .xs-table { font-size: 13px; }
 }
 /* ── Quick Stats (carte enfant) ── */
-.qs { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--color-neutral-100); border-radius: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.qs { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--tint-neutral); border-radius: 10px; font-size: 13px; overflow-wrap: anywhere; }

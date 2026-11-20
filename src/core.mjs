@@ -403,7 +403,7 @@ async function stateFor(store, email) {
       // Skip if store error
     }
   }
-  return { me: { email: acc.email, name: acc.name }, families };
+  return { me: { email: acc.email, name: acc.name, appearance: acc.appearance }, families };
 }
 
 /* ── actions ── */
@@ -745,6 +745,8 @@ async function saveFamily(store, email, b) {
       }
     }
     delete incChild.xpBase; delete incChild.goldBase;
+    // apparence: écrite seulement par setAppearance (une copie périmée ou forgée ne l'écrase pas)
+    if (serverChild?.appearance) incChild.appearance = serverChild.appearance; else delete incChild.appearance;
 
     if (!serverChild || !serverChild.tasks || !incChild.tasks) {
       return incChild; // No merge needed, return incoming as-is
@@ -1172,6 +1174,41 @@ async function updateFamilyNameIndex(store, name, familyId) {
   }
   await store.set('family-names-index', idx);
 }
+// Apparence d'un profil (compte parent ou enfant). Forme seulement: l'existence du thème n'est pas vérifiée (un client
+// plus récent peut connaître d'autres thèmes). La position n'est jamais acceptée: elle reste sur l'appareil.
+const APPEARANCE_ID = /^[a-z0-9-]{1,32}$/;
+function cleanAppearance(a) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
+  for (const [k, v] of Object.entries(a)) {
+    if (k === 'mode' ? !['auto', 'light', 'dark'].includes(v)
+      : !['lightTheme', 'darkTheme', 'accent'].includes(k) || typeof v !== 'string' || !APPEARANCE_ID.test(v)) return null;
+  }
+  return { ...a };
+}
+async function setAppearance(store, email, b) {
+  const appearance = cleanAppearance(b.appearance);
+  if (!appearance) return err(400, 'Apparence invalide.');
+  const kid = parseChildEmail(email);
+  if (!kid && b.childId == null) {
+    const acc = await store.get('account:' + email);
+    if (!acc) return err(403, 'Accès refusé.');
+    await store.set('account:' + email, { ...acc, appearance });
+    return { status: 200, body: { appearance } };
+  }
+  const familyIds = kid ? [kid.familyId] : ((await store.get('account:' + email))?.familyIds || []);
+  for (const id of familyIds) {
+    const fam = await store.get('family:' + id);
+    if (!fam) continue;
+    normalizeFamilyData(fam);
+    const c = fam.children.find(x => kid ? x.name === kid.name : x.id === b.childId);
+    if (!c || (kid && b.childId != null && c.id !== b.childId)) continue;
+    c.appearance = appearance;
+    await store.set('family:' + id, fam);
+    return { status: 200, body: { appearance } };
+  }
+  return err(403, 'Accès refusé.');
+}
+
 async function unlockChildDirect(store, b, secret) {
   const famname = (b.familyName || '').trim().toLowerCase();
   const childName = (b.childName || '').trim();
@@ -2098,6 +2135,7 @@ export async function handleApi({ action, token, body = {} }, store) {
     case 'notify': return notify(store, email, body);
     case 'remindQuest': return remindQuest(store, email, body);
     case 'saveFamily': return saveFamily(store, email, body);
+    case 'setAppearance': return setAppearance(store, email, body);
     case 'createFamily': return createFamily(store, email, body);
     case 'deleteFamily': return deleteFamily(store, email, body);
     case 'invite': return invite(store, email, body);

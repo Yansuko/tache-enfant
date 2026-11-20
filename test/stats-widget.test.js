@@ -21,7 +21,7 @@ const vs = SRC.indexOf('{', SRC.indexOf("'view-stats': el =>"));
 const viewStatsBody = block(vs, vs);
 
 const CODE = [
-  line('const today ='), line('const LVL_XP'), line('const level ='), line('const qsCache ='),
+  line('const today ='), line('const LVL_XP'), line('const level ='), line('const qsCache ='), line('let apOpen ='),
   fn('esc'), fn('on20'), fn('qsHtml'), fn('loadQuickStats'), fn('screenEnfants'),
   `const viewStats = el => ${viewStatsBody};`,
   'return { qsCache, screenEnfants, loadQuickStats, viewStats, getStatsChildIndex: () => statsChildIndex };',
