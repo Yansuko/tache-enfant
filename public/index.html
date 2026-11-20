@@ -12,16 +12,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="./styles.css">
 <style>
-  body { background: var(--color-neutral-200); }
   .phone {
     max-width: 440px; min-height: 100dvh; margin: 0 auto;
-    background: var(--color-bg); display: flex; flex-direction: column;
-    box-shadow: var(--shadow-md);
+    display: flex; flex-direction: column;
   }
   .topbar {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 10px 16px; border-bottom: 1px solid var(--color-divider);
-    font-size: 12px; color: var(--color-neutral-600); grid-area: top;
+    font-size: 12px; color: var(--color-text-muted); grid-area: top;
+    position: relative; z-index: 2;
   }
   .topbar > span { font-family: var(--font-heading); font-size: 14px; color: var(--color-text); white-space: nowrap; }
   .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -30,12 +29,12 @@
   .bottom-nav {
     display: flex; justify-content: space-around; align-items: center;
     padding: 10px 16px; border-top: 1px solid var(--color-divider);
-    position: sticky; bottom: 0; background: var(--color-bg); grid-area: nav;
+    position: sticky; bottom: 0; z-index: 2; grid-area: nav;
   }
   .no-nav .bottom-nav { display: none; }
   .bottom-nav button {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
-    background: none; border: 0; cursor: pointer; color: var(--color-neutral-600);
+    background: none; border: 0; cursor: pointer; color: var(--color-text-muted);
     font-family: var(--font-heading); font-size: 11px; padding: 4px 10px; border-radius: 12px;
   }
   .bottom-nav button.active { color: var(--color-accent-700); }
@@ -58,6 +57,8 @@
     .phone {
       max-width: 1080px; height: calc(100dvh - 48px); min-height: 560px;
       border-radius: 24px; overflow: hidden;
+      border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+      background: color-mix(in srgb, var(--glass-bg) 40%, transparent);
       display: grid; grid-template-columns: 236px 1fr; grid-template-rows: auto 1fr;
       grid-template-areas: "top top" "nav main";
     }
@@ -128,6 +129,43 @@
 <script src="/shop.js"></script>
 <script src="/grades.js"></script>
 <script src="/swipe.js"></script>
+<script src="/sun.js"></script>
+<script src="/themes.js"></script>
+<script>
+// ── Apparence: variables du thème sur :root, data-theme/data-mode sur <html>, theme-color ──
+// Choix de l'appareil (localStorage dk-appearance), sinon prefers-color-scheme, sinon Auto (coucher du soleil).
+// Réévalué au lancement, au retour de visibilité, au changement de thème système et toutes les 60 s;
+// le DOM n'est touché que si le résultat change (pas de clignotement).
+const APPEARANCE_KEY = 'dk-appearance';
+let appliedAppearance = '';
+function readAppearance() {
+  try { return JSON.parse(localStorage.getItem(APPEARANCE_KEY)); } catch { return null; }
+}
+function applyAppearance(appearance = readAppearance()) {
+  if (!window.Themes || !window.matchMedia) return false;   // script absent (jsdom, cache partiel): thème par défaut du CSS
+  const loc = Themes.normalizeAppearance(appearance).location || {};
+  const systemDark = matchMedia('(prefers-color-scheme: dark)').matches ? true
+    : matchMedia('(prefers-color-scheme: light)').matches ? false : undefined;
+  const r = Themes.resolve(appearance, { now: Date.now(), lat: loc.lat, lon: loc.lon, systemDark });
+  const vars = Themes.cssVars(r.theme, r.accent), mode = r.isDark ? 'dark' : 'light';
+  const key = JSON.stringify([r.theme.id, mode, vars]);
+  if (key === appliedAppearance) return false;
+  appliedAppearance = key;
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+  root.style.colorScheme = mode;
+  root.dataset.theme = r.theme.id;
+  root.dataset.mode = mode;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', r.theme.themeColor);
+  return true;
+}
+applyAppearance();
+if (window.Themes && window.matchMedia) {
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) applyAppearance(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance());
+  setInterval(() => applyAppearance(), 60000);
+}
+</script>
 <script>
 // ── Auth: jeton signé fourni par l'API, conservé dans localStorage ──
 const TOKEN_KEY = 'te-token';
