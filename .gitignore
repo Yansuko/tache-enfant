@@ -16,3 +16,4 @@ test-results/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+docs/v2-screenshots/

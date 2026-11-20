@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/logo-192.png">
 <link rel="apple-touch-icon" href="/logo-192.png">
-<meta name="theme-color" content="#C4785C">
+<meta name="theme-color" content="#f3d6c6">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="./styles.css">
@@ -71,7 +71,7 @@
     .bottom-nav button {
       flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; font-size: 13px;
     }
-    .bottom-nav button.active { background: var(--color-accent-100); color: var(--color-accent-800); }
+    .bottom-nav button.active { background: var(--tint-accent); color: var(--color-accent-800); }
     .deck-2 { grid-template-columns: 1fr 1fr; }
     main > div { padding-left: 0 !important; padding-right: 0 !important; }
     /* Stats desktop optimization */
@@ -85,13 +85,13 @@
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
     border: 2px solid var(--color-divider); background: transparent; padding: 0;
   }
-  .check.done { background: var(--color-accent-2-500); border-color: var(--color-accent-2-500);
-    color: #fff; font-size: 14px; }
+  .check.done { background: var(--color-accent-2-600); border-color: var(--color-accent-2-600);
+    color: var(--color-on-accent); font-size: 14px; }
   .task-icon {
-    width: 40px; height: 40px; border-radius: 50%; background: var(--color-accent-2-100);
+    width: 40px; height: 40px; border-radius: 50%; background: var(--tint-accent-2);
     display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0;
   }
-  .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-neutral-600); }
+  .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); }
   #main { touch-action: pan-y; } /* swipe horizontal entre enfants, défilement vertical natif */
   .lvlup-overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 50; }
   .lvlup-badge {
@@ -113,12 +113,12 @@
   }
   #toast {
     position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-    background: var(--color-accent-800); color: #fff; padding: 10px 16px;
+    background: var(--color-accent-800); color: var(--color-accent-100); padding: 10px 16px;
     border-radius: 999px; font-size: 13px; display: none; z-index: 60;
   }
   #flash {
     position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: calc(100vw - 32px);
-    background: var(--color-neutral-800, #333); color: #fff; padding: 10px 16px;
+    background: var(--color-text); color: var(--color-bg); padding: 10px 16px;
     border-radius: 999px; font-size: 13px; z-index: 61; text-align: center;
   }
 </style>
@@ -825,7 +825,7 @@ function taskRow(t, i, small) {
   const sz = small ? 22 : 26;
   const freqLabel = { unique: '🎯', daily: '📅', weekly: '📆', monthly: '🗓️' }[t.frequency || 'daily'];
   return `
-  <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px${t.done ? ';opacity:0.6' : ''}">
+  <div class="card elev-sm${t.done ? ' dim' : ''}" style="flex-direction:row;align-items:center;gap:12px;padding:${small ? 12 : 14}px">
     ${small ? '' : `<div class="task-icon">${t.icon || '⭐'}</div>`}
     <button class="check${t.done ? ' done' : ''}" style="width:${sz}px;height:${sz}px" data-action="toggle-task" data-i="${i}" aria-label="${t.done ? 'Fait' : 'À faire'}">${t.done ? '✓' : ''}</button>
     <div style="flex:1">
@@ -842,23 +842,23 @@ function screenAccueil() {
   return `
   <div style="padding:22px 20px 4px;display:flex;align-items:flex-start;justify-content:space-between">
     <div>
-      <div style="font-size:13px;color:var(--color-neutral-600)">Salut 👋</div>
+      <div style="font-size:13px;color:var(--color-text-muted)">Salut 👋</div>
       <h2 style="margin:2px 0 0;font-size:26px">${esc(c.name)}</h2>
     </div>
-    <div style="display:flex;align-items:center;gap:6px;background:var(--color-accent-100);color:var(--color-accent-800);padding:8px 14px;border-radius:999px;font-family:var(--font-heading);font-size:16px">🪙 ${c.gold}</div>
+    <div style="display:flex;align-items:center;gap:6px;background:var(--tint-accent);color:var(--color-accent-800);padding:8px 14px;border-radius:999px;font-family:var(--font-heading);font-size:16px">🪙 ${c.gold}</div>
   </div>
-  <div style="margin:12px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-accent-2-100);display:flex;flex-direction:column;gap:6px">
+  <div style="margin:12px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--tint-accent-2);display:flex;flex-direction:column;gap:6px">
     <div style="display:flex;align-items:baseline;justify-content:space-between">
       <span style="font-family:var(--font-heading);font-size:16px;color:var(--color-accent-2-800)">⚔️ Niveau ${level(c.xp)}</span>
-      <span style="font-size:12px;color:var(--color-accent-2-700)">${c.xp % LVL_XP}/${LVL_XP} XP</span>
+      <span style="font-size:12px;color:var(--color-accent-2-800)">${c.xp % LVL_XP}/${LVL_XP} XP</span>
     </div>
-    <div style="height:8px;border-radius:999px;background:var(--color-accent-2-300);overflow:hidden">
+    <div style="height:8px;border-radius:999px;background:color-mix(in srgb, var(--color-accent-2-500) 30%, transparent);overflow:hidden">
       <div style="height:100%;width:${(c.xp % LVL_XP) / LVL_XP * 100}%;background:var(--color-accent-2-600);border-radius:999px"></div>
     </div>
   </div>
   ${(() => {
     const m = eventMult(c), txt = multText(m);
-    return m.names.length && txt ? `<div class="event-banner" role="status" style="margin:10px 20px 0;padding:10px 14px;border-radius:var(--radius-lg);background:var(--color-accent-100);color:var(--color-accent-800);font-family:var(--font-heading);font-size:15px;overflow-wrap:anywhere">🎉 ${esc(m.names.join(', '))}: ${txt}</div>` : '';
+    return m.names.length && txt ? `<div class="event-banner" role="status" style="margin:10px 20px 0;padding:10px 14px;border-radius:var(--radius-lg);background:var(--tint-accent);color:var(--color-accent-800);font-family:var(--font-heading);font-size:15px;overflow-wrap:anywhere">🎉 ${esc(m.names.join(', '))}: ${txt}</div>` : '';
   })()}
   ${(() => {
     const daily = c.tasks.filter(t => (t.frequency || 'daily') === 'daily');
@@ -867,12 +867,12 @@ function screenAccueil() {
     const got = c.dailyBonusDay === state.day;
     const dailyBonus = dailyBonusOf(c);
     return `
-    <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px">
+    <div style="margin:10px 20px 0;padding:12px 16px;border-radius:var(--radius-lg);background:var(--glass-bg);border:1px solid var(--glass-border);box-shadow:var(--glass-shadow);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);display:flex;flex-direction:column;gap:6px">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <span style="font-family:var(--font-heading);font-size:15px">🎯 Mission du jour · ${doneN}/${daily.length}</span>
         ${got ? '<span class="tag tag-accent-2">Bonus reçu 🎁</span>' : loot(dailyBonus.xp, dailyBonus.gold).replaceAll('margin-top:4px', '')}
       </div>
-      <div style="height:6px;border-radius:999px;background:var(--color-neutral-300);overflow:hidden">
+      <div style="height:6px;border-radius:999px;background:var(--tint-neutral);overflow:hidden">
         <div style="height:100%;width:${doneN / daily.length * 100}%;background:var(--color-accent-500);border-radius:999px"></div>
       </div>
     </div>`;
@@ -913,7 +913,7 @@ function screenNotes() {
   return `
   <div style="padding:22px 20px 4px">
     <h2 style="margin:0;font-size:24px">Mes notes 📘</h2>
-    <p style="margin:6px 0 0;font-size:13px;color:var(--color-neutral-600)">Soumet tes notes pour gagner de l'or !</p>
+    <p style="margin:6px 0 0;font-size:13px;color:var(--color-text-muted)">Soumet tes notes pour gagner de l'or !</p>
   </div>
   <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;flex:1;overflow:auto">
     ${approved.length > 0 ? `
@@ -935,7 +935,7 @@ function screenNotes() {
     <div>
       <div class="kicker" style="margin-bottom:10px">En attente d'approbation ⏳</div>
       ${pending.map(r => `
-      <div class="card elev-sm" style="gap:8px;margin-bottom:10px;opacity:0.7">
+      <div class="card elev-sm dim" style="gap:8px;margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <span class="card-title" style="font-size:15px">${esc(r.subject)}</span>
           <span class="tag tag-accent">${esc(r.gold)} 🪙</span>
@@ -956,7 +956,7 @@ function screenNotes() {
         <div class="field">
           <label for="grade-value">Note obtenue</label>
           <input class="input" id="grade-value" inputmode="decimal" placeholder="Ex : 15,5" value="${esc(gradeForm.grade || '')}" aria-describedby="grade-help">
-          <small id="grade-help" style="color:var(--color-neutral-600)">15,5, 17/20 ou TB</small>
+          <small id="grade-help" style="color:var(--color-text-muted)">15,5, 17/20 ou TB</small>
           ${gradeForm.err ? `<p id="grade-error" role="alert" style="margin:4px 0 0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeForm.err)}</p>` : ''}
         </div>
         <div class="field">
@@ -988,12 +988,12 @@ function screenRecompenses() {
   const statusTag = { approved: '<span class="tag tag-accent-2">Achetée ✅</span>', pending: '<span class="tag tag-neutral">En attente</span>', refused: '<span class="tag tag-accent">Refusée</span>' };
   return `
   <div style="padding:22px 20px 4px"><h2 style="margin:0;font-size:24px">Boutique 🛒</h2></div>
-  <div style="margin:14px 20px 18px;padding:16px;border-radius:var(--radius-lg);background:var(--color-accent-100);display:flex;flex-direction:column;gap:8px">
+  <div style="margin:14px 20px 18px;padding:16px;border-radius:var(--radius-lg);background:var(--tint-accent);display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;align-items:baseline;justify-content:space-between">
       <span style="font-family:var(--font-heading);font-size:22px;color:var(--color-accent-800)">🪙 ${c.gold}</span>
-      <span style="font-size:12px;color:var(--color-accent-700)">${next ? `prochain article à ${next.cost} 🪙` : 'Tout est à portée de bourse !'}</span>
+      <span style="font-size:12px;color:var(--color-accent-800)">${next ? `prochain article à ${next.cost} 🪙` : 'Tout est à portée de bourse !'}</span>
     </div>
-    <div style="height:8px;border-radius:999px;background:var(--color-accent-300);overflow:hidden">
+    <div style="height:8px;border-radius:999px;background:color-mix(in srgb, var(--color-accent-500) 30%, transparent);overflow:hidden">
       <div style="height:100%;width:${pct}%;background:var(--color-accent-600);border-radius:999px"></div>
     </div>
   </div>
@@ -1003,8 +1003,8 @@ function screenRecompenses() {
       const manque = r.cost - c.gold;
       const pending = requests.some(q => q.child === c.name && q.name === r.name && q.status === 'pending');
       return `
-      <div class="card elev-sm shop-item" style="flex-direction:row;align-items:center;gap:12px${locked || manque > 0 ? ';opacity:0.55' : ''}">
-        <div style="font-size:24px">${locked ? '🔒' : r.icon}</div>
+      <div class="card elev-sm shop-item${locked || manque > 0 ? ' dim' : ''}" style="flex-direction:row;align-items:center;gap:12px">
+        <div class="shop-ico" style="font-size:24px">${locked ? '🔒' : r.icon}</div>
         <div style="flex:1"><div class="card-title" style="font-size:15px">${esc(r.name)}</div>
           <span class="tag tag-outline">${r.cost} 🪙</span>${r.lvl > 1 ? ` <span class="tag ${locked ? 'tag-accent' : 'tag-accent-2'}">Niv. ${r.lvl}</span>` : ''}</div>
         ${locked
@@ -1059,7 +1059,7 @@ function remindersBlock() {
     <div class="card elev-sm reminder-row" style="flex-direction:row;align-items:center;gap:10px;padding:12px">
       <div style="flex:1;min-width:0">
         <div class="card-title" style="font-size:14px">${esc(kids.find(k => k.id === r.childId)?.name || '?')} · ${esc(r.questName || 'Toutes les quêtes')}</div>
-        <div style="font-size:12px;color:var(--color-neutral-600)">${r.days.map(d => DAYS[d]).join(', ')} à ${esc(r.time)}</div>
+        <div style="font-size:12px;color:var(--color-text-muted)">${r.days.map(d => DAYS[d]).join(', ')} à ${esc(r.time)}</div>
       </div>
       <input type="checkbox" data-action="toggle-reminder" data-i="${i}"${r.enabled ? ' checked' : ''} aria-label="Rappel actif" style="width:22px;height:22px">
       <button class="btn btn-icon btn-ghost" data-action="del-reminder" data-i="${i}" aria-label="Supprimer le rappel">✕</button>
@@ -1087,7 +1087,7 @@ function eventsBlock() {
     <div class="card elev-sm event-row" style="flex-direction:row;align-items:center;gap:10px;padding:12px">
       <div style="flex:1;min-width:0">
         <div class="card-title" style="font-size:14px;overflow-wrap:anywhere">${esc(ev.name)} · ${esc(multText(ev) || 'aucun bonus')}</div>
-        <div style="font-size:12px;color:var(--color-neutral-600)">${xsDay(ev.start)} → ${xsDay(ev.end)} · ${ev.childIds?.length ? esc(ev.childIds.map(id => kids.find(k => k.id === id)?.name || '?').join(', ')) : 'Tous les enfants'}</div>
+        <div style="font-size:12px;color:var(--color-text-muted)">${xsDay(ev.start)} → ${xsDay(ev.end)} · ${ev.childIds?.length ? esc(ev.childIds.map(id => kids.find(k => k.id === id)?.name || '?').join(', ')) : 'Tous les enfants'}</div>
       </div>
       <button class="btn btn-icon btn-ghost" data-action="edit-event" data-i="${i}" aria-label="Modifier l'événement">✎</button>
       <button class="btn btn-icon btn-ghost" data-action="del-event" data-i="${i}" aria-label="Supprimer l'événement">✕</button>
@@ -1103,7 +1103,7 @@ function eventsBlock() {
         <div class="field" style="margin:0;flex:1"><label for="ev-xp">XP</label>${sel('ev-xp', e.xpMult)}</div>
         <div class="field" style="margin:0;flex:1"><label for="ev-gold">Or 🪙</label>${sel('ev-gold', e.goldMult)}</div>
       </div>
-      <div style="font-size:13px;color:var(--color-neutral-600)">Enfants (aucun coché = tous)</div>
+      <div style="font-size:13px;color:var(--color-text-muted)">Enfants (aucun coché = tous)</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">${kids.map(k => `<label style="display:flex;align-items:center;gap:4px;font-size:14px"><input type="checkbox" name="ev-child" value="${esc(k.id)}"${e.childIds?.includes(k.id) ? ' checked' : ''}>${esc(k.name)}</label>`).join('')}</div>
       <button class="btn btn-secondary btn-block" data-action="save-event">${e.id ? 'Enregistrer l\'événement' : 'Ajouter l\'événement'}</button>
       ${e.id ? '<button class="btn btn-ghost btn-block" data-action="cancel-event">Annuler</button>' : ''}
@@ -1138,7 +1138,7 @@ function screenTaches() {
         <span class="card-title" style="font-size:15px">${esc(req.taskName)}</span>
         ${loot(req.xp, req.gold)}
       </div>
-      <div style="font-size:12px;color:var(--color-neutral-600)"><span class="tag tag-neutral">${freqLabel}</span> ${date}</div>
+      <div style="font-size:12px;color:var(--color-text-muted)"><span class="tag tag-neutral">${freqLabel}</span> ${date}</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1" data-action="approve-task" data-i="${realIdx}">Valider</button>
         <button class="btn btn-secondary" style="flex:1" data-action="reject-task" data-i="${realIdx}">Refuser</button>
@@ -1158,7 +1158,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="new-task-xp" type="number" min="1" placeholder="Ex : 20"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="new-task-gold" type="number" min="0" placeholder="Ex : 10"></div>
       </div>
-      <div style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
+      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="new-task-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-primary btn-block" data-action="add-task">Ajouter la quête</button>
     </div>
 
@@ -1186,7 +1186,7 @@ function screenTaches() {
         <div class="field" style="margin:0;flex:1"><label>XP</label><input class="input" id="qd-xp" type="number" min="1" placeholder="Ex : 15"></div>
         <div class="field" style="margin:0;flex:1"><label>Or 🪙</label><input class="input" id="qd-gold" type="number" min="0" placeholder="Ex : 7"></div>
       </div>
-      <div style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
+      <div class="field" style="margin:0"><label>Fréquence</label><select class="input" id="qd-freq" style="width:100%"><option value="unique">Tâche unique 🎯</option><option value="daily" selected>Quotidienne 📅</option><option value="weekly">Hebdomadaire 📆</option><option value="monthly">Mensuelle 🗓️</option></select></div>
       <button class="btn btn-secondary btn-block" data-action="add-quest-def">Enregistrer le modèle</button>
     </div>
   </div>`;
@@ -1215,7 +1215,7 @@ function screenSanctions() {
   ${pending.map(r => {
     const qi = requests.indexOf(r);
     return `
-    <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-accent-100);display:flex;align-items:center;gap:10px">
+    <div style="margin:14px 20px 4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--tint-accent);display:flex;align-items:center;gap:10px">
       <span style="font-size:18px">🛒</span>
       <div style="flex:1;font-size:13px;color:var(--color-accent-800)"><strong>${esc(r.child)}</strong> veut acheter : ${esc(r.name)} (${esc(r.cost)} 🪙)</div>
     </div>
@@ -1248,7 +1248,7 @@ function screenSanctions() {
     ${(() => {
       const c = child();
       return c && c.sanctions && Array.isArray(c.sanctions) ? c.sanctions.map(s => `
-    <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:10px;color:var(--color-neutral-700)">
+    <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:10px;color:var(--color-text-muted)">
       <span>${esc(s.motif)} · ${esc(c.name)}</span><span class="tag tag-accent">-${s.gold} 🪙</span>
     </div>`).join('') : '';
     })()}
@@ -1289,7 +1289,7 @@ function screenSanctions() {
       <span style="font-size:14px">${r.icon} ${esc(r.name)}</span>
       <div style="display:flex;align-items:center;gap:6px"><span class="tag tag-outline">${r.cost} 🪙</span><span class="tag tag-neutral">Niv. ${r.lvl}</span><button class="btn btn-icon btn-ghost" data-action="del-reward" data-i="${i}" aria-label="Supprimer">✕</button></div>
     </div>
-    ${state.children.length ? `<details style="margin:4px 0 6px;font-size:13px"><summary style="cursor:pointer;color:var(--color-neutral-700)">Par enfant${r.childIds?.length ? ` · réservé à ${esc(state.children.filter(k => r.childIds.includes(k.id)).map(k => k.name).join(', '))}` : ''}${Object.keys(r.prices || {}).length ? ' · prix propres' : ''}</summary>
+    ${state.children.length ? `<details style="margin:4px 0 6px;font-size:13px"><summary style="cursor:pointer;color:var(--color-text-muted)">Par enfant${r.childIds?.length ? ` · réservé à ${esc(state.children.filter(k => r.childIds.includes(k.id)).map(k => k.name).join(', '))}` : ''}${Object.keys(r.prices || {}).length ? ' · prix propres' : ''}</summary>
       <div style="display:flex;flex-direction:column;gap:6px;padding:8px 0">
         ${state.children.map(k => `
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1337,14 +1337,14 @@ function screenGrades() {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="min-width:0">
             <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}</div>
+            <div style="font-size:12px;color:var(--color-text-muted);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}</div>
           </div>
           <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
-          <label for="grade-note-${esc(r.id)}" style="color:var(--color-neutral-600)">Note:</label>
+          <label for="grade-note-${esc(r.id)}" style="color:var(--color-text-muted)">Note:</label>
           <input id="grade-note-${esc(r.id)}" class="input" inputmode="decimal" value="${esc(gradeFix && gradeFix.id === r.id ? gradeFix.grade : r.grade)}" style="width:90px;padding:4px;font-size:16px">
-          <label for="grade-gold-${esc(r.id)}" style="color:var(--color-neutral-600)">Or à attribuer:</label>
+          <label for="grade-gold-${esc(r.id)}" style="color:var(--color-text-muted)">Or à attribuer:</label>
           <input type="number" id="grade-gold-${esc(r.id)}" class="input" value="${esc(r.gold)}" min="0" style="width:60px;padding:4px;font-size:16px">
           <span>🪙</span>
         </div>
@@ -1355,17 +1355,17 @@ function screenGrades() {
         </div>
       </div>`;
   const doneCard = (r, cls, mark) => `
-      <div class="card elev-sm ${cls}" style="gap:8px;margin-bottom:10px;opacity:${gradeEdit?.id === r.id && r.id ? 1 : 0.7}">
+      <div class="card elev-sm ${cls}${gradeEdit?.id === r.id && r.id ? '' : ' dim'}" style="gap:8px;margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="min-width:0">
             <div class="card-title" style="font-size:15px;overflow-wrap:anywhere">${esc(r.subject)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-600);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
+            <div style="font-size:12px;color:var(--color-text-muted);overflow-wrap:anywhere">${esc(gradeDate(r))} - Note: ${esc(r.grade)}${r.submittedGrade != null ? ` (soumise: ${esc(r.submittedGrade)})` : ''}</div>
           </div>
           <span class="tag tag-accent" style="white-space:nowrap">${esc(r.gold)} 🪙 ${mark}</span>
         </div>
         ${cls !== 'grade-approved' || !r.id ? '' : gradeEdit?.id !== r.id ? `<button class="btn btn-ghost" style="align-self:flex-start" data-action="edit-grade" data-id="${esc(r.id)}">✏️ Modifier</button>` : `
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
-          <label for="grade-edit-${esc(r.id)}" style="color:var(--color-neutral-600)">Nouvelle note:</label>
+          <label for="grade-edit-${esc(r.id)}" style="color:var(--color-text-muted)">Nouvelle note:</label>
           <input id="grade-edit-${esc(r.id)}" class="input" value="${esc(gradeEdit.grade ?? r.grade ?? '')}" style="width:120px;padding:4px;font-size:16px">
         </div>
         ${gradeEdit.err ? `<p class="grade-error" role="alert" style="margin:0;color:var(--color-accent-700);font-size:13px;overflow-wrap:anywhere">${esc(gradeEdit.err)}</p>` : ''}
@@ -1378,7 +1378,7 @@ function screenGrades() {
     <section class="grade-section" style="display:flex;flex-direction:column;gap:10px">
       <div class="grade-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
         <h3 class="grade-name" style="margin:0;font-size:18px;overflow-wrap:anywhere;min-width:0">${esc(s.child)}</h3>
-        <span style="font-size:13px;color:var(--color-neutral-600)">${s.avg == null ? 'Moyenne —' : `Moyenne ${fmt20(s.avg)}/20`} · ${s.count} note${s.count > 1 ? 's' : ''}${s.pending ? ` · ${s.pending} à valider` : ''}</span>
+        <span style="font-size:13px;color:var(--color-text-muted)">${s.avg == null ? 'Moyenne —' : `Moyenne ${fmt20(s.avg)}/20`} · ${s.count} note${s.count > 1 ? 's' : ''}${s.pending ? ` · ${s.pending} à valider` : ''}</span>
       </div>
       ${s.bySubject.length ? `<div class="grade-subjects" style="font-size:13px;overflow-wrap:anywhere">${s.bySubject.map(b => `${esc(b.subject)} ${b.avg == null ? '—' : fmt20(b.avg)}`).join(' · ')}</div>` : ''}
       ${s.pendingList.length ? `<div><div class="kicker" style="margin-bottom:10px">À valider (${s.pendingList.length})</div>${s.pendingList.map(pendingCard).join('')}</div>` : ''}
@@ -1396,7 +1396,7 @@ function screenGrades() {
     <div class="field" style="margin:0"><label for="grade-subject-filter">Matière</label>
       <select id="grade-subject-filter" class="input" style="font-size:16px"><option value="">Toutes les matières</option>${subs.map(m => `<option value="${esc(m)}"${m === gradeFilter.subject ? ' selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
     ${grades.length ? sections.map(section).join('') : `
-    <div style="padding:40px 20px;text-align:center;color:var(--color-neutral-600)">
+    <div style="padding:40px 20px;text-align:center;color:var(--color-text-muted)">
       <div style="font-size:32px;margin-bottom:10px">📘</div>
       <p>Aucune note soumise pour le moment</p>
     </div>`}
@@ -1492,7 +1492,11 @@ function scaleError(rows) {
 // La position (localisation précise) reste sur l'appareil: jamais envoyée au serveur.
 let apOpen = false, apChild = null, apMsg = '';
 const activeProfile = () => state?.role === 'enfant' && state.children?.length ? child() : me;
-function writeDeviceAppearance(a) {
+// Apparence propre à l'appareil (celle d'avant toute connexion): mise de côté sous DEVICE_APPEARANCE_KEY la première
+// fois qu'un profil remplace dk-appearance, pour y revenir quand le profil affiché n'a rien d'enregistré.
+const DEVICE_APPEARANCE_KEY = 'dk-appearance-device';
+function writeDeviceAppearance(a) {   // a: apparence à appliquer (null = aucune: prefers-color-scheme, sinon Auto)
+  try { if (localStorage.getItem(DEVICE_APPEARANCE_KEY) === null) localStorage.setItem(DEVICE_APPEARANCE_KEY, localStorage.getItem(APPEARANCE_KEY) || 'null'); } catch {}
   const loc = readAppearance()?.location, next = { ...a };
   delete next.location;
   if (loc) next.location = loc;
@@ -1500,9 +1504,13 @@ function writeDeviceAppearance(a) {
   try { if (localStorage.getItem(APPEARANCE_KEY) !== json) localStorage.setItem(APPEARANCE_KEY, json); } catch {}
   applyAppearance();
 }
+// Appareil partagé: le profil actif l'emporte; sans apparence enregistrée, celle de l'appareil (jamais celle du profil précédent).
 function syncAppearance() {
   const a = activeProfile()?.appearance;
-  if (a && typeof a === 'object') writeDeviceAppearance(a);
+  if (a && typeof a === 'object') return writeDeviceAppearance(a);
+  let own = null;
+  try { const saved = localStorage.getItem(DEVICE_APPEARANCE_KEY); own = saved === null ? readAppearance() : JSON.parse(saved); } catch {}
+  writeDeviceAppearance(own && typeof own === 'object' ? own : null);
 }
 // cid: id de l'enfant réglé ('' = compte parent connecté)
 async function changeAppearance(cid, patch) {
@@ -1651,15 +1659,15 @@ function renderAuthChild() {
   document.getElementById('main').innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="display:flex;gap:8px;margin-bottom:8px">
-      <button class="btn" style="flex:1;border:2px solid var(--color-neutral-300);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
-      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--color-accent-100);color:var(--color-accent-800)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-divider);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--tint-accent);color:var(--color-text)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
     </div>
     <div style="text-align:center">
       <div style="font-size:40px">🎮</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace enfant</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton nom et le code PIN</p>
     </div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     <div class="field" style="margin:0"><label>Nom de votre famille</label><input class="input" id="ec-famname" placeholder="Ex : Famille demo" value="${esc(authDraft.famname || '')}"></div>
     <div class="field" style="margin:0"><label>Ton prenom</label><input class="input" id="ec-name" placeholder="Ex : Emma" value="${esc(authDraft.cname || '')}"></div>
     <div class="field" style="margin:0"><label>Ton code PIN (4 chiffres)</label><input class="input" id="ec-pin" type="password" placeholder="****"></div>
@@ -1678,7 +1686,7 @@ function renderResetPassword() {
       <div style="font-size:40px">🔐</div>
       <h2 style="margin:6px 0 0;font-size:24px">Réinitialiser le mot de passe</h2>
     </div>
-    ${resetMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(resetMsg)}</div>` : ''}
+    ${resetMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(resetMsg)}</div>` : ''}
     ${resetPasswordStep === 1 ? `
     <div class="field" style="margin:0"><label>Email</label><input class="input" id="reset-email" type="email" placeholder="parent@email.fr"></div>
     <button class="btn btn-primary btn-block" data-action="reset-password-step1">Envoyer le code</button>
@@ -1703,15 +1711,15 @@ function renderAuth() {
   mainEl.innerHTML = `
   <div style="padding:36px 24px;display:flex;flex-direction:column;gap:14px;max-width:440px;width:100%;margin:0 auto">
     <div style="display:flex;gap:8px;margin-bottom:8px">
-      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--color-accent-100);color:var(--color-accent-800)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
-      <button class="btn" style="flex:1;border:2px solid var(--color-neutral-300);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-accent-500);background:var(--tint-accent);color:var(--color-text)" data-action="set-auth" data-auth-role="parent">🛡️ Parent</button>
+      <button class="btn" style="flex:1;border:2px solid var(--color-divider);background:transparent;color:var(--color-text)" data-action="set-auth" data-auth-role="enfant">🎮 Enfant</button>
     </div>
     <div style="text-align:center">
       <div style="font-size:40px">🛡️</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">${signup ? 'Crée ton compte et ta famille' : 'Connecte-toi pour gérer ta famille'}</p>
     </div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     ${signup ? `<div class="field" style="margin:0"><label>Ton prénom</label><input class="input" id="au-name" placeholder="Ex : Papa" value="${esc(authDraft.name || '')}"></div>` : ''}
     <div class="field" style="margin:0"><label>Email</label><input class="input" id="au-email" type="email" placeholder="parent@email.fr" value="${esc(authDraft.email || '')}"></div>
     <div class="field" style="margin:0"><label>Mot de passe</label><input class="input" id="au-pass" type="password" placeholder="••••••"></div>
@@ -1733,7 +1741,7 @@ function renderUnlock() {
     <div style="text-align:center"><div style="font-size:40px">🔐</div>
       <h2 style="margin:6px 0 0;font-size:24px">Espace parent</h2>
       <p class="text-muted" style="font-size:13px;margin:4px 0 0">Entre ton mot de passe pour déverrouiller la gestion.</p></div>
-    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
+    ${authMsg ? `<div style="text-align:center;font-size:13px;padding:8px 12px;border-radius:var(--radius-md);background:var(--tint-accent);color:var(--color-accent-800)">${esc(authMsg)}</div>` : ''}
     <div class="field" style="margin:0"><label>Mot de passe de ${esc(me.email)}</label><input class="input" id="pu-pass" type="password" placeholder="••••••"></div>
     <button class="btn btn-primary btn-block" data-action="unlockParent">Déverrouiller</button>
     <button class="btn btn-ghost btn-block" data-action="logout">Se déconnecter</button>
@@ -1780,16 +1788,16 @@ function renderStatsCharts() {
     const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
     const dateLabels = points.map(p => {
       const dateLabel = new Date(p.date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
-      return `<text x="${p.x}" y="${height - 2}" text-anchor="middle" font-size="11" fill="var(--color-neutral-600)">${dateLabel}</text>`;
+      return `<text x="${p.x}" y="${height - 2}" text-anchor="middle" font-size="11" style="fill:var(--color-text-muted)">${dateLabel}</text>`;
     }).join('');
 
-    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#3b82f6" stroke="white" stroke-width="2"/><title>${p.count} tâches</title>`).join('');
+    const circlePoints = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" stroke-width="2" style="fill:var(--color-accent-600);stroke:var(--color-surface)"/><title>${p.count} tâches</title>`).join('');
 
     barChart.innerHTML = `
       <svg width="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="max-height:250px;stroke-linecap:round;stroke-linejoin:round">
-        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="2"/>
-        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="var(--color-divider)" stroke-width="2"/>
-        <path d="${pathD}" stroke="#3b82f6" stroke-width="3" fill="none"/>
+        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke-width="2" style="stroke:var(--color-divider)"/>
+        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke-width="2" style="stroke:var(--color-divider)"/>
+        <path d="${pathD}" stroke-width="3" fill="none" style="stroke:var(--color-accent-600)"/>
         ${circlePoints}
         ${dateLabels}
       </svg>
@@ -1842,8 +1850,8 @@ function renderStatsCharts() {
                 <span style="flex:1">${esc(t.name)}</span>
                 <span style="font-weight:bold;color:var(--color-accent-800)">${t.count}x</span>
               </div>
-              <div style="width:100%;height:16px;background:var(--color-neutral-200);border-radius:4px;overflow:hidden">
-                <div style="width:${pct}%;height:100%;background:#06b6d4"></div>
+              <div style="width:100%;height:16px;background:var(--tint-neutral);border-radius:4px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:var(--color-accent-2-500)"></div>
               </div>
             </div>
           `;
@@ -1892,7 +1900,7 @@ function screenStats() {
     </div>
     <div class="card elev-sm" style="padding:16px;text-align:center">
       <div class="kicker">Meilleur jour</div>
-      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-500)">${data?.bestDay ? `${data.bestDay.date}` : 'N/A'}</div>
+      <div style="font-size:32px;font-family:var(--font-heading);margin-top:8px;color:var(--color-accent-700)">${data?.bestDay ? `${data.bestDay.date}` : 'N/A'}</div>
     </div>
   </div>
 
@@ -1973,13 +1981,17 @@ function screenStats() {
 }
 
 /* ── stats notes / récompenses / sanctions ── */
-const XS_COLORS = ['#c67139', '#7a8a5e', '#3b82f6', '#a855f7', '#0891b2', '#be185d'];
+// une couleur par matière: les six accents du registre, au palier lisible sur le fond du thème affiché
+const xsColors = () => {
+  const dark = document.documentElement.dataset.mode === 'dark';
+  return window.Themes ? Themes.ACCENTS.map(a => a[dark ? 'dark' : 'light'][dark ? 500 : 600]) : ['currentColor'];
+};
 // "16/20", "15,5", "8/10", "TB" → note sur 20 (même règle que le serveur, tableau d'appréciations de la famille); null si illisible
 function on20(g) { const r = Grades.parseGrade(g, state?.gradeScale); return r.ok ? r.value20 : null; }
 const xsDay = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '—';
 const xsBox = (label, value, color = 'var(--color-accent-800)') =>
   `<div class="card elev-sm xs-box"><div class="kicker">${label}</div><div class="xs-num" style="color:${color}">${value}</div></div>`;
-const xsFreq = f => xsBox('Fréquence', `${f?.perWeek ?? 0}<small>/sem</small> · ${f?.perMonth ?? 0}<small>/mois</small>`, 'var(--color-neutral-800)');
+const xsFreq = f => xsBox('Fréquence', `${f?.perWeek ?? 0}<small>/sem</small> · ${f?.perMonth ?? 0}<small>/mois</small>`, 'var(--color-text)');
 const xsTable = (heads, rows) => rows.length
   ? `<div class="xs-table-wrap"><table class="xs-table"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
   : '<p class="text-muted" style="margin:0;font-size:13px">Aucune donnée sur la période.</p>';
@@ -1994,15 +2006,16 @@ function xsGradeChart(grades) {
   if (!pts.length) return '<p class="text-muted" style="margin:0;font-size:13px">Pas de notes datées à tracer.</p>';
   const days = [...new Set(pts.map(g => g.date))].sort(), subjects = [...new Set(pts.map(g => g.subject))];
   const W = 400, H = 180, P = 28, x = d => P + (days.length > 1 ? days.indexOf(d) / (days.length - 1) : 0.5) * (W - 2 * P), y = v => H - P - v / 20 * (H - 2 * P);
+  const COLORS = xsColors();
   const lines = subjects.map((s, i) => {
-    const c = XS_COLORS[i % XS_COLORS.length], ps = pts.filter(g => g.subject === s);
+    const c = COLORS[i % COLORS.length], ps = pts.filter(g => g.subject === s);
     return `<polyline points="${ps.map(g => `${x(g.date)},${y(on20(g.grade))}`).join(' ')}" fill="none" stroke="${c}" stroke-width="2.5"/>` +
       ps.map(g => `<circle cx="${x(g.date)}" cy="${y(on20(g.grade))}" r="4" fill="${c}"><title>${esc(s)} : ${esc(g.grade)} (${g.date})</title></circle>`).join('');
   }).join('');
-  const grid = [0, 10, 20].map(v => `<line x1="${P}" x2="${W - P}" y1="${y(v)}" y2="${y(v)}" stroke="var(--color-divider)"/><text x="${P - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--color-neutral-600)">${v}</text>`).join('');
+  const grid = [0, 10, 20].map(v => `<line x1="${P}" x2="${W - P}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--color-divider)"/><text x="${P - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" style="fill:var(--color-text-muted)">${v}</text>`).join('');
   const step = Math.ceil(days.length / 6); // max ~6 étiquettes
-  const labels = days.map((d, i) => i % step ? '' : `<text x="${x(d)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--color-neutral-600)">${xsDay(d)}</text>`).join('');
-  const legend = subjects.map((s, i) => `<span><i style="background:${XS_COLORS[i % XS_COLORS.length]}"></i>${esc(s)}</span>`).join('');
+  const labels = days.map((d, i) => i % step ? '' : `<text x="${x(d)}" y="${H - 6}" text-anchor="middle" font-size="10" style="fill:var(--color-text-muted)">${xsDay(d)}</text>`).join('');
+  const legend = subjects.map((s, i) => `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(s)}</span>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Évolution des notes par matière">${grid}${lines}${labels}</svg><div class="xs-legend">${legend}</div>`;
 }
 
@@ -2018,7 +2031,7 @@ function xsHtml() {
   else if (xs.tab === 'grades') {
     const g = d.grades, trend = { improving: '📈 En progrès', declining: '📉 En baisse', stable: '➡️ Stable' }[g.trend] || '—';
     body = `
-      <div class="xs-boxes">${xsBox('XP gagnés', g.totalXP, 'var(--color-accent-2-800)')}${xsBox('Or 🪙 gagné', g.totalGold, 'var(--color-accent-700)')}${xsBox('Notes', g.grades.length)}${xsBox('Tendance', `<small>${trend}</small>`, 'var(--color-neutral-800)')}</div>
+      <div class="xs-boxes">${xsBox('XP gagnés', g.totalXP, 'var(--color-accent-2-800)')}${xsBox('Or 🪙 gagné', g.totalGold, 'var(--color-accent-700)')}${xsBox('Notes', g.grades.length)}${xsBox('Tendance', `<small>${trend}</small>`, 'var(--color-text)')}</div>
       <div class="xs-grid">
         <div class="card elev-sm xs-card"><div class="xs-title">Évolution par matière (/20)</div>${xsGradeChart(g.grades)}</div>
         <div class="card elev-sm xs-card"><div class="xs-title">Notes par jour</div>${xsBars(Object.entries(g.byDay).sort().map(([k, v]) => [xsDay(k), v.count])) || '<p class="text-muted" style="margin:0;font-size:13px">Aucune note datée.</p>'}</div>
