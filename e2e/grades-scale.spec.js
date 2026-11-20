@@ -90,6 +90,7 @@ test('parent: ajout de « insuffisant » = 6, valeur invalide refusée, rétabli
   await parentLogin(page, f);
   await tab(page, 'Famille');
   await page.getByRole('button', { name: '+ Ajouter une appréciation' }).click();
+  await expect(page.locator('.scale-row')).toHaveCount(4);   // la ligne n'apparaît qu'après l'enregistrement (réseau lent: sinon on remplit l'ancienne dernière ligne)
   const last = page.locator('.scale-row').last();
   await last.locator('input.scale-labels').fill('insuffisant, insuf');
   await last.locator('input.scale-value').fill('25');
