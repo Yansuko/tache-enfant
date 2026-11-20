@@ -207,6 +207,19 @@ input[type=time], input[type=date], input[type=datetime-local], input[type=month
 .seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
+/* — menu Apparence: mode (boutons segmentés) et pastilles d'accent — */
+.ap-seg { display: flex; }
+.ap-seg .seg-opt { flex: 1; justify-content: center; min-height: 44px; border: 0; background: none; color: inherit; font: inherit; font-size: 16px; }
+.ap-seg .seg-opt[aria-pressed="true"] { background: var(--color-accent); color: var(--color-on-accent); }
+.ap-seg .seg-opt:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.ap-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.ap-swatch {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 12px 6px 6px; cursor: pointer;
+  border: 1px solid var(--color-divider); border-radius: 999px; background: var(--glass-bg); color: var(--color-text); font: inherit; font-size: 16px;
+}
+.ap-swatch i { width: 28px; height: 28px; flex: none; border-radius: 50%; }
+.ap-swatch[aria-pressed="true"] { outline: 2px solid var(--color-accent); outline-offset: 1px; font-weight: 600; }
+
 /* — cards — */
 .card {
   display: flex; flex-direction: column; gap: var(--space-2);

@@ -878,6 +878,10 @@ function screenAccueil() {
     </div>`;
   })()}
   <div style="padding:10px 20px 0">${pushStatusCard()}</div>
+  <div style="padding:10px 20px 0"><div class="card elev-sm">
+    <button class="btn btn-secondary btn-block" data-action="ap-toggle" aria-expanded="${apOpen}">🎨 Apparence</button>
+    ${apOpen ? appearanceBlock() : ''}
+  </div></div>
   <div style="padding:14px 20px 6px" class="kicker">Quêtes du jour · ${frDate()}</div>
   <div class="deck deck-2" style="padding:4px 20px 16px">
     ${c.tasks.map((t, i) => taskRow(t, i, false)).join('') || "<p class='text-muted' style='padding-top:8px'>Aucune quête pour aujourd'hui 🎉</p>"}
@@ -1418,8 +1422,10 @@ function screenEnfants() {
       </div>
       <button class="btn btn-secondary" data-action="reset-child-pin" data-i="${i}" title="Réinitialiser le PIN">🔑</button>
       <button class="btn btn-secondary" data-action="view-stats" data-i="${i}" title="Voir les statistiques" aria-label="Voir les statistiques">📊</button>
+      ${c.id ? `<button class="btn btn-secondary" data-action="ap-child" data-id="${esc(c.id)}" title="Apparence" aria-label="Apparence de ${esc(c.name)}" aria-expanded="${apChild === c.id}">🎨</button>` : ''}
       <button class="btn btn-icon btn-ghost" data-action="del-child" data-i="${i}" aria-label="Supprimer">✕</button>
      </div>
+     ${apChild && apChild === c.id ? appearanceBlock(c) : ''}
      <div class="qs" id="qs-${i}">${qsCache[c.id] || '<span class="text-muted">Chargement…</span>'}</div>
     </div>`).join('') : '<p class="text-muted">Aucun enfant.</p>'}
   </div>
@@ -1481,6 +1487,76 @@ function scaleError(rows) {
   }
   return '';
 }
+// ── Menu Apparence: réglage du profil (compte parent ou enfant), synchronisé par setAppearance ──
+// Le profil actif (parent: son compte; vue enfant: l'enfant) fait foi et est recopié sur l'appareil (dk-appearance).
+// La position (localisation précise) reste sur l'appareil: jamais envoyée au serveur.
+let apOpen = false, apChild = null, apMsg = '';
+const activeProfile = () => state?.role === 'enfant' && state.children?.length ? child() : me;
+function writeDeviceAppearance(a) {
+  const loc = readAppearance()?.location, next = { ...a };
+  delete next.location;
+  if (loc) next.location = loc;
+  const json = JSON.stringify(next);
+  try { if (localStorage.getItem(APPEARANCE_KEY) !== json) localStorage.setItem(APPEARANCE_KEY, json); } catch {}
+  applyAppearance();
+}
+function syncAppearance() {
+  const a = activeProfile()?.appearance;
+  if (a && typeof a === 'object') writeDeviceAppearance(a);
+}
+// cid: id de l'enfant réglé ('' = compte parent connecté)
+async function changeAppearance(cid, patch) {
+  const prof = cid ? state.children.find(c => c.id === cid) : me;
+  if (!prof) return;
+  const next = { ...Themes.normalizeAppearance(prof.appearance || (prof === activeProfile() ? readAppearance() : null)), ...patch };
+  delete next.location;
+  prof.appearance = next;
+  if (prof === activeProfile()) writeDeviceAppearance(next);   // aperçu en direct
+  try { await api('setAppearance', cid ? { appearance: next, childId: cid } : { appearance: next }); }
+  catch (e) { flash('⚠️ Apparence non enregistrée: ' + e); }
+}
+const fmtTime = ms => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function appearanceBlock(target) {   // target: enfant réglé par un parent, sinon le profil actif
+  const own = !target, prof = own ? activeProfile() : target;
+  const cid = own ? (state?.role === 'enfant' ? child().id : '') : target.id;
+  const a = Themes.normalizeAppearance(prof?.appearance || (own ? readAppearance() : null));
+  const fam = document.documentElement.dataset.mode === 'dark' ? 'dark' : 'light';
+  const pressed = on => `aria-pressed="${on}"`;
+  const themeSelect = (family, key, label) => {
+    const list = Themes.THEMES.filter(t => t.family === family);
+    return list.length < 2 ? '' : `<div class="field" style="margin:0"><label for="ap-${key}-${esc(cid)}">${label}</label>
+      <select class="input" id="ap-${key}-${esc(cid)}" data-ap-theme="${key}" style="width:100%">${list.map(t =>
+        `<option value="${esc(t.id)}"${t.id === a[key] ? ' selected' : ''}>${esc(t.names.fr)}</option>`).join('')}</select></div>`;
+  };
+  const loc = own ? readAppearance()?.location : null;
+  const sun = loc && Sun.times(Date.now(), loc.lat, loc.lon);
+  return `<div class="ap" ${own ? 'id="ap-self" ' : ''}data-ap="${esc(cid)}" style="display:flex;flex-direction:column;gap:10px">
+    ${own ? '' : `<div class="card-title" style="font-size:16px;overflow-wrap:anywhere">🎨 Apparence de ${esc(target.name)}</div>`}
+    <div class="field" style="margin:0"><label>Mode</label>
+      <div class="seg ap-seg">${[['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) =>
+        `<button type="button" class="seg-opt" data-action="ap-mode" data-v="${v}" ${pressed(a.mode === v)}>${l}</button>`).join('')}</div>
+      <p class="text-muted" style="font-size:13px;margin:4px 0 0">Auto : clair le jour, sombre après le coucher du soleil.</p>
+    </div>
+    <div class="field" style="margin:0"><label>Couleur</label>
+      <div class="ap-swatches">${Themes.ACCENTS.map(x =>
+        `<button type="button" class="ap-swatch" data-action="ap-accent" data-v="${esc(x.id)}" ${pressed(a.accent === x.id)}><i style="background:${esc(x[fam][500])}"></i>${esc(x.names.fr)}</button>`).join('')}</div>
+    </div>
+    ${themeSelect('light', 'lightTheme', 'Thème de jour')}${themeSelect('dark', 'darkTheme', 'Thème de nuit')}
+    ${own ? `<div class="field" style="margin:0"><label>Coucher du soleil</label>
+      ${loc ? `<p style="margin:0;font-size:16px">📍 Position enregistrée sur cet appareil${sun?.sunset ? ` · coucher à ${fmtTime(sun.sunset)}` : ''}.</p>
+        <button type="button" class="btn btn-secondary btn-block" data-action="ap-paris">Revenir à Paris</button>`
+      : `<button type="button" class="btn btn-secondary btn-block" data-action="ap-locate">📍 Localisation précise</button>
+        <p class="text-muted" style="font-size:13px;margin:0">Par défaut, l'heure de Paris. Ta position reste sur cet appareil.</p>`}
+      ${apMsg ? `<p role="status" style="margin:0;font-size:14px;overflow-wrap:anywhere">${esc(apMsg)}</p>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+function setDeviceLocation(loc) {
+  const cur = readAppearance() || {};
+  if (loc) cur.location = loc; else delete cur.location;
+  try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(cur)); } catch {}
+  applyAppearance();
+}
 function scaleBlock() {
   return `
   <div style="padding:18px 20px 4px" class="kicker">Appréciations</div>
@@ -1510,6 +1586,8 @@ function screenFamille() {
   </div>
   <div style="padding:10px 20px 0">${pushStatusCard()}</div>
   ${installCard() ? `<div style="padding:10px 20px 0">${installCard()}</div>` : ''}
+  <div style="padding:14px 20px 4px" class="kicker">🎨 Apparence</div>
+  <div style="padding:0 20px"><div class="card elev-sm">${appearanceBlock()}</div></div>
   <div style="padding:14px 20px 4px" class="kicker">Familles que je gère</div>
   <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px">
     ${families.map(f => `
@@ -2023,6 +2101,7 @@ function render() {
   document.getElementById('role-seg').style.display = me ? '' : 'none';
   document.getElementById('logout-btn').style.display = me ? '' : 'none';
   const roleInput = document.querySelector(`#role-seg input[value=${role}]`); if (roleInput) roleInput.checked = true;
+  if (me) syncAppearance();   // le profil connecté l'emporte sur l'appareil
 
   if (!me) { console.log('[RENDER-AUTH] me is null, calling renderAuth()'); hideSelect(); renderAuth(); console.log('[RENDER-AUTH-DONE] renderAuth returned'); return; }
   if (!families.length) { hideSelect(); state = null; return renderNoFamily(); }
@@ -2483,6 +2562,21 @@ const ACTIONS = {
   'del-reward': el => { state.rewards.splice(+el.dataset.i, 1); },
   'add-scale-row': () => { scaleDraft = [...readScale(), { labels: [], value: '' }]; },
   'del-scale-row': el => { scaleDraft = readScale(); scaleDraft.splice(+el.dataset.i, 1); },
+  'ap-mode': el => changeAppearance(el.closest('[data-ap]').dataset.ap, { mode: el.dataset.v }),
+  'ap-accent': el => changeAppearance(el.closest('[data-ap]').dataset.ap, { accent: el.dataset.v }),
+  'ap-toggle': () => { apOpen = !apOpen; apMsg = ''; },
+  'ap-child': el => { apChild = apChild === el.dataset.id ? null : el.dataset.id; },
+  'ap-paris': () => { setDeviceLocation(null); apMsg = 'Coucher du soleil calculé pour Paris.'; },
+  // la permission n'est demandée qu'ici, au clic
+  'ap-locate': async () => {
+    const pos = await new Promise(ok => {
+      if (!navigator.geolocation) return ok(null);
+      navigator.geolocation.getCurrentPosition(ok, () => ok(null), { timeout: 15000, maximumAge: 3600000 });
+    });
+    const r2 = v => Math.round(v * 100) / 100;   // ~1 km suffit pour le coucher du soleil
+    setDeviceLocation(pos ? { lat: r2(pos.coords.latitude), lon: r2(pos.coords.longitude) } : null);
+    apMsg = pos ? '' : 'Localisation refusée ou indisponible : le coucher du soleil est calculé pour Paris.';
+  },
   'save-scale': () => {
     const rows = readScale();
     scaleErr = scaleError(rows);
@@ -2856,7 +2950,7 @@ const ACTIONS = {
     }
   },
 };
-const SERVER_ACTIONS = new Set(['login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'remind-task', 'enable-push', 'install-app', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
+const SERVER_ACTIONS = new Set(['ap-mode', 'ap-accent', 'ap-toggle', 'ap-child', 'ap-paris', 'ap-locate', 'login', 'signup', 'unlockParent', 'auth-toggle', 'logout', 'switch-family', 'add-family', 'delete-family', 'invite-adult', 'remove-adult', 'set-auth', 'unlock-child', 'unlock-child-direct', 'submit-pin', 'cancel-pin', 'show-reset-password', 'reset-password-step1', 'reset-password-step2', 'set-stats-select-child', 'set-stats-period', 'toggle-task', 'remind-task', 'enable-push', 'install-app', 'approve-task', 'reject-task', 'approve', 'refuse', 'change-password']);
 
 function celebrate(text) {
   const stars = ['⭐', '🎉', '✨', '💫', '🌟'];
@@ -2941,6 +3035,10 @@ document.body.addEventListener('change', e => {
   if (e.target.id === 'rem-child') { document.getElementById('rem-quest').innerHTML = remQuestOptions(e.target.value); return; }
   if (e.target.name === 'auth-role') { authRole = e.target.value; authMsg = ''; render(); return; }
   if (e.target.id === 'grade-subject-filter') { gradeFilter.subject = e.target.value; render(); return; }
+  if (e.target.dataset.apTheme) {
+    changeAppearance(e.target.closest('[data-ap]').dataset.ap, { [e.target.dataset.apTheme]: e.target.value }).then(render);
+    return;
+  }
   if (e.target.id === 'email-notif-enabled') {
     if (state) {
       state.emailNotifications = e.target.checked;
@@ -3440,6 +3538,7 @@ setInterval(async () => {
       // Step 2: PULL - Get latest from server (AFTER push completes to ensure we have latest)
       console.log(`[SYNC-${syncId}] PULL: Fetching latest from server`);
       const serverRes = await api('me');
+      if (me && serverRes.me && 'appearance' in serverRes.me) { me.appearance = serverRes.me.appearance; syncAppearance(); }
       if (serverRes.families && serverRes.families[0]) {
         const serverFamily = serverRes.families[0];
         // Merge: keep local role/profile but merge data intelligently
@@ -3475,6 +3574,7 @@ setInterval(async () => {
           if (!scaleDirty) state.gradeScale = serverFamily.gradeScale || state.gradeScale;
           state.updatedAt = serverFamily.updatedAt;
           normalizeFamilyData(state);
+          syncAppearance();   // apparence changée sur un autre appareil (même si le rendu est différé)
           lastSyncedSig = stateSig();
           rolloverDay(state, today());   // idempotent: la référence ci-dessus reste celle du serveur, un changement sera envoyé à la prochaine synchro
 
